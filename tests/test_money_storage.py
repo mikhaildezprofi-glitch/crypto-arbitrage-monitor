@@ -76,6 +76,55 @@ class MoneyStorageParserTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "must be supplied together"):
             parse_public_offer(raw_offer(commission="1", commission_currency=""))
 
+    def test_selects_best_fresh_offer_that_fits_budget_without_combining(self):
+        from datetime import datetime, timezone
+        from arbitrage_monitor.providers.money_storage import select_best_affordable_offer
+
+        now = datetime.fromtimestamp(1794843483, tz=timezone.utc)
+        offers = parse_public_offers({
+            "data": [
+                raw_offer(dst_amount="3430", src_amount="1000", rate="0.29154519"),
+                raw_offer(dst_amount="168.07", src_amount="49", rate="0.29154519"),
+                raw_offer(dst_amount="900", src_amount="260", rate="0.28888889"),
+            ]
+        })
+        selected = select_best_affordable_offer(
+            offers, Decimal("1000"), max_age_seconds=900, now=now
+        )
+        # Same rate: newest timestamps are equal, so preserve more capital.
+        self.assertEqual(selected.give_amount, Decimal("168.07"))
+        self.assertEqual(selected.receive_amount, Decimal("49"))
+
+    def test_rejects_when_no_single_offer_fits_budget(self):
+        from datetime import datetime, timezone
+        from arbitrage_monitor.providers.money_storage import select_best_affordable_offer
+
+        offers = parse_public_offers({"data": [raw_offer(dst_amount="3430")]})
+        with self.assertRaisesRegex(ValueError, "No fresh, discrete"):
+            select_best_affordable_offer(
+                offers,
+                Decimal("1000"),
+                now=datetime.fromtimestamp(1794843483, tz=timezone.utc),
+            )
+
+    def test_does_not_select_stale_or_future_offers(self):
+        from datetime import datetime, timezone
+        from arbitrage_monitor.providers.money_storage import select_best_affordable_offer
+
+        offers = parse_public_offers({
+            "data": [
+                raw_offer(create_time=1794840000),
+                raw_offer(create_time=1794845000, dst_amount="100"),
+            ]
+        })
+        with self.assertRaisesRegex(ValueError, "No fresh, discrete"):
+            select_best_affordable_offer(
+                offers,
+                Decimal("1000"),
+                max_age_seconds=900,
+                now=datetime.fromtimestamp(1794843483, tz=timezone.utc),
+            )
+
     def test_parses_multiple_pages_without_deduplicating_offers(self):
         first = {"data": [raw_offer()]}
         second = {"data": [raw_offer()]}
