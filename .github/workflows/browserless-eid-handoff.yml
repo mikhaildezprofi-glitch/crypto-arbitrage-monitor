@@ -115,27 +115,58 @@ jobs:
             exit 1
           fi
 
+          mkdir -p /tmp/eid-connection
+          {
+            echo "ВРЕМЕННЫЙ ОБЛАЧНЫЙ БРАУЗЕР E-ID"
+            echo
+            echo "Ссылка для подключения:"
+            echo "$TUNNEL_URL/vnc.html?autoconnect=true&resize=scale&quality=6&compression=2"
+            echo
+            echo "Пароль удалённого экрана:"
+            echo "$VNC_PASSWORD"
+            echo
+            echo "Сессия доступна примерно 30 минут. Ссылка и пароль дают доступ к активной сессии. Не пересылай их."
+            echo "Вводи данные E-ID только на сайте e-id.cards внутри удалённого браузера."
+            echo "Ссылку подтверждения открывай в этом же удалённом браузере."
+            echo "Для вставки ссылки используй Clipboard в панели noVNC; если не работает, открой ссылку подтверждения вручную через адресную строку удалённого браузера."
+          } > /tmp/eid-connection/CONNECTION.txt
+          chmod 600 /tmp/eid-connection/CONNECTION.txt
+
           {
             echo "# Временный облачный браузер E-ID"
             echo
-            echo "**Сессия доступна примерно 30 минут с момента появления этой ссылки.**"
+            echo "**Браузер запущен. Сессия доступна примерно 30 минут.**"
             echo
-            echo "1. Открой ссылку ниже в Chrome на телефоне."
-            echo "2. Нажми Connect, если подключение не началось автоматически."
-            echo "3. Введи пароль удалённого экрана из этого Summary."
-            echo "4. Управляй браузером E-ID внутри удалённого экрана. Ссылка подтверждения должна открываться в этом же браузере."
-            echo "5. Для ввода с телефона используй кнопку Keyboard в панели noVNC. Ссылку из SMS или почты скопируй на телефон, затем через Clipboard в панели noVNC вставь её в адресную строку удалённого Chrome."
+            echo "Данные подключения приложены к этому запуску отдельным файлом `CONNECTION.txt` (раздел Artifacts). Скачай артефакт `eid-browser-connection` и открой файл."
             echo
-            echo "**Пароль удалённого экрана:** `$VNC_PASSWORD`"
+            echo "Не публикуй и не пересылай файл: он содержит временный адрес и пароль удалённого экрана."
             echo
-            echo "[Открыть облачный браузер]($TUNNEL_URL/vnc.html?autoconnect=true&resize=scale&quality=6&compression=2)"
-            echo
-            echo "> Ссылка и пароль дают доступ к активной браузерной сессии. Не пересылай их и не публикуй. Не вводи пароль E-ID в GitHub."
-            echo
-            echo "После завершения закрой эту страницу. Облачный компьютер автоматически остановится по окончании окна сессии."
+            echo "Вводи данные E-ID только внутри удалённого браузера. Ссылку подтверждения открывай в той же удалённой сессии."
           } >> "$GITHUB_STEP_SUMMARY"
 
-          echo "Temporary remote browser is ready. Connection details are only in the private workflow summary."
+          echo "Temporary remote browser is ready."
+
+      - name: Publish private connection details
+        id: connection
+        uses: actions/upload-artifact@v4
+        with:
+          name: eid-browser-connection
+          path: /tmp/eid-connection/CONNECTION.txt
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Add artifact location to run summary
+        if: success()
+        shell: bash
+        env:
+          ARTIFACT_URL: ${{ steps.connection.outputs.artifact-url }}
+        run: |
+          {
+            echo
+            echo "**Файл подключения:** [Скачать CONNECTION.txt]($ARTIFACT_URL)"
+            echo
+            echo "Открой скачанный файл на телефоне. В нём находятся адрес облачного браузера и пароль экрана."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Keep the browser available for manual E-ID confirmation
         shell: bash
