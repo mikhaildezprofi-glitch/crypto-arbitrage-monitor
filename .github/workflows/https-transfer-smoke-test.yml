@@ -2,6 +2,9 @@ name: Temporary HTTPS transfer smoke test
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/https-transfer-smoke-test.yml'
 
 permissions:
   contents: read
