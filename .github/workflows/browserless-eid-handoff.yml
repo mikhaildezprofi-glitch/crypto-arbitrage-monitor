@@ -1,0 +1,84 @@
+name: Browserless E-ID handoff
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  create-live-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Create temporary E-ID browser session
+        env:
+          BROWSERLESS_TOKEN: ${{ secrets.BROWSERLESS_TOKEN }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.request
+          from pathlib import Path
+
+          token = os.environ.get("BROWSERLESS_TOKEN", "").strip()
+          if not token:
+              print("Missing repository secret BROWSERLESS_TOKEN.", file=sys.stderr)
+              sys.exit(1)
+
+          endpoint = "https://production-sfo.browserless.io/chromium/bql?token=" + token
+          query = """mutation StartHandoff {
+            goto(url: "https://e-id.cards/login", waitUntil: domContentLoaded) {
+              status
+            }
+            liveURL(
+              timeout: 90000
+              detached: true
+              instructions: "Войдите самостоятельно. CAPTCHA проходите вручную. Не отправляйте пароль или коды кому-либо. После завершения нажмите Done."
+              instructionsTitle: "Вход через E-ID"
+              doneLabel: "Готово"
+            ) {
+              liveURL
+              timeout
+            }
+            reconnect(timeout: 115000) {
+              browserQLEndpoint
+            }
+          }"""
+
+          payload = json.dumps({"query": query}).encode()
+          req = urllib.request.Request(
+              endpoint,
+              data=payload,
+              headers={"Content-Type": "application/json"},
+              method="POST",
+          )
+          try:
+              with urllib.request.urlopen(req, timeout=30) as response:
+                  result = json.loads(response.read().decode())
+          except Exception as exc:
+              print("Browserless request failed: " + type(exc).__name__, file=sys.stderr)
+              sys.exit(1)
+
+          if result.get("errors"):
+              print("BrowserQL returned an error. Check the workflow logs; no credentials were submitted.")
+              sys.exit(1)
+
+          data = result.get("data") or {}
+          live_url = (data.get("liveURL") or {}).get("liveURL")
+          reconnect = (data.get("reconnect") or {}).get("browserQLEndpoint")
+          status = (data.get("goto") or {}).get("status")
+          if not live_url or not reconnect:
+              print("Browserless did not return the required handoff fields.")
+              sys.exit(1)
+
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          with open(summary, "a", encoding="utf-8") as f:
+              f.write("# Временный облачный браузер\n\n")
+              f.write(f"- Страница E-ID открыта, HTTP: {status}\n")
+              f.write("- Ссылка действует до 90 секунд. Сессия Browserless ограничена двумя минутами на бесплатном тарифе.\n\n")
+              f.write(f"[Открыть облачный браузер]({live_url})\n\n")
+              f.write("> Ссылка является секретом доступа к браузеру. Не пересылайте её и не публикуйте. Если срок истёк, запустите workflow ещё раз.\n")
+          print("Live browser created. Open the link in the workflow Summary; the URL is intentionally not printed to logs.")
+          PY
