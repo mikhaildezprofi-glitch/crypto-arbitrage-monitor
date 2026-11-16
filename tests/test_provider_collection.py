@@ -119,7 +119,7 @@ class QuoteCollectionTests(unittest.TestCase):
     def test_batch_mappings_are_read_only(self):
         batch = collect_quotes(self.make_providers())
         with self.assertRaises(TypeError):
-            batch.quotes["winance"] = make_quote("changed")
+            batch.quotes["winance"] = make_quote("winance")
 
 
 if __name__ == "__main__":
