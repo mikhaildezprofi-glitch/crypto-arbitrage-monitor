@@ -42,7 +42,12 @@ def _is_target_pair(item: dict) -> bool:
         or item.get("currency_pair")
         or ""
     ).upper().replace("-", "/").replace("_", "/").replace(" ", "")
-    return str(pair_id) == PAIR_ID or pair in {"ERUB/USDT", "ERUBUSDT"}
+    # Pair ID 18 is mandatory. If the API also supplies a pair name, it
+    # must agree; never accept an unrelated record merely because a nested
+    # object happens to reuse the numeric ID.
+    if str(pair_id) != PAIR_ID:
+        return False
+    return not pair or pair in {"ERUB/USDT", "ERUBUSDT"}
 
 
 def _extract_rate(item: dict) -> Decimal | None:
