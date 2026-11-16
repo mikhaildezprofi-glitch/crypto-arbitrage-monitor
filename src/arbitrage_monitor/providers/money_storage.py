@@ -166,3 +166,74 @@ def average_first_20_offer_rate(
         rate=average_rate,
         observed_at=timestamp,
     )
+
+
+class MoneyStorageQuoteProvider:
+    """Read the first public Money Storage page over plain HTTPS.
+
+    This adapter intentionally has no browser-session or cookie support. It
+    uses only explicitly configured public query filters and fails closed on
+    authentication, rate-limit, HTTP, and response-envelope errors.
+    """
+
+    def __init__(
+        self,
+        *,
+        from_currency: str,
+        to_currency: str,
+        endpoint: str = "https://storage.money/public_deals/fetch",
+        timeout_seconds: float = 20.0,
+    ) -> None:
+        from urllib.parse import urlparse
+
+        parsed = urlparse(endpoint)
+        if parsed.scheme != "https" or not parsed.netloc:
+            raise ValueError("Money Storage endpoint must be an HTTPS URL.")
+        if not from_currency.strip() or not to_currency.strip():
+            raise ValueError("Money Storage from/to currency filters are required.")
+        if timeout_seconds <= 0:
+            raise ValueError("Money Storage timeout must be positive.")
+        self.endpoint = endpoint
+        self.from_currency = from_currency.strip().upper()
+        self.to_currency = to_currency.strip().upper()
+        self.timeout_seconds = timeout_seconds
+
+    def fetch_quote(self) -> Quote:
+        """Fetch and average the first page; never retries or reuses old data."""
+        import json
+        from urllib.error import HTTPError, URLError
+        from urllib.parse import urlencode
+        from urllib.request import Request, urlopen
+
+        query = urlencode({
+            "offset": 0,
+            "limit": MONEY_STORAGE_PAGE_SIZE,
+            "from": self.from_currency,
+            "to": self.to_currency,
+        })
+        request = Request(
+            f"{self.endpoint}?{query}",
+            headers={"Accept": "application/json", "User-Agent": "crypto-arbitrage-monitor/0.1"},
+            method="GET",
+        )
+        try:
+            with urlopen(request, timeout=self.timeout_seconds) as response:
+                status = getattr(response, "status", 200)
+                if status != 200:
+                    raise RuntimeError(f"Money Storage HTTP status {status}.")
+                payload = json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            if exc.code == 401:
+                raise RuntimeError("Money Storage requires authentication; no quote was published.") from exc
+            if exc.code == 429:
+                raise RuntimeError("Money Storage rate limit returned HTTP 429; no retry was attempted.") from exc
+            raise RuntimeError(f"Money Storage HTTP error {exc.code}; no quote was published.") from exc
+        except (URLError, TimeoutError, OSError) as exc:
+            raise RuntimeError(f"Money Storage network request failed: {type(exc).__name__}.") from exc
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError("Money Storage returned invalid JSON.") from exc
+
+        if not isinstance(payload, Mapping) or payload.get("result") != "ok":
+            raise ValueError("Money Storage response did not confirm result=ok.")
+        offers = parse_public_offers(payload)
+        return average_first_20_offer_rate(offers)
