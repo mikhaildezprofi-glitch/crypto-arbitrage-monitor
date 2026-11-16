@@ -46,8 +46,11 @@ def parse_public_offer(row: Mapping[str, Any]) -> MoneyStorageOffer:
 
     Money Storage renders non-owned offers with dst as Give and src as Receive.
     Thus a UI offer USDT -> ECR arrives in the API as src=ECR, dst=USDT.
-    This parser preserves the displayed commission but deliberately does not
-    decide whether it is added to the give amount or deducted elsewhere.
+    This parser preserves the displayed commission as source information.
+    For the monitored "Мне предлагают" direction, the user accepts another
+    party's offer and the offer creator/seller pays this commission. It is
+    therefore not an expense of the accepting user. The parser does not
+    infer fee settlement from raw amount fields.
     """
     if not isinstance(row, Mapping):
         raise TypeError("Money Storage offer must be a mapping.")
