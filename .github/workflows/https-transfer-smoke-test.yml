@@ -80,6 +80,7 @@ jobs:
             exit 1
           fi
           TOKEN="$(cat /tmp/receiver-token)"
+          COMMAND="curl -fsS -X POST '$URL/upload/$TOKEN' -H 'Content-Type: application/json' --data '{\"test\":\"https-transfer-smoke-test\",\"source\":\"termux\",\"value\":123}'"
           {
             echo '## Одноразовый HTTPS-приёмник'
             echo
@@ -88,11 +89,15 @@ jobs:
             echo 'Отправляй только тестовый JSON. Не отправляй cookies, токены или реальные данные аккаунта.'
             echo
             echo 'Команда для Termux:'
-            echo "curl -fsS -X POST '$URL/upload/$TOKEN' -H 'Content-Type: application/json' --data '{\"test\":\"https-transfer-smoke-test\",\"source\":\"termux\",\"value\":123}'"
+            echo '```bash'
+            echo "$COMMAND"
+            echo '```'
             echo
             echo 'Приёмник одноразовый и завершится после одного корректного запроса.'
           } >> "$GITHUB_STEP_SUMMARY"
-          echo 'Temporary HTTPS receiver ready. Use the command in the workflow summary.'
+          echo 'TEMPORARY_RECEIVER_READY=1'
+          echo "TERMUX_COMMAND=$COMMAND"
+          echo 'The command above is a one-use test request, not an account credential.'
           for i in $(seq 1 600); do
             if grep -q 'HTTPS_PAYLOAD_RECEIVED=PASS' /tmp/receiver.log 2>/dev/null; then
               cat /tmp/receiver.log
