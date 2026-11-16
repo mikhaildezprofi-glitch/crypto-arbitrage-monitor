@@ -76,6 +76,14 @@ class MoneyStorageParserTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "must be supplied together"):
             parse_public_offer(raw_offer(commission="1", commission_currency=""))
 
+    def test_parses_multiple_pages_without_deduplicating_offers(self):
+        first = {"data": [raw_offer()]}
+        second = {"data": [raw_offer()]}
+        offers = parse_public_offer_pages([first, second])
+        self.assertEqual(len(offers), 2)
+        self.assertEqual(offers[0].give_amount, offers[1].give_amount)
+        self.assertEqual(offers[0].created_at, offers[1].created_at)
+
 
 if __name__ == "__main__":
     unittest.main()
