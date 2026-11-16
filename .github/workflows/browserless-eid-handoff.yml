@@ -96,6 +96,25 @@ jobs:
             exit 1
           fi
 
+          BROWSER_READY=""
+          for i in $(seq 1 60); do
+            if grep -q "E-ID page loaded" /tmp/eid-browser.log; then
+              BROWSER_READY="yes"
+              break
+            fi
+            if ! kill -0 "$(cat /tmp/eid-browser.pid)" 2>/dev/null; then
+              echo "Chromium exited before the E-ID page was ready."
+              cat /tmp/eid-browser.log
+              exit 1
+            fi
+            sleep 2
+          done
+          if [ -z "$BROWSER_READY" ]; then
+            echo "Chromium did not confirm that the E-ID page loaded."
+            tail -n 30 /tmp/eid-browser.log
+            exit 1
+          fi
+
           {
             echo "# Временный облачный браузер E-ID"
             echo
@@ -105,6 +124,7 @@ jobs:
             echo "2. Нажми Connect, если подключение не началось автоматически."
             echo "3. Введи пароль удалённого экрана из этого Summary."
             echo "4. Управляй браузером E-ID внутри удалённого экрана. Ссылка подтверждения должна открываться в этом же браузере."
+            echo "5. Для ввода с телефона используй кнопку Keyboard в панели noVNC. Ссылку из SMS или почты скопируй на телефон, затем через Clipboard в панели noVNC вставь её в адресную строку удалённого Chrome."
             echo
             echo "**Пароль удалённого экрана:** `$VNC_PASSWORD`"
             echo
