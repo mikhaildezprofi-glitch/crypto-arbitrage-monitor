@@ -1,0 +1,54 @@
+name: Transfer channel smoke test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check GitHub Secret channel and decrypt AES test file
+        shell: bash
+        env:
+          TRANSFER_CHANNEL_TEST: ${{ secrets.TRANSFER_CHANNEL_TEST }}
+          TRANSFER_TEST_KEY: ${{ secrets.TRANSFER_TEST_KEY }}
+        run: |
+          set -euo pipefail
+          if [ "$TRANSFER_CHANNEL_TEST" = "ARBITRAGE_SECRET_CHANNEL_TEST_V1" ]; then
+            echo "GITHUB_SECRET_CHANNEL=PASS"
+          else
+            echo "GITHUB_SECRET_CHANNEL=NOT_CONFIGURED_OR_INVALID"
+          fi
+
+          if [ -z "$TRANSFER_TEST_KEY" ]; then
+            echo "AES_DECRYPTION=NOT_CONFIGURED"
+            exit 0
+          fi
+
+          python -m pip install --quiet cryptography
+          TRANSFER_TEST_KEY="$TRANSFER_TEST_KEY" python - <<'PY'
+          import os, json, base64
+          from pathlib import Path
+          from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+          p = json.loads(Path("tests/transfer/transfer-test.enc.json").read_text())
+          if p.get("algorithm") != "AES-256-GCM":
+              raise SystemExit("Unexpected encryption algorithm")
+          key = base64.b64decode(os.environ["TRANSFER_TEST_KEY"], validate=True)
+          nonce = base64.b64decode(p["nonce"], validate=True)
+          aad = base64.b64decode(p["aad"], validate=True)
+          ciphertext = base64.b64decode(p["ciphertext"], validate=True)
+          plaintext = AESGCM(key).decrypt(nonce, ciphertext, aad)
+          expected = b'{"test":"money-storage-transfer-smoke-test","offers":20,"rate":0.29154519}'
+          if plaintext != expected:
+              raise SystemExit("Decrypted test payload did not match")
+          print("AES_256_GCM_CLOUD_DECRYPTION=PASS")
+          print("PLAINTEXT=TEST_FIXTURE_ONLY")
+          PY
