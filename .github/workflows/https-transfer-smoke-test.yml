@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   receiver:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Start one-use HTTPS receiver
@@ -67,7 +67,7 @@ jobs:
           echo $! > /tmp/cloudflared.pid
           URL=''
           for i in $(seq 1 60); do
-            URL="$(grep -Eo 'https://[a-zA-Z0-9.-]+\\.trycloudflare\\.com' /tmp/cloudflared.log | head -n 1 || true)"
+            URL="$(grep -Eo 'https://[[:alnum:].-]+[.]trycloudflare[.]com' /tmp/cloudflared.log | head -n 1 || true)"
             [ -n "$URL" ] && break
             sleep 2
           done
