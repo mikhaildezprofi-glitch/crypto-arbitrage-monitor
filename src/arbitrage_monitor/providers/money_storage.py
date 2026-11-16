@@ -1,4 +1,4 @@
-"""Read-only parsing of Money Storage public USDT -> ECR offers."""
+"""Read-only parsing and averaging of Money Storage public USDT -> ECR offers."""
 
 from __future__ import annotations
 
@@ -7,10 +7,15 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Mapping
 
+from ..models import Quote
+
+MONEY_STORAGE_PAGE_SIZE = 20
+MONEY_STORAGE_POLL_SECONDS = 900
+
 
 @dataclass(frozen=True)
 class MoneyStorageOffer:
-    """One discrete public offer, normalized to the accepting user's direction."""
+    """One public offer, normalized to the accepting user's direction."""
 
     give_amount: Decimal
     give_currency: str
@@ -42,15 +47,11 @@ def _decimal(value: Any, field: str, *, optional: bool = False) -> Decimal | Non
 
 
 def parse_public_offer(row: Mapping[str, Any]) -> MoneyStorageOffer:
-    """Map raw API fields to the UI direction for a public offer.
+    """Normalize raw API fields to the displayed 'Мне предлагают' direction.
 
-    Money Storage renders non-owned offers with dst as Give and src as Receive.
-    Thus a UI offer USDT -> ECR arrives in the API as src=ECR, dst=USDT.
-    This parser preserves the displayed commission as source information.
-    For the monitored "Мне предлагают" direction, the user accepts another
-    party's offer and the offer creator/seller pays this commission. It is
-    therefore not an expense of the accepting user. The parser does not
-    infer fee settlement from raw amount fields.
+    For displayed USDT -> ECR offers, raw API fields are src=ECR and dst=USDT.
+    The offer creator/seller pays the displayed commission when we accept,
+    so this commission is retained as source information, not charged here.
     """
     if not isinstance(row, Mapping):
         raise TypeError("Money Storage offer must be a mapping.")
@@ -101,7 +102,7 @@ def parse_public_offer(row: Mapping[str, Any]) -> MoneyStorageOffer:
 
 
 def parse_public_offers(payload: Mapping[str, Any]) -> tuple[MoneyStorageOffer, ...]:
-    """Return all discrete public offers for the target displayed direction."""
+    """Parse target-direction offers from one API page, preserving row order."""
     if not isinstance(payload, Mapping):
         raise TypeError("Money Storage response must be a mapping.")
     rows = payload.get("data")
@@ -124,73 +125,44 @@ def parse_public_offers(payload: Mapping[str, Any]) -> tuple[MoneyStorageOffer, 
 def parse_public_offer_pages(
     pages: list[Mapping[str, Any]] | tuple[Mapping[str, Any], ...],
 ) -> tuple[MoneyStorageOffer, ...]:
-    """Parse sequential API pages without merging or deduplicating offers.
-
-    The current public UI requests 20 records per page and advances offset by
-    20 when the user scrolls. Callers must fetch subsequent pages explicitly;
-    this pure helper only normalizes pages already obtained.
-    """
+    """Parse pages already fetched, preserving their order and repeated rows."""
     offers: list[MoneyStorageOffer] = []
     for page in pages:
         offers.extend(parse_public_offers(page))
     return tuple(offers)
 
 
-
-def select_best_affordable_offer(
+def average_first_20_offer_rate(
     offers: tuple[MoneyStorageOffer, ...] | list[MoneyStorageOffer],
-    budget_usdt: Decimal,
     *,
-    max_age_seconds: int = 900,
-    now: datetime | None = None,
-) -> MoneyStorageOffer:
-    """Select one fresh, discrete offer affordable within the USDT budget.
+    observed_at: datetime | None = None,
+) -> Quote:
+    """Build the Money Storage quote as the arithmetic mean of the first 20 offers.
 
-    This evaluates only the supplied offers. It never combines offers, assumes
-    partial fills, or treats an incomplete page set as the whole market.
-    Highest ECR-per-USDT rate wins; ties prefer the newest offer, then the
-    smallest USDT amount to preserve more unspent starting capital.
+    No offer amounts are summed, no individual offer is selected, and no
+    purchase or execution is implied. The quote timestamp is the observation
+    time of this polling cycle, not the creation time of an individual offer.
     """
-    if budget_usdt <= 0:
-        raise ValueError("Money Storage budget must be positive.")
-    if max_age_seconds < 0:
-        raise ValueError("Maximum Money Storage offer age cannot be negative.")
+    selected = tuple(offers[:MONEY_STORAGE_PAGE_SIZE])
+    if not selected:
+        raise ValueError("Money Storage returned no USDT/ECR offers to average.")
 
-    current = now or datetime.now(timezone.utc)
-    if current.tzinfo is None:
-        current = current.replace(tzinfo=timezone.utc)
+    for offer in selected:
+        if offer.pair != "USDT/ECR" or offer.rate <= 0:
+            raise ValueError("Money Storage average contains an invalid offer.")
+
+    average_rate = sum((offer.rate for offer in selected), Decimal("0")) / Decimal(len(selected))
+    timestamp = observed_at or datetime.now(timezone.utc)
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
     else:
-        current = current.astimezone(timezone.utc)
+        timestamp = timestamp.astimezone(timezone.utc)
 
-    eligible: list[MoneyStorageOffer] = []
-    for offer in offers:
-        if offer.give_currency != "USDT" or offer.receive_currency != "ECR":
-            continue
-        if offer.give_amount <= 0 or offer.receive_amount <= 0 or offer.rate <= 0:
-            continue
-        created_at = offer.created_at
-        if created_at.tzinfo is None:
-            created_at = created_at.replace(tzinfo=timezone.utc)
-        else:
-            created_at = created_at.astimezone(timezone.utc)
-        age = (current - created_at).total_seconds()
-        if age < 0 or age > max_age_seconds:
-            continue
-        if offer.give_amount <= budget_usdt:
-            eligible.append(offer)
-
-    if not eligible:
-        raise ValueError(
-            "No fresh, discrete Money Storage USDT/ECR offer fits the available budget."
-        )
-
-    return max(
-        eligible,
-        key=lambda offer: (
-            offer.rate,
-            offer.created_at.replace(tzinfo=timezone.utc)
-            if offer.created_at.tzinfo is None
-            else offer.created_at.astimezone(timezone.utc),
-            -offer.give_amount,
-        ),
+    return Quote(
+        source="money_storage",
+        pair="USDT/ECR",
+        base_currency="USDT",
+        quote_currency="ECR",
+        rate=average_rate,
+        observed_at=timestamp,
     )
