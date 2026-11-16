@@ -17,6 +17,14 @@ REQUIRED_PROVIDER_KEYS = (
     "sberkassa_exchange",
 )
 
+EXPECTED_PAIRS = {
+    "money_storage": ("USDT", "ECR"),
+    "blackbit": ("ECR", "USDT"),
+    "winance": ("ERUB", "USDT"),
+    "sberkassa_sell": ("ERUB", "RUB"),
+    "sberkassa_exchange": ("RUB", "USDT"),
+}
+
 
 @dataclass(frozen=True)
 class QuoteBatch:
@@ -46,6 +54,15 @@ def collect_quotes(
             quote = provider.fetch_quote()
             if not isinstance(quote, Quote):
                 raise TypeError("Provider did not return a Quote instance.")
+            if quote.rate <= 0:
+                raise ValueError("Provider returned a non-positive quote rate.")
+            expected_pair = EXPECTED_PAIRS[key]
+            actual_pair = (quote.base_currency, quote.quote_currency)
+            if actual_pair != expected_pair:
+                raise ValueError(
+                    f"Provider returned {quote.pair} ({actual_pair[0]}/{actual_pair[1]}); "
+                    f"expected {expected_pair[0]}/{expected_pair[1]}."
+                )
             quotes[key] = quote
         except Exception as exc:
             errors[key] = f"{type(exc).__name__}: {exc}"
