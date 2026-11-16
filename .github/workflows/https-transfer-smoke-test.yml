@@ -98,15 +98,19 @@ jobs:
           echo 'TEMPORARY_RECEIVER_READY=1'
           echo "TERMUX_COMMAND=$COMMAND"
           echo 'The command above is a one-use test request, not an account credential.'
-          for i in $(seq 1 600); do
+          echo 'Sending an automated smoke-test payload through the public HTTPS tunnel.'
+          RESPONSE="$(curl --retry 10 --retry-connrefused --retry-delay 2 -fsS -X POST "$URL/upload/$TOKEN" -H 'Content-Type: application/json' --data '{"test":"https-transfer-smoke-test","source":"github-actions","value":123}')"
+          echo "HTTPS_RECEIVER_RESPONSE=$RESPONSE"
+          for i in $(seq 1 10); do
             if grep -q 'HTTPS_PAYLOAD_RECEIVED=PASS' /tmp/receiver.log 2>/dev/null; then
               cat /tmp/receiver.log
+              echo 'HTTPS_TUNNEL_SMOKE_TEST=PASS'
               exit 0
             fi
-            if ! kill -0 "$(cat /tmp/receiver.pid)" 2>/dev/null; then break; fi
             sleep 1
           done
-          echo 'Receiver timed out or stopped before receiving the test payload.'
+          echo 'Receiver did not confirm the smoke-test payload.'
+          cat /tmp/receiver.log || true
           exit 1
         env:
           PYTHONUNBUFFERED: '1'
