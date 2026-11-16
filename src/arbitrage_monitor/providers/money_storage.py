@@ -116,3 +116,18 @@ def parse_public_offers(payload: Mapping[str, Any]) -> tuple[MoneyStorageOffer, 
         if pair == ("ECR", "USDT"):
             offers.append(parse_public_offer(row))
     return tuple(offers)
+
+
+def parse_public_offer_pages(
+    pages: list[Mapping[str, Any]] | tuple[Mapping[str, Any], ...],
+) -> tuple[MoneyStorageOffer, ...]:
+    """Parse sequential API pages without merging or deduplicating offers.
+
+    The current public UI requests 20 records per page and advances offset by
+    20 when the user scrolls. Callers must fetch subsequent pages explicitly;
+    this pure helper only normalizes pages already obtained.
+    """
+    offers: list[MoneyStorageOffer] = []
+    for page in pages:
+        offers.extend(parse_public_offers(page))
+    return tuple(offers)
