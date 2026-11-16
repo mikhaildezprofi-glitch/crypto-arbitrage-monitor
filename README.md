@@ -16,6 +16,7 @@ Starting capital: 1000 USDT. Winance polling interval: 300 seconds.
 - BlackBit output is labelled indicative and is not represented as executable or guaranteed profit.
 - Do not use Winance ERUB/RUB.
 - Do not silently reuse stale quotes. A missing or stale quote makes the full-route result unavailable.
+- Reject quote timestamps that lie in the future; naive timestamps are interpreted as UTC for consistent age checks.
 - Fees are configured per step; unknown fees must remain explicitly unknown rather than assumed to be zero.
 - Credentials and authenticated browser sessions must never be committed, sent to Telegram, or copied to cloud logs.
 
