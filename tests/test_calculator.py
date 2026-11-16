@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import unittest
 
@@ -7,14 +7,14 @@ from arbitrage_monitor.models import Quote, RouteStep
 
 
 class CalculatorTests(unittest.TestCase):
-    def quote(self, base, quote, rate, indicative=False):
+    def quote(self, base, quote, rate, indicative=False, observed_at=None):
         return Quote(
             source="test",
             pair=f"{base}/{quote}",
             base_currency=base,
             quote_currency=quote,
             rate=Decimal(rate),
-            observed_at=datetime.now(timezone.utc),
+            observed_at=observed_at or datetime.now(timezone.utc),
             indicative_only=indicative,
         )
 
@@ -42,6 +42,15 @@ class CalculatorTests(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             calculate_route(Decimal("1000"), "USDT", (step,))
+
+    def test_stale_quote_blocks_full_route(self):
+        old = datetime.now(timezone.utc) - timedelta(hours=1)
+        step = RouteStep(
+            "Old quote", "USDT", "ERUB", self.quote("ERUB", "USDT", "0.04", observed_at=old),
+            Decimal("0"), False
+        )
+        with self.assertRaisesRegex(ValueError, "stale"):
+            calculate_route(Decimal("1000"), "USDT", (step,), max_quote_age_seconds=900)
 
 
 if __name__ == "__main__":
