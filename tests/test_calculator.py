@@ -43,6 +43,24 @@ class CalculatorTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             calculate_route(Decimal("1000"), "USDT", (step,))
 
+    def test_future_quote_timestamp_blocks_full_route(self):
+        future = datetime.now(timezone.utc) + timedelta(minutes=5)
+        step = RouteStep(
+            "Future quote", "USDT", "ERUB",
+            self.quote("ERUB", "USDT", "0.04", observed_at=future),
+            Decimal("0"), False
+        )
+        with self.assertRaisesRegex(ValueError, "stale"):
+            calculate_route(Decimal("1000"), "USDT", (step,))
+
+    def test_naive_and_aware_timestamps_are_compared_as_utc(self):
+        now = datetime(2026, 11, 16, 12, 0, tzinfo=timezone.utc)
+        quote = self.quote(
+            "ERUB", "USDT", "0.04",
+            observed_at=datetime(2026, 11, 16, 11, 59)
+        )
+        self.assertEqual(quote.age_seconds(now), 60)
+
     def test_stale_quote_blocks_full_route(self):
         old = datetime.now(timezone.utc) - timedelta(hours=1)
         step = RouteStep(
