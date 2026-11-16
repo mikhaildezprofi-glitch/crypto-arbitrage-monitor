@@ -22,7 +22,7 @@ Starting capital: 1000 USDT. Winance polling interval: 300 seconds.
 
 ## Current implementation status
 
-This repository starts with the calculation core and public Winance quote adapter. Other exchange adapters, Telegram delivery, persistent history, and deployment are not yet implemented.
+This repository includes the calculation core, public Winance quote adapter, a common read-only provider protocol, and a quote collector. The collector requests all five configured source keys independently, records per-source failures, and marks the batch incomplete when any required provider is missing or fails. It never substitutes a previous quote. Other exchange adapters, Telegram delivery, persistent history, and deployment are not yet implemented.
 
 ## Run tests
 
