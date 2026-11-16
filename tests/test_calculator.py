@@ -87,6 +87,22 @@ class CalculatorTests(unittest.TestCase):
         )
         self.assertTrue(steps[1].indicative_only)
         self.assertFalse(steps[2].indicative_only)
+        self.assertEqual(steps[0].fee_percent, Decimal("0"))
+
+    def test_accepting_money_storage_offer_does_not_charge_seller_commission(self):
+        quotes = {
+            "money_storage": self.quote("USDT", "ECR", "0.29154519"),
+            "blackbit": self.quote("ECR", "USDT", "3.43", indicative=True),
+            "winance": self.quote("ERUB", "USDT", "0.04"),
+            "sberkassa_sell": self.quote("ERUB", "RUB", "1"),
+            "sberkassa_exchange": self.quote("RUB", "USDT", "1"),
+        }
+        # Even if a caller supplies the observed seller-side 0.5% commission,
+        # it must not be applied to the accepting user's route.
+        fees = {key: Decimal("0") for key in quotes}
+        fees["money_storage"] = Decimal("0.5")
+        steps = five_step_route(quotes, fees)
+        self.assertEqual(steps[0].fee_percent, Decimal("0"))
 
     def test_five_step_route_rejects_missing_source_quote(self):
         with self.assertRaisesRegex(ValueError, "Missing quote: blackbit"):
