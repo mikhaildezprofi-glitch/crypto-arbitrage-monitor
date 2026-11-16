@@ -134,3 +134,63 @@ def parse_public_offer_pages(
     for page in pages:
         offers.extend(parse_public_offers(page))
     return tuple(offers)
+
+
+
+def select_best_affordable_offer(
+    offers: tuple[MoneyStorageOffer, ...] | list[MoneyStorageOffer],
+    budget_usdt: Decimal,
+    *,
+    max_age_seconds: int = 900,
+    now: datetime | None = None,
+) -> MoneyStorageOffer:
+    """Select one fresh, discrete offer affordable within the USDT budget.
+
+    This evaluates only the supplied offers. It never combines offers, assumes
+    partial fills, or treats an incomplete page set as the whole market.
+    Highest ECR-per-USDT rate wins; ties prefer the newest offer, then the
+    smallest USDT amount to preserve more unspent starting capital.
+    """
+    if budget_usdt <= 0:
+        raise ValueError("Money Storage budget must be positive.")
+    if max_age_seconds < 0:
+        raise ValueError("Maximum Money Storage offer age cannot be negative.")
+
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    else:
+        current = current.astimezone(timezone.utc)
+
+    eligible: list[MoneyStorageOffer] = []
+    for offer in offers:
+        if offer.give_currency != "USDT" or offer.receive_currency != "ECR":
+            continue
+        if offer.give_amount <= 0 or offer.receive_amount <= 0 or offer.rate <= 0:
+            continue
+        created_at = offer.created_at
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        else:
+            created_at = created_at.astimezone(timezone.utc)
+        age = (current - created_at).total_seconds()
+        if age < 0 or age > max_age_seconds:
+            continue
+        if offer.give_amount <= budget_usdt:
+            eligible.append(offer)
+
+    if not eligible:
+        raise ValueError(
+            "No fresh, discrete Money Storage USDT/ECR offer fits the available budget."
+        )
+
+    return max(
+        eligible,
+        key=lambda offer: (
+            offer.rate,
+            offer.created_at.replace(tzinfo=timezone.utc)
+            if offer.created_at.tzinfo is None
+            else offer.created_at.astimezone(timezone.utc),
+            -offer.give_amount,
+        ),
+    )
