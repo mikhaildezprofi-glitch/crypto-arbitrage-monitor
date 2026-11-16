@@ -4,6 +4,7 @@ from decimal import Decimal
 from arbitrage_monitor.providers.money_storage import (
     parse_public_offer,
     parse_public_offers,
+    parse_public_offer_pages,
 )
 
 
