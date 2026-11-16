@@ -76,6 +76,25 @@ class WinanceProviderTests(unittest.TestCase):
         with self.assertRaises(WinanceQuoteError):
             parse_winance_response(payload, self.observed_at)
 
+    def test_rejects_pair_id_with_conflicting_currency_fields(self):
+        payload = {
+            "currency_pairs": [
+                {
+                    "id": "18",
+                    "base_currency": "ERUB",
+                    "quoted_currency": "RUB",
+                    "rate": 3.0,
+                },
+            ]
+        }
+        with self.assertRaises(WinanceQuoteError):
+            parse_winance_response(payload, self.observed_at)
+
+    def test_rejects_pair_id_without_any_pair_identity_fields(self):
+        payload = {"currency_pairs": [{"id": "18", "rate": 0.037335}]}
+        with self.assertRaises(WinanceQuoteError):
+            parse_winance_response(payload, self.observed_at)
+
     def test_rejects_missing_or_nonpositive_rate(self):
         payload = {
             "currency_pairs": [
