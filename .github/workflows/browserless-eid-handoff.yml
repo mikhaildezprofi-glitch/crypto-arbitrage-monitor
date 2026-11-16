@@ -1,4 +1,4 @@
-name: Browserless E-ID handoff
+name: Free E-ID cloud browser
 
 on:
   workflow_dispatch:
@@ -6,79 +6,130 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: free-eid-cloud-browser
+  cancel-in-progress: true
+
 jobs:
-  create-live-browser:
+  cloud-browser:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 45
     steps:
-      - name: Create temporary E-ID browser session
-        env:
-          BROWSERLESS_TOKEN: ${{ secrets.BROWSERLESS_TOKEN }}
+      - name: Install temporary browser and remote display
+        shell: bash
         run: |
-          python - <<'PY'
-          import json
-          import os
-          import sys
-          import urllib.request
-          from pathlib import Path
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y xvfb x11vnc novnc websockify curl
+          python3 -m pip install --break-system-packages playwright
+          python3 -m playwright install --with-deps chromium
 
-          token = os.environ.get("BROWSERLESS_TOKEN", "").strip()
-          if not token:
-              print("Missing repository secret BROWSERLESS_TOKEN.", file=sys.stderr)
-              sys.exit(1)
+      - name: Start protected remote browser
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
 
-          endpoint = "https://production-sfo.browserless.io/chromium/bql?token=" + token
-          query = """mutation StartHandoff {
-            goto(url: "https://e-id.cards/login", waitUntil: domContentLoaded) {
-              status
-            }
-            liveURL(
-              timeout: 90000
-              detached: true
-              instructions: "Войдите самостоятельно. CAPTCHA проходите вручную. Не отправляйте пароль или коды кому-либо. После завершения нажмите Done."
-              instructionsTitle: "Вход через E-ID"
-              doneLabel: "Готово"
-            ) {
-              liveURL
-              timeout
-            }
-            reconnect(timeout: 115000) {
-              browserQLEndpoint
-            }
-          }"""
+          # VNC's classic password authentication uses only the first 8 characters.
+          VNC_PASSWORD="$(python3 -c 'import secrets,string; print("".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(8)))')"
+          printf '%s' "$VNC_PASSWORD" > /tmp/eid-vnc-password
 
-          payload = json.dumps({"query": query}).encode()
-          req = urllib.request.Request(
-              endpoint,
-              data=payload,
-              headers={"Content-Type": "application/json"},
-              method="POST",
-          )
-          try:
-              with urllib.request.urlopen(req, timeout=30) as response:
-                  result = json.loads(response.read().decode())
-          except Exception as exc:
-              print("Browserless request failed: " + type(exc).__name__, file=sys.stderr)
-              sys.exit(1)
+          Xvfb :99 -screen 0 1440x900x24 -ac +extension RANDR >/tmp/xvfb.log 2>&1 &
+          echo $! >/tmp/xvfb.pid
+          for i in $(seq 1 30); do
+            if xdpyinfo -display :99 >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          xdpyinfo -display :99 >/dev/null
 
-          if result.get("errors"):
-              print("BrowserQL returned an error. Check the workflow logs; no credentials were submitted.")
-              sys.exit(1)
+          x11vnc -display :99 -rfbport 5900 -forever -shared -repeat -noxdamage -passwd "$VNC_PASSWORD" >/tmp/x11vnc.log 2>&1 &
+          echo $! >/tmp/x11vnc.pid
 
-          data = result.get("data") or {}
-          live_url = (data.get("liveURL") or {}).get("liveURL")
-          reconnect = (data.get("reconnect") or {}).get("browserQLEndpoint")
-          status = (data.get("goto") or {}).get("status")
-          if not live_url or not reconnect:
-              print("Browserless did not return the required handoff fields.")
-              sys.exit(1)
+          websockify --web=/usr/share/novnc 6080 127.0.0.1:5900 >/tmp/websockify.log 2>&1 &
+          echo $! >/tmp/websockify.pid
 
-          summary = os.environ.get("GITHUB_STEP_SUMMARY")
-          with open(summary, "a", encoding="utf-8") as f:
-              f.write("# Временный облачный браузер\n\n")
-              f.write(f"- Страница E-ID открыта, HTTP: {status}\n")
-              f.write("- Ссылка действует до 90 секунд. Сессия Browserless ограничена двумя минутами на бесплатном тарифе.\n\n")
-              f.write(f"[Открыть облачный браузер]({live_url})\n\n")
-              f.write("> Ссылка является секретом доступа к браузеру. Не пересылайте её и не публикуйте. Если срок истёк, запустите workflow ещё раз.\n")
-          print("Live browser created. Open the link in the workflow Summary; the URL is intentionally not printed to logs.")
+          cat >/tmp/launch_eid_browser.py <<'PY'
+          import time
+          from playwright.sync_api import sync_playwright
+
+          with sync_playwright() as p:
+              browser = p.chromium.launch(
+                  headless=False,
+                  args=["--no-sandbox", "--disable-dev-shm-usage", "--start-maximized"]
+              )
+              context = browser.new_context(viewport={"width": 1440, "height": 900})
+              page = context.new_page()
+              page.goto("https://e-id.cards/login", wait_until="domcontentloaded", timeout=60000)
+              print("E-ID page loaded. Browser will remain open for the handoff window.", flush=True)
+              time.sleep(1800)
+              browser.close()
           PY
+
+          DISPLAY=:99 nohup python3 /tmp/launch_eid_browser.py >/tmp/eid-browser.log 2>&1 &
+          echo $! >/tmp/eid-browser.pid
+
+          curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /tmp/cloudflared
+          sudo install -m 0755 /tmp/cloudflared /usr/local/bin/cloudflared
+          nohup cloudflared tunnel --no-autoupdate --url http://127.0.0.1:6080 >/tmp/cloudflared.log 2>&1 &
+          echo $! >/tmp/cloudflared.pid
+
+          TUNNEL_URL=""
+          for i in $(seq 1 60); do
+            TUNNEL_URL="$(grep -Eo 'https://[a-zA-Z0-9.-]+\.trycloudflare\.com' /tmp/cloudflared.log | head -n 1 || true)"
+            if [ -n "$TUNNEL_URL" ]; then break; fi
+            if ! kill -0 "$(cat /tmp/cloudflared.pid)" 2>/dev/null; then
+              echo "Cloudflare Quick Tunnel stopped unexpectedly."
+              tail -n 30 /tmp/cloudflared.log
+              exit 1
+            fi
+            sleep 2
+          done
+
+          if [ -z "$TUNNEL_URL" ]; then
+            echo "Could not obtain the temporary Cloudflare URL."
+            tail -n 30 /tmp/cloudflared.log
+            exit 1
+          fi
+
+          if ! curl -fsS --max-time 15 http://127.0.0.1:6080/vnc.html >/dev/null; then
+            echo "noVNC web interface did not become ready."
+            exit 1
+          fi
+
+          {
+            echo "# Временный облачный браузер E-ID"
+            echo
+            echo "**Сессия доступна примерно 30 минут с момента появления этой ссылки.**"
+            echo
+            echo "1. Открой ссылку ниже в Chrome на телефоне."
+            echo "2. Нажми Connect, если подключение не началось автоматически."
+            echo "3. Введи пароль удалённого экрана из этого Summary."
+            echo "4. Управляй браузером E-ID внутри удалённого экрана. Ссылка подтверждения должна открываться в этом же браузере."
+            echo
+            echo "**Пароль удалённого экрана:** `$VNC_PASSWORD`"
+            echo
+            echo "[Открыть облачный браузер]($TUNNEL_URL/vnc.html?autoconnect=true&resize=scale&quality=6&compression=2)"
+            echo
+            echo "> Ссылка и пароль дают доступ к активной браузерной сессии. Не пересылай их и не публикуй. Не вводи пароль E-ID в GitHub."
+            echo
+            echo "После завершения закрой эту страницу. Облачный компьютер автоматически остановится по окончании окна сессии."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "Temporary remote browser is ready. Connection details are only in the private workflow summary."
+
+      - name: Keep the browser available for manual E-ID confirmation
+        shell: bash
+        run: |
+          echo "The temporary browser remains available for up to 30 minutes."
+          sleep 1800
+
+      - name: Stop temporary browser services
+        if: always()
+        shell: bash
+        run: |
+          for file in /tmp/eid-browser.pid /tmp/websockify.pid /tmp/x11vnc.pid /tmp/xvfb.pid /tmp/cloudflared.pid; do
+            if [ -f "$file" ]; then
+              kill "$(cat "$file")" 2>/dev/null || true
+            fi
+          done
+          rm -f /tmp/eid-vnc-password
