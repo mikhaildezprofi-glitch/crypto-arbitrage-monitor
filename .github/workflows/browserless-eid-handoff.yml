@@ -50,7 +50,12 @@ jobs:
 
           cat >/tmp/launch_eid_browser.py <<'PY'
           import time
+          from pathlib import Path
+          from urllib.parse import urlparse
           from playwright.sync_api import sync_playwright
+
+          status_file = Path("/tmp/eid-auth-status")
+          status_file.write_text("WAITING_FOR_LOGIN", encoding="utf-8")
 
           with sync_playwright() as p:
               browser = p.chromium.launch(
@@ -59,9 +64,36 @@ jobs:
               )
               context = browser.new_context(viewport={"width": 1440, "height": 900})
               page = context.new_page()
-              page.goto("https://e-id.cards/login", wait_until="domcontentloaded", timeout=60000)
-              print("E-ID page loaded. Browser will remain open for the handoff window.", flush=True)
-              time.sleep(1800)
+
+              # Start the actual Money Storage E-ID authorization flow.
+              # Opening e-id.cards/login directly omits the OAuth redirect state.
+              page.goto(
+                  "https://storage.money/oauth/authorize/eid",
+                  wait_until="domcontentloaded",
+                  timeout=60000
+              )
+              print("Money Storage E-ID authorization flow opened.", flush=True)
+
+              deadline = time.monotonic() + 1800
+              authenticated = False
+              while time.monotonic() < deadline:
+                  try:
+                      current = urlparse(page.url)
+                      if current.scheme == "https" and current.netloc.lower() == "storage.money" and current.path.rstrip("/") == "/account":
+                          status_file.write_text("ACCOUNT_REACHED", encoding="utf-8")
+                          print("AUTH_STATUS=ACCOUNT_REACHED", flush=True)
+                          authenticated = True
+                          break
+                  except Exception:
+                      pass
+                  time.sleep(2)
+
+              if not authenticated:
+                  status_file.write_text("TIMEOUT_NOT_RETURNED_TO_ACCOUNT", encoding="utf-8")
+                  print("AUTH_STATUS=TIMEOUT_NOT_RETURNED_TO_ACCOUNT", flush=True)
+
+              # Keep the browser open for the remaining handoff window.
+              time.sleep(max(0, deadline - time.monotonic()))
               browser.close()
           PY
 
@@ -168,11 +200,40 @@ jobs:
             echo "Открой скачанный файл на телефоне. В нём находятся адрес облачного браузера и пароль экрана."
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Keep the browser available for manual E-ID confirmation
+      - name: Wait for Money Storage account redirect
         shell: bash
         run: |
-          echo "The temporary browser remains available for up to 30 minutes."
-          sleep 1800
+          set -euo pipefail
+          echo "Waiting for the E-ID flow to return to https://storage.money/account."
+          for i in $(seq 1 900); do
+            if [ -f /tmp/eid-auth-status ]; then
+              STATUS="$(cat /tmp/eid-auth-status)"
+              if [ "$STATUS" = "ACCOUNT_REACHED" ]; then
+                {
+                  echo
+                  echo "## Авторизация Money Storage"
+                  echo
+                  echo "<badge>Адрес аккаунта достигнут</badge>"
+                  echo "Удалённый браузер перешёл на https://storage.money/account."
+                } >> "$GITHUB_STEP_SUMMARY"
+                echo "Money Storage account redirect detected."
+                exit 0
+              fi
+              if [ "$STATUS" = "TIMEOUT_NOT_RETURNED_TO_ACCOUNT" ]; then
+                {
+                  echo
+                  echo "## Авторизация Money Storage"
+                  echo
+                  echo "За время сессии браузер не вернулся на https://storage.money/account."
+                  echo "Проверь страницу E-ID в удалённом браузере. Возможны незавершённая проверка, отказ или ошибка входа."
+                } >> "$GITHUB_STEP_SUMMARY"
+                echo "E-ID flow did not return to the account page."
+                exit 0
+              fi
+            fi
+            sleep 2
+          done
+          echo "Browser session monitoring window ended."
 
       - name: Stop temporary browser services
         if: always()
