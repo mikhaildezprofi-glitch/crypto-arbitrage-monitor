@@ -4,7 +4,7 @@
 
 Live cloud polling is **blocked** until Money Storage provides a supported server-side read-access method.
 
-The repository currently contains a pure parser and quote builder. They do not make HTTP requests and do not authenticate. The frontend JavaScript exposes the public-deals route:
+The repository contains a pure parser, quote builder, and a configurable HTTPS read-only provider (`MoneyStorageQuoteProvider`). The provider requests only `offset=0&limit=20`, requires explicit `from`/`to` filters, validates the `result=ok` response envelope, and fails closed on HTTP/auth/rate-limit errors. It does not support browser cookies, session tokens, or credentials. It has not yet been demonstrated to retrieve live offers from the cloud. The frontend JavaScript exposes the public-deals route:
 
 - `GET /public_deals/fetch`
 - Query fields used by the frontend: `offset`, `limit`, `from`, `to`
@@ -37,7 +37,7 @@ Do not use browser cookies, session tokens, OAuth authorization codes, browser s
 
 ## Scheduling and persistence
 
-Do not enable a scheduled job while the endpoint cannot be accessed through an approved server-side method. A cron job that repeatedly receives 401/429 is not live quote monitoring.
+Do not enable a scheduled job while the endpoint cannot be accessed from the cloud. The provider deliberately makes one request per call and does not retry 401/429. A cron job that repeatedly receives access errors is not live quote monitoring. The `MONEY_STORAGE_FROM` and `MONEY_STORAGE_TO` filters are intentionally blank in `.env.example` until their exact values for the desired UI direction are confirmed.
 
 Once access is approved, implement a cloud polling worker at 900-second intervals, persist the latest quote and observation timestamp, expose explicit source health/error state, and feed only fresh quotes into the route collector. Keep credentials in the cloud provider's secret store and out of repository files, Telegram messages, and logs.
 
