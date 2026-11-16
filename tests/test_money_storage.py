@@ -5,6 +5,7 @@ from decimal import Decimal
 from arbitrage_monitor.providers.money_storage import (
     MONEY_STORAGE_PAGE_SIZE,
     MONEY_STORAGE_POLL_SECONDS,
+    MoneyStorageQuoteProvider,
     average_first_20_offer_rate,
     parse_public_offer,
     parse_public_offers,
@@ -117,3 +118,34 @@ class MoneyStorageParserTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MoneyStorageHttpProviderTests(unittest.TestCase):
+    def test_requires_explicit_currency_filters_and_https(self):
+        with self.assertRaisesRegex(ValueError, "filters are required"):
+            MoneyStorageQuoteProvider(from_currency="", to_currency="USDT")
+        with self.assertRaisesRegex(ValueError, "HTTPS"):
+            MoneyStorageQuoteProvider(
+                from_currency="ECR", to_currency="USDT", endpoint="http://storage.money/public_deals/fetch"
+            )
+
+    def test_unauthorized_response_fails_closed_without_quote(self):
+        from urllib.error import HTTPError
+        from unittest.mock import patch
+
+        provider = MoneyStorageQuoteProvider(from_currency="ECR", to_currency="USDT")
+        error = HTTPError(provider.endpoint, 401, "Unauthorized", {}, None)
+        with patch("urllib.request.urlopen", side_effect=error):
+            with self.assertRaisesRegex(RuntimeError, "requires authentication"):
+                provider.fetch_quote()
+
+    def test_rate_limit_response_is_not_retried(self):
+        from urllib.error import HTTPError
+        from unittest.mock import patch
+
+        provider = MoneyStorageQuoteProvider(from_currency="ECR", to_currency="USDT")
+        error = HTTPError(provider.endpoint, 429, "Too Many Requests", {}, None)
+        with patch("urllib.request.urlopen", side_effect=error) as mocked:
+            with self.assertRaisesRegex(RuntimeError, "no retry was attempted"):
+                provider.fetch_quote()
+        self.assertEqual(mocked.call_count, 1)
