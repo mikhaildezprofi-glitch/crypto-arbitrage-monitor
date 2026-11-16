@@ -67,7 +67,7 @@ def parse_public_offer(row: Mapping[str, Any]) -> MoneyStorageOffer:
     commission = _decimal(row.get("commission"), "commission", optional=True)
     commission_currency = row.get("commission_currency")
     if commission_currency is not None:
-        commission_currency = str(commission_currency).upper()
+        commission_currency = str(commission_currency).strip().upper() or None
 
     if give_amount <= 0 or receive_amount <= 0:
         raise ValueError("Money Storage offer amounts must be positive.")
