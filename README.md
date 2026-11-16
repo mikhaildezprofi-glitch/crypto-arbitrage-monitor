@@ -25,15 +25,13 @@ This repository starts with the calculation core and public Winance quote adapte
 
 ## Run tests
 
-```bash
-python -m unittest discover -s tests -v
-```
+    PYTHONPATH=src python -m unittest discover -s tests -v
 
 ## Configuration
 
 Environment variables:
-- `WINANCE_POLL_SECONDS` (default: 300)
-- `WINANCE_API_URL` (default: https://winance.exchange/site/currency_pairs)
-- `QUOTE_MAX_AGE_SECONDS` (default: 900)
+- WINANCE_POLL_SECONDS (default: 300)
+- WINANCE_API_URL (default: https://winance.exchange/site/currency_pairs)
+- QUOTE_MAX_AGE_SECONDS (default: 900)
 
 The Winance adapter is read-only and filters strictly for pair ID 18 / ERUB-USDT.
