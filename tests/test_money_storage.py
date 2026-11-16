@@ -72,5 +72,10 @@ class MoneyStorageParserTests(unittest.TestCase):
         self.assertEqual(offers[1].give_amount, Decimal("168.07"))
 
 
+    def test_rejects_empty_commission_currency(self):
+        with self.assertRaisesRegex(ValueError, "must be supplied together"):
+            parse_public_offer(raw_offer(commission="1", commission_currency=""))
+
+
 if __name__ == "__main__":
     unittest.main()
