@@ -130,7 +130,7 @@ jobs:
 
           BROWSER_READY=""
           for i in $(seq 1 60); do
-            if grep -q "E-ID page loaded" /tmp/eid-browser.log; then
+            if grep -q "Money Storage E-ID authorization flow opened." /tmp/eid-browser.log; then
               BROWSER_READY="yes"
               break
             fi
