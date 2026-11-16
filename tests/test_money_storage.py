@@ -1,7 +1,11 @@
 import unittest
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from arbitrage_monitor.providers.money_storage import (
+    MONEY_STORAGE_PAGE_SIZE,
+    MONEY_STORAGE_POLL_SECONDS,
+    average_first_20_offer_rate,
     parse_public_offer,
     parse_public_offers,
     parse_public_offer_pages,
@@ -14,8 +18,8 @@ def raw_offer(**overrides):
         "src_currency": "ECR",
         "dst_amount": "3430",
         "dst_currency": "USDT",
-        "rate": 0.29154519,
-        "back_rate": 3.43,
+        "rate": "0.29154519",
+        "back_rate": "3.43",
         "commission": "17.15",
         "commission_currency": "USDT",
         "create_time": 1794843483,
@@ -58,80 +62,57 @@ class MoneyStorageParserTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "must be supplied together"):
             parse_public_offer(raw_offer(commission_currency=None))
 
-    def test_extracts_only_target_direction_and_keeps_discrete_offers(self):
+    def test_extracts_only_target_direction_and_keeps_order(self):
         payload = {
             "data": [
-                raw_offer(),
-                raw_offer(dst_amount="168.07", src_amount="49", create_time=1794843994),
+                raw_offer(rate="0.29"),
+                raw_offer(dst_amount="168.07", src_amount="49", rate="0.30"),
                 raw_offer(src_currency="USDT", dst_currency="ECR"),
             ]
         }
         offers = parse_public_offers(payload)
         self.assertEqual(len(offers), 2)
-        self.assertEqual(offers[0].give_amount, Decimal("3430"))
-        self.assertEqual(offers[1].give_amount, Decimal("168.07"))
-
+        self.assertEqual(offers[0].rate, Decimal("0.29"))
+        self.assertEqual(offers[1].rate, Decimal("0.30"))
 
     def test_rejects_empty_commission_currency(self):
         with self.assertRaisesRegex(ValueError, "must be supplied together"):
             parse_public_offer(raw_offer(commission="1", commission_currency=""))
-
-    def test_selects_best_fresh_offer_that_fits_budget_without_combining(self):
-        from datetime import datetime, timezone
-        from arbitrage_monitor.providers.money_storage import select_best_affordable_offer
-
-        now = datetime.fromtimestamp(1794843483, tz=timezone.utc)
-        offers = parse_public_offers({
-            "data": [
-                raw_offer(dst_amount="3430", src_amount="1000", rate="0.29154519"),
-                raw_offer(dst_amount="168.07", src_amount="49", rate="0.29154519"),
-                raw_offer(dst_amount="900", src_amount="260", rate="0.28888889"),
-            ]
-        })
-        selected = select_best_affordable_offer(
-            offers, Decimal("1000"), max_age_seconds=900, now=now
-        )
-        # Same rate: newest timestamps are equal, so preserve more capital.
-        self.assertEqual(selected.give_amount, Decimal("168.07"))
-        self.assertEqual(selected.receive_amount, Decimal("49"))
-
-    def test_rejects_when_no_single_offer_fits_budget(self):
-        from datetime import datetime, timezone
-        from arbitrage_monitor.providers.money_storage import select_best_affordable_offer
-
-        offers = parse_public_offers({"data": [raw_offer(dst_amount="3430")]})
-        with self.assertRaisesRegex(ValueError, "No fresh, discrete"):
-            select_best_affordable_offer(
-                offers,
-                Decimal("1000"),
-                now=datetime.fromtimestamp(1794843483, tz=timezone.utc),
-            )
-
-    def test_does_not_select_stale_or_future_offers(self):
-        from datetime import datetime, timezone
-        from arbitrage_monitor.providers.money_storage import select_best_affordable_offer
-
-        offers = parse_public_offers({
-            "data": [
-                raw_offer(create_time=1794840000),
-                raw_offer(create_time=1794845000, dst_amount="100"),
-            ]
-        })
-        with self.assertRaisesRegex(ValueError, "No fresh, discrete"):
-            select_best_affordable_offer(
-                offers,
-                Decimal("1000"),
-                max_age_seconds=900,
-                now=datetime.fromtimestamp(1794843483, tz=timezone.utc),
-            )
 
     def test_parses_multiple_pages_without_deduplicating_offers(self):
         first = {"data": [raw_offer()]}
         second = {"data": [raw_offer()]}
         offers = parse_public_offer_pages([first, second])
         self.assertEqual(len(offers), 2)
-        self.assertEqual(offers[0].give_amount, offers[1].give_amount)
         self.assertEqual(offers[0].created_at, offers[1].created_at)
+
+    def test_average_is_arithmetic_mean_of_first_20_rates(self):
+        offers = tuple(
+            parse_public_offer(raw_offer(rate=str(Decimal("0.20") + Decimal(i) / 100)))
+            for i in range(25)
+        )
+        observed = datetime(2026, 11, 16, 12, 0, tzinfo=timezone.utc)
+        quote = average_first_20_offer_rate(offers, observed_at=observed)
+        expected = sum((offer.rate for offer in offers[:20]), Decimal("0")) / Decimal("20")
+        self.assertEqual(quote.rate, expected)
+        self.assertEqual(quote.pair, "USDT/ECR")
+        self.assertEqual(quote.observed_at, observed)
+
+    def test_average_accepts_short_page_and_uses_all_available_offers(self):
+        offers = (
+            parse_public_offer(raw_offer(rate="0.20")),
+            parse_public_offer(raw_offer(rate="0.30")),
+        )
+        quote = average_first_20_offer_rate(offers)
+        self.assertEqual(quote.rate, Decimal("0.25"))
+
+    def test_average_rejects_empty_offer_list(self):
+        with self.assertRaisesRegex(ValueError, "no USDT/ECR offers"):
+            average_first_20_offer_rate([])
+
+    def test_money_storage_polling_interval_is_15_minutes(self):
+        self.assertEqual(MONEY_STORAGE_POLL_SECONDS, 900)
+        self.assertEqual(MONEY_STORAGE_PAGE_SIZE, 20)
 
 
 if __name__ == "__main__":
