@@ -14,6 +14,13 @@ class QuoteStatus(StrEnum):
     UNAVAILABLE = "unavailable"
 
 
+def _as_utc(value: datetime) -> datetime:
+    """Normalize timestamps; naive timestamps are interpreted as UTC."""
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 @dataclass(frozen=True)
 class Quote:
     """A price expressed as quote_currency units per one base_currency."""
@@ -28,11 +35,12 @@ class Quote:
     source_pair_id: str | None = None
 
     def age_seconds(self, now: datetime | None = None) -> float:
-        current = now or datetime.now(timezone.utc)
-        observed = self.observed_at
-        if observed.tzinfo is None:
-            observed = observed.replace(tzinfo=timezone.utc)
-        return max(0.0, (current - observed).total_seconds())
+        current = _as_utc(now or datetime.now(timezone.utc))
+        observed = _as_utc(self.observed_at)
+        # A future observation timestamp is invalid, not a zero-age quote.
+        if observed > current:
+            return float("inf")
+        return (current - observed).total_seconds()
 
     def status(self, max_age_seconds: int, now: datetime | None = None) -> QuoteStatus:
         return QuoteStatus.FRESH if self.age_seconds(now) <= max_age_seconds else QuoteStatus.STALE
