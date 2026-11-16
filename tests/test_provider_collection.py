@@ -80,6 +80,40 @@ class QuoteCollectionTests(unittest.TestCase):
         self.assertNotIn("winance", batch.quotes)
         self.assertIn("Quote instance", batch.errors["winance"])
 
+    def test_rejects_wrong_currency_pair_for_provider_key(self):
+        providers = self.make_providers()
+        providers["winance"] = FakeProvider(
+            quote=Quote(
+                source="wrong",
+                pair="ERUB/RUB",
+                base_currency="ERUB",
+                quote_currency="RUB",
+                rate=Decimal("3"),
+                observed_at=self.make_providers()["winance"].quote.observed_at,
+            )
+        )
+        batch = collect_quotes(providers)
+        self.assertFalse(batch.complete)
+        self.assertNotIn("winance", batch.quotes)
+        self.assertIn("expected ERUB/USDT", batch.errors["winance"])
+
+    def test_rejects_non_positive_rate(self):
+        providers = self.make_providers()
+        providers["blackbit"] = FakeProvider(
+            quote=Quote(
+                source="BlackBit",
+                pair="ECR/USDT",
+                base_currency="ECR",
+                quote_currency="USDT",
+                rate=Decimal("0"),
+                observed_at=datetime.now(timezone.utc),
+            )
+        )
+        batch = collect_quotes(providers)
+        self.assertFalse(batch.complete)
+        self.assertNotIn("blackbit", batch.quotes)
+        self.assertIn("non-positive", batch.errors["blackbit"])
+
     def test_batch_mappings_are_read_only(self):
         batch = collect_quotes(self.make_providers())
         with self.assertRaises(TypeError):
