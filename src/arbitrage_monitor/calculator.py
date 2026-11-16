@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 
-from .models import Quote, RouteResult, RouteStep, StepResult
+from .models import Quote, QuoteStatus, RouteResult, RouteStep, StepResult
 
 
 def apply_step(amount: Decimal, step: RouteStep) -> StepResult:
@@ -18,13 +19,11 @@ def apply_step(amount: Decimal, step: RouteStep) -> StepResult:
         raise ValueError("Amount must be non-negative and quote rate must be positive.")
 
     if (step.input_currency, step.output_currency) == (
-        quote.base_currency,
-        quote.quote_currency,
+        quote.base_currency, quote.quote_currency,
     ):
         gross = amount * quote.rate
     elif (step.input_currency, step.output_currency) == (
-        quote.quote_currency,
-        quote.base_currency,
+        quote.quote_currency, quote.base_currency,
     ):
         gross = amount / quote.rate
     else:
@@ -50,11 +49,16 @@ def calculate_route(
     starting_amount: Decimal,
     starting_currency: str,
     steps: tuple[RouteStep, ...],
+    max_quote_age_seconds: int = 900,
+    now: datetime | None = None,
 ) -> RouteResult:
+    """Calculate only when every quote is fresh and every fee is known."""
     if starting_amount <= 0:
         raise ValueError("Starting amount must be positive.")
     if not steps:
         raise ValueError("At least one route step is required.")
+    if max_quote_age_seconds < 0:
+        raise ValueError("Maximum quote age cannot be negative.")
 
     amount = starting_amount
     currency = starting_currency
@@ -66,6 +70,8 @@ def calculate_route(
                 f"Route currency mismatch before {step.name}: expected {currency}, "
                 f"step accepts {step.input_currency}."
             )
+        if step.quote.status(max_quote_age_seconds, now) is not QuoteStatus.FRESH:
+            raise ValueError(f"Quote for {step.name} is stale; full-route result is unavailable.")
         result = apply_step(amount, step)
         results.append(result)
         amount = result.net_output
@@ -94,9 +100,7 @@ def five_step_route(
     quotes: dict[str, Quote],
     fees_percent: dict[str, Decimal | None],
 ) -> tuple[RouteStep, ...]:
-    """Build the configured route; quote keys are money_storage, blackbit,
-    winance, sberkassa_sell, and sberkassa_exchange.
-    """
+    """Build the configured route from its five required quote keys."""
     definitions = (
         ("Money Storage", "USDT", "ECR", "money_storage", False),
         ("BlackBit", "ECR", "USDT", "blackbit", True),
