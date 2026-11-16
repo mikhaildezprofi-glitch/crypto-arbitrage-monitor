@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from arbitrage_monitor.models import Quote
 from arbitrage_monitor.providers.collection import (
+    EXPECTED_PAIRS,
     REQUIRED_PROVIDER_KEYS,
     collect_quotes,
 )
@@ -23,11 +24,12 @@ class FakeProvider:
 
 
 def make_quote(source):
+    base, quote_currency = EXPECTED_PAIRS[source]
     return Quote(
         source=source,
-        pair="A/B",
-        base_currency="A",
-        quote_currency="B",
+        pair=f"{base}/{quote_currency}",
+        base_currency=base,
+        quote_currency=quote_currency,
         rate=Decimal("2"),
         observed_at=datetime.now(timezone.utc),
     )
