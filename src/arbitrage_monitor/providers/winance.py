@@ -33,21 +33,35 @@ def _walk(value):
             yield from _walk(child)
 
 
+def _normalize_pair(value: object) -> str:
+    return str(value or "").upper().replace("-", "/").replace("_", "/").replace(" ", "")
+
+
 def _is_target_pair(item: dict) -> bool:
     pair_id = item.get("id", item.get("currency_pair_id", item.get("pair_id")))
-    pair = str(
+    pair_value = (
         item.get("symbol")
         or item.get("pair")
         or item.get("name")
         or item.get("currency_pair")
-        or ""
-    ).upper().replace("-", "/").replace("_", "/").replace(" ", "")
-    # Pair ID 18 is mandatory. If the API also supplies a pair name, it
-    # must agree; never accept an unrelated record merely because a nested
-    # object happens to reuse the numeric ID.
+    )
+    pair = _normalize_pair(pair_value)
+    base = _normalize_pair(item.get("base_currency"))
+    quote = _normalize_pair(item.get("quoted_currency") or item.get("quote_currency"))
+
+    # Pair ID 18 is mandatory, but it is not sufficient by itself.
+    # Every identity field supplied by the API must agree with ERUB/USDT.
     if str(pair_id) != PAIR_ID:
         return False
-    return not pair or pair in {"ERUB/USDT", "ERUBUSDT"}
+    if pair and pair not in {"ERUB/USDT", "ERUBUSDT"}:
+        return False
+    if base and base != "ERUB":
+        return False
+    if quote and quote != "USDT":
+        return False
+
+    # Require at least one independent symbol/currency identity signal.
+    return bool(pair or (base == "ERUB" and quote == "USDT"))
 
 
 def _extract_rate(item: dict) -> Decimal | None:
