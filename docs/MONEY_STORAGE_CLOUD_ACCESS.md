@@ -186,7 +186,7 @@ The repository adapter was reviewed without changes. It currently makes a single
 
 ### Next actionable provider request
 
-Ask Money Storage support to confirm in writing: (1) whether `GET /public_deals/fetch` is approved for automated server-side read-only polling, (2) exact `from`/`to` values for the displayed "Мне предлагают" USDT -> ECR direction, (3) whether an API key or other machine credential is required, (4) allowed request frequency and rate-limit behavior, and (5) whether the first page is stable and sorted in the same order as the UI. Do not send account passwords, browser cookies, session tokens, or OAuth authorization codes in that request.
+Ask Money Storage support to confirm in writing: (1) whether `GET /public_deals/fetch` is approved for automated server-side read-only polling, (2) exact `from`/`to` values for the displayed "Всем предлагают" USDT -> ECR direction, (3) whether an API key or other machine credential is required, (4) allowed request frequency and rate-limit behavior, and (5) whether the first page is stable and sorted in the same order as the UI. Do not send account passwords, browser cookies, session tokens, or OAuth authorization codes in that request.
 
 
 ## Expanded public documentation search (2026-11-18)
@@ -281,7 +281,7 @@ The captured rows all had raw `src_currency=ECR` and `dst_currency=USDT`; all 20
 
 The page's selected filters were `select_from=ECR` and `select_to=USDT`. The visible public-offer cards rendered the accepting user's direction as **Give USDT / Receive ECR**. The loaded frontend script maps public (non-own) offer fields by displaying raw `dst_amount/dst_currency` as the amount given by the accepting user, and raw `src_amount/src_currency` as the amount received. Thus the raw API pair `src=ECR,dst=USDT` corresponds to the displayed **USDT -> ECR** direction used by the existing parser.
 
-The current page's tab labels were observed as `Я предлагаю` and `Всем предлагают`; the captured request was made on the latter view. This is **not yet proven to be semantically identical** to the project's required «Мне предлагают» view. Do not treat the two labels as interchangeable without checking the intended tab and its offer population.
+The current page's tab labels were observed as `Я предлагаю` and `Всем предлагают`; the captured request was made on the latter view. This is **not yet proven to be semantically identical** to the project's required «Всем предлагают» view. Do not treat the two labels as interchangeable without checking the intended tab and its offer population.
 
 ### Frontend behavior evidence
 
@@ -298,12 +298,12 @@ It does **not** prove that the route is officially supported for unattended serv
 - Keep the existing parser's raw pair mapping `src=ECR,dst=USDT` -> displayed `USDT -> ECR`.
 - The provider's filter configuration for this exact frontend view is `from=ECR`, `to=USDT`.
 - Keep the first-page limit at 20 and the arithmetic mean of the first 20 matching `rate` values; do not sum amounts or select a best offer.
-- Keep the seller-paid commission as informational metadata, not a deduction from this route step.
+- Ignore the displayed commission entirely for route calculation; do not deduct it.
 - Do not enable cloud polling or change authentication behavior until Money Storage confirms that this frontend endpoint may be used by an automated cloud reader and specifies any required supported access method and rate limits.
 
 
 ## Follow-up implementation guard (2026-11-18)
 
-The authenticated capture verifies the frontend request and response shape, but the observed tab label was `Всем предлагают`, while the project requirement names `Мне предлагают`. The API parser's raw currency-direction mapping is confirmed; equivalence of these two UI views is not. Therefore the parser and provider test do not by themselves establish that the correct business-defined offer set is being averaged.
+The authenticated capture verifies the frontend request and response shape, but the observed tab label was `Всем предлагают`, while the project requirement is the `Всем предлагают` tab. The API parser's raw currency-direction mapping is confirmed; no equivalence with another UI view is required. Therefore the parser and provider test do not by themselves establish that the correct business-defined offer set is being averaged.
 
 Before enabling the Money Storage source in the full route, verify the exact intended tab/view and confirm that its first 20 offers are the rows returned by the captured request. Keep cloud polling disabled until official server-side access permission and rate limits are confirmed. The `.env.example` filter values describe the captured frontend request only; they are not authorization or proof of production cloud access.
