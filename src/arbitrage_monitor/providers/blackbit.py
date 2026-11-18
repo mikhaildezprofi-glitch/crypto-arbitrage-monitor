@@ -124,6 +124,18 @@ def fetch_quote(timeout_seconds: int = 15) -> Quote:
     return parse_order_book_rate(book, pair_id=pair_id)
 
 
+class BlackBitQuoteProvider:
+    """QuoteProvider-compatible wrapper for the common five-source collector."""
+
+    def __init__(self, timeout_seconds: int = 15):
+        if timeout_seconds < 1:
+            raise ValueError("timeout_seconds must be at least 1.")
+        self.timeout_seconds = timeout_seconds
+
+    def fetch_quote(self) -> Quote:
+        return fetch_quote(timeout_seconds=self.timeout_seconds)
+
+
 if __name__ == "__main__":
     quote = fetch_quote()
     print(
