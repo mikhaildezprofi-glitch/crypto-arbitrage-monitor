@@ -139,6 +139,33 @@ class MoneyStorageHttpProviderTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "requires authentication"):
                 provider.fetch_quote()
 
+    def test_successful_provider_uses_confirmed_filters_and_averages_first_20(self):
+        import io
+        import json
+        from unittest.mock import patch
+
+        rows = [
+            raw_offer(rate=str(Decimal("0.20") + Decimal(i) / 100))
+            for i in range(20)
+        ]
+        payload = {"result": "ok", "data": rows}
+        provider = MoneyStorageQuoteProvider(from_currency="ECR", to_currency="USDT")
+
+        with patch(
+            "urllib.request.urlopen",
+            return_value=io.BytesIO(json.dumps(payload).encode("utf-8")),
+        ) as mocked:
+            quote = provider.fetch_quote()
+
+        request = mocked.call_args.args[0]
+        self.assertEqual(
+            request.full_url,
+            "https://storage.money/public_deals/fetch?offset=0&limit=20&from=ECR&to=USDT",
+        )
+        expected = sum((Decimal(row["rate"]) for row in rows), Decimal("0")) / Decimal("20")
+        self.assertEqual(quote.rate, expected)
+        self.assertEqual(quote.pair, "USDT/ECR")
+
     def test_rate_limit_response_is_not_retried(self):
         from urllib.error import HTTPError
         from unittest.mock import patch
