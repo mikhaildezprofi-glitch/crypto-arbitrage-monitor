@@ -88,8 +88,8 @@ jobs:
             exit 1
           fi
           TOKEN="$(cat /tmp/receiver-token)"
-          COMMAND="curl -fsS --max-time 30 -X POST '$URL/upload/$TOKEN' -H 'Content-Type: application/json' --data-binary '{\\"test\\":\\"phone-to-cloud-smoke-test\\",\\"source\\":\\"termux\\",\\"value\\":123}'"
-          printf '%s\\n' "$COMMAND" > /tmp/connection.txt
+          COMMAND="curl -fsS --max-time 30 -X POST '$URL/upload/$TOKEN' -H 'Content-Type: application/json' --data-binary '{\"test\":\"phone-to-cloud-smoke-test\",\"source\":\"termux\",\"value\":123}'"
+          printf '%s\n' "$COMMAND" > /tmp/connection.txt
           {
             echo '## Одноразовый HTTPS-приёмник для телефона'
             echo
