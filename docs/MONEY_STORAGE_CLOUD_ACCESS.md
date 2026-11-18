@@ -187,3 +187,24 @@ The repository adapter was reviewed without changes. It currently makes a single
 ### Next actionable provider request
 
 Ask Money Storage support to confirm in writing: (1) whether `GET /public_deals/fetch` is approved for automated server-side read-only polling, (2) exact `from`/`to` values for the displayed "Мне предлагают" USDT -> ECR direction, (3) whether an API key or other machine credential is required, (4) allowed request frequency and rate-limit behavior, and (5) whether the first page is stable and sorted in the same order as the UI. Do not send account passwords, browser cookies, session tokens, or OAuth authorization codes in that request.
+
+
+## Expanded public documentation search (2026-11-18)
+
+A broader exact-domain search was run for Money Storage API documentation, developer access, the `public_deals/fetch` route, and read-only offer endpoints.
+
+Findings:
+- The indexed Money Storage site `https://www.money-storage.id/` confirms the E-ID login option and lists `info@storage.money` as its support contact. The site text exposes no developer/API documentation link.
+- The indexed `https://storage.money/privacy` page lists the same support email but no API integration specification.
+- Third-party how-to pages describe browsing Deals / Everyone Offers in the authenticated Money Storage interface and state that rates are updated in real time. These are user guides, not evidence of a supported public API or machine-access permission.
+- Search results for `money-storage.info` are a separate hostname and were not treated as authoritative documentation for `storage.money`.
+- No official docs for a read-only server API, API key issuance, request signing, or server-side polling were found. A direct browser open of the indexed `money-storage.id` site failed with a 502 from the research browser; this does not establish an outage or a response from the actual `storage.money` API.
+
+References:
+- Money Storage indexed login page: https://www.money-storage.id/
+- Money Storage privacy page: https://storage.money/privacy
+- Third-party Deals usage guide (non-authoritative): https://myflow.fans/ru/guide/money-storage
+
+### Research outcome
+
+No additional endpoint or supported server-side read method was identified. Do not infer API access from the UI's real-time rate display or from third-party user guides. The exact known frontend route remains `GET /public_deals/fetch`, but its use for unattended server polling is unconfirmed and unauthenticated calls have previously returned 401/429. Keep production polling disabled. Further progress now requires an explicit support response or an official developer specification; repeating public searches or probing the endpoint is unlikely to produce new reliable evidence.
