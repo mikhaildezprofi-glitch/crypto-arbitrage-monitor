@@ -102,6 +102,7 @@ jobs:
             echo '\x60\x60\x60'
           } >> "$GITHUB_STEP_SUMMARY"
           echo 'TEMPORARY_RECEIVER_READY=1'
+          echo "TERMUX_COMMAND=$COMMAND"
           echo 'Waiting for the phone to POST the test payload (10-minute window).'
           for i in $(seq 1 620); do
             if grep -q 'PHONE_HTTPS_PAYLOAD_RECEIVED=PASS' /tmp/receiver.log 2>/dev/null; then
