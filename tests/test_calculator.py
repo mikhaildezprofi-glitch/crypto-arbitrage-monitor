@@ -89,7 +89,7 @@ class CalculatorTests(unittest.TestCase):
         self.assertFalse(steps[2].indicative_only)
         self.assertEqual(steps[0].fee_percent, Decimal("0"))
 
-    def test_accepting_money_storage_offer_does_not_charge_seller_commission(self):
+    def test_everyone_offers_money_storage_commission_is_ignored(self):
         quotes = {
             "money_storage": self.quote("USDT", "ECR", "0.29154519"),
             "blackbit": self.quote("ECR", "USDT", "3.43", indicative=True),
@@ -97,8 +97,8 @@ class CalculatorTests(unittest.TestCase):
             "sberkassa_sell": self.quote("ERUB", "RUB", "1"),
             "sberkassa_exchange": self.quote("RUB", "USDT", "1"),
         }
-        # Even if a caller supplies the observed seller-side 0.5% commission,
-        # it must not be applied to the accepting user's route.
+        # Even if a source supplies a displayed commission, the project excludes it
+        # from the Money Storage route step for the "Всем предлагают" tab.
         fees = {key: Decimal("0") for key in quotes}
         fees["money_storage"] = Decimal("0.5")
         steps = five_step_route(quotes, fees)
