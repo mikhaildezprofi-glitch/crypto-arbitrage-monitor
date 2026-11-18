@@ -58,3 +58,25 @@ A real phone-to-cloud HTTPS smoke test has passed:
 - Workflow run: https://github.com/mikhaildezprofi-glitch/crypto-arbitrage-monitor/actions/runs/44260981536
 
 This proves that the phone can reach a temporary cloud HTTPS receiver. It does **not** prove Money Storage authentication, quote retrieval, or a persistent production transport. No Money Storage cookies, OAuth codes, session tokens, or account data were transferred.
+
+## E-ID OAuth investigation (2026-11-18)
+
+The observed Money Storage login flow is an OAuth authorization-code redirect:
+
+- Authorization entry point on the relying party: `https://storage.money/oauth/authorize/eid`
+- Identity-provider authorization page: `https://e-id.cards/oauth/user`
+- Client identifier observed in the Money Storage authorization request: `moneystorage`
+- Redirect URI observed in the request: `https://storage.money/oauth/callback/eid`
+- Requested profile scopes observed: `firstname surname email phone`
+- Response type: `code`
+
+This confirms an authorization-code style browser login, but it does **not** establish a supported server-side OAuth integration. Publicly discoverable material reviewed for this investigation did not document the E-ID token endpoint, client authentication method, token lifetime/refresh behavior, PKCE requirements, or whether the `moneystorage` client is permitted to exchange authorization codes from an independent cloud callback. The public E-ID agreement describes the Agent/User relationship but does not publish an API integration specification.
+
+Do not guess token endpoint paths, attempt undocumented token exchanges, or reuse an authorization code captured from a browser. The observed redirect URI belongs to Money Storage; changing it to a cloud callback would require the relying party/E-ID client registration to explicitly allow that redirect URI. A standard OAuth authorization-code flow cannot be completed safely from the authorization URL alone.
+
+### Current decision
+
+- Keep the existing unauthenticated provider disabled for production polling; it has already returned 401 and 429.
+- Do not add cookie/session-token ingestion or browser fingerprint emulation.
+- The next required technical input is an official E-ID/Money Storage integration specification or confirmation from their support of: token endpoint, client authentication, allowed redirect URI registration, PKCE policy, refresh-token policy, and server-side use permission.
+- Once those are confirmed, implement a dedicated OAuth client using a cloud callback and secret storage. Store tokens only in the cloud secret store, redact them from logs, and keep the existing first-20 offer parser and 900-second polling logic unchanged.
