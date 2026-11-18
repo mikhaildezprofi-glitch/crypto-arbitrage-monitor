@@ -251,3 +251,52 @@ A cloud Playwright persistent profile remains a **candidate, not an approved imp
 ### Current conclusion
 
 The web report adds no verified deals endpoint or authenticated response schema. The previously observed frontend route `GET /public_deals/fetch` remains an unverified frontend route, not a supported public server API. Prior 401/429 observations remain unchanged; do not repeat probes or work around rate limits. No code or business logic was changed as a result of this investigation.
+
+
+## Authenticated browser Network capture (2026-11-18)
+
+The account owner had already authenticated in Chrome on the Samsung device and opened the Money Storage Deals page. With Chrome brought to the foreground, the Chrome DevTools Protocol became responsive and a read-only Network capture was completed. The capture records request metadata and a locally summarized JSON response shape; it does not export cookies, authorization values, session identifiers, CSRF tokens, or raw offer records.
+
+### Confirmed request
+
+The Deals page issued this request from its own frontend:
+
+```http
+GET https://storage.money/public_deals/fetch?offset=0&limit=20&from=ECR&to=USDT
+```
+
+Observed response metadata:
+
+- HTTP status: `200`
+- Content type: `application/json`
+- Envelope: `result` is the string `"ok"`
+- `data`: array containing exactly 20 records in this capture
+- Every record exposed the following fields and types:
+  - `rate`, `back_rate`, `create_time`, `request_id`: number
+  - `commission`, `commission_currency`, `dst_amount`, `dst_currency`, `src_amount`, `src_currency`: string
+
+The captured rows all had raw `src_currency=ECR` and `dst_currency=USDT`; all 20 `rate` values were positive numbers. The browser-side summary of this one observation produced an arithmetic mean of approximately `0.1999514815`. This is a transient observation, not a persisted quote or proof of guaranteed execution.
+
+### Verified UI direction mapping
+
+The page's selected filters were `select_from=ECR` and `select_to=USDT`. The visible public-offer cards rendered the accepting user's direction as **Give USDT / Receive ECR**. The loaded frontend script maps public (non-own) offer fields by displaying raw `dst_amount/dst_currency` as the amount given by the accepting user, and raw `src_amount/src_currency` as the amount received. Thus the raw API pair `src=ECR,dst=USDT` corresponds to the displayed **USDT -> ECR** direction used by the existing parser.
+
+The current page's tab labels were observed as `Я предлагаю` and `Всем предлагают`; the captured public-offer request was made on the latter view. This label is recorded literally rather than silently equating it with any older UI wording such as «Мне предлагают».
+
+### Frontend behavior evidence
+
+The loaded `/js/system.js` script contains the frontend function that reads the selected `select_from` and `select_to` values, builds `offset`, `limit`, `from`, and `to` query parameters, and calls `/public_deals/fetch`. The same script's public-offer renderer reverses raw src/dst for the accepting user's displayed give/receive direction.
+
+### What this does and does not prove
+
+This is the first verified authenticated browser request and response schema for the live Deals view. It resolves the request path, query values, response envelope, field names/types, 20-row page size, and raw-to-displayed currency-direction mapping for this view.
+
+It does **not** prove that the route is officially supported for unattended server-side polling, that an unauthenticated cloud request will succeed, or that Money Storage permits automated polling outside its normal browser UI. Earlier direct unauthenticated requests returned 401 and later 429; those observations remain valid and must not be retried or bypassed. The authenticated browser's session was not exported or transferred.
+
+### Implementation decision
+
+- Keep the existing parser's raw pair mapping `src=ECR,dst=USDT` -> displayed `USDT -> ECR`.
+- The provider's filter configuration for this exact frontend view is `from=ECR`, `to=USDT`.
+- Keep the first-page limit at 20 and the arithmetic mean of the first 20 matching `rate` values; do not sum amounts or select a best offer.
+- Keep the seller-paid commission as informational metadata, not a deduction from this route step.
+- Do not enable cloud polling or change authentication behavior until Money Storage confirms that this frontend endpoint may be used by an automated cloud reader and specifies any required supported access method and rate limits.
