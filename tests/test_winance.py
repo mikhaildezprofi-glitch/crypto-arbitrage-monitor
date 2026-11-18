@@ -104,6 +104,27 @@ class WinanceProviderTests(unittest.TestCase):
         with self.assertRaises(WinanceQuoteError):
             parse_winance_response(payload, self.observed_at)
 
+    def test_rejects_non_finite_rate(self):
+        for invalid_rate in ("NaN", "Infinity", "-Infinity"):
+            with self.subTest(rate=invalid_rate):
+                payload = {
+                    "currency_pairs": [
+                        {"id": "18", "name": "ERUB/USDT", "rate": invalid_rate},
+                    ]
+                }
+                with self.assertRaises(WinanceQuoteError):
+                    parse_winance_response(payload, self.observed_at)
+
+    def test_ignores_non_finite_rate_and_uses_next_valid_target_record(self):
+        payload = {
+            "currency_pairs": [
+                {"id": "18", "name": "ERUB/USDT", "rate": "Infinity"},
+                {"id": "18", "name": "ERUB/USDT", "rate": "0.031"},
+            ]
+        }
+        quote = parse_winance_response(payload, self.observed_at)
+        self.assertEqual(quote.rate, Decimal("0.031"))
+
 
 if __name__ == "__main__":
     unittest.main()
