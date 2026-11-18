@@ -35,9 +35,9 @@ jobs:
           HTTP_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(36))')"
           printf '%s' "$VNC_PASSWORD" > /tmp/eid-vnc-password
           printf '%s' "$HTTP_PASSWORD" > /tmp/eid-http-password
-          htpasswd -Bbn viewer "$HTTP_PASSWORD" > /etc/nginx/eid.htpasswd
-          chmod 600 /etc/nginx/eid.htpasswd
-          cat >/etc/nginx/sites-available/eid-browser <<'NGINX'
+          sudo htpasswd -Bbn viewer "$HTTP_PASSWORD" | sudo tee /etc/nginx/eid.htpasswd >/dev/null
+          sudo chmod 600 /etc/nginx/eid.htpasswd
+          sudo tee /etc/nginx/sites-available/eid-browser >/dev/null <<'NGINX'
           server {
             listen 8080;
             server_name _;
@@ -52,10 +52,10 @@ jobs:
             }
           }
           NGINX
-          rm -f /etc/nginx/sites-enabled/default
-          ln -s /etc/nginx/sites-available/eid-browser /etc/nginx/sites-enabled/eid-browser
-          nginx -t
-          sudo systemctl start nginx
+          sudo rm -f /etc/nginx/sites-enabled/default
+          sudo ln -s /etc/nginx/sites-available/eid-browser /etc/nginx/sites-enabled/eid-browser
+          sudo nginx -t
+          sudo nginx
 
           Xvfb :99 -screen 0 1440x900x24 -ac +extension RANDR >/tmp/xvfb.log 2>&1 &
           echo $! >/tmp/xvfb.pid
