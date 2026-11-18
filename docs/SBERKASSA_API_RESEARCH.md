@@ -79,3 +79,27 @@ Search results also surfaced technical material for the separate hostname `erub.
 ### Current result
 
 No verified Sberkassa endpoint, quote schema, commission, limit, or volume has been obtained. The two Sberkassa route steps remain unavailable. The next useful evidence must come from the normal authenticated Sberkassa UI Network panel, captured with the account owner's authorization and sanitized to remove all credentials and personal data, or from official provider documentation.
+
+## Public frontend inspection from Android (2026-11-18)
+
+A read-only request from the user's Android environment successfully retrieved `https://sberkassa.site/login` (HTTP success; HTML content type; 9,083 bytes). The HTML referenced these same-origin scripts:
+
+- `/translations/ru`
+- `/js/lib/jquery.min.js`
+- `/js/lib/jquery-ui.min.js`
+- `/js/lib/clipboard.min.js`
+- `/js/lib/sortable.js`
+- `/js/lib/selectBoxIt.min.js`
+- `/js/app.js`
+- `/js/alert.js`
+- `/js/auth.js`
+
+The public translation resource contains UI labels such as "Public deals proposed by you", "Who can accept this deal", "Who offer the deal", "Create deal", and "Confirmation to exchange". These strings show that the site frontend includes deal/exchange concepts, but they do not identify a quote endpoint or establish the rate semantics for either required route direction.
+
+The direct public fetch of `/js/app.js` failed with an HTTP error. No response body or API schema was obtained from it. No credentials, cookies, tokens, account data, or authenticated response bodies were requested or collected.
+
+An attempted Chrome DevTools Protocol connection through the existing local forwarding port returned `RemoteDisconnected`; no authenticated network events were captured. This is a connection/forwarding failure, not evidence that Sberkassa has no API.
+
+### Updated current result
+
+The public frontend structure is now partially confirmed, but no Sberkassa quote endpoint, quote schema, rate, commission, limit, volume, or freshness rule is confirmed. Both Sberkassa route steps remain unavailable. Next evidence must come from a successful, authorized, sanitized Network capture in the exact authenticated UI pages for ERUB -> RUB and RUB -> USDT, or official provider documentation.
