@@ -62,3 +62,20 @@ Until those facts are established independently for both steps, the full route m
 - Third-party frontend-resource snapshot (dated 2025-04-07): https://codomaza.com/analiz/sberkassa.site
 
 The third-party snapshot is used only to identify historical frontend resource paths. It is not treated as authoritative API documentation.
+
+
+## Follow-up public resource checks (2026-11-18)
+
+Additional exact-host searches for Sberkassa rate endpoints and API routes returned no official API documentation or indexed response schema.
+
+Direct retrieval attempts:
+- `https://sberkassa.site/js/auth.js` was rejected by the research browser because the response content type is JavaScript.
+- `https://sberkassa.site/js/alert.js?v=0.226` was inaccessible through the research browser.
+- `https://sberkassa.site/site/currency_pairs` was also inaccessible through the research browser.
+These are retrieval limitations only; they do not prove that the resources or route do not exist.
+
+Search results also surfaced technical material for the separate hostname `erub.site`, including `/site/rates` and `/site/merchant_config`. These endpoints belong to `erub.site`, not `sberkassa.site`, and are explicitly excluded from this provider investigation. Likewise, Winance pair IDs and endpoints cannot substitute for either Sberkassa step.
+
+### Current result
+
+No verified Sberkassa endpoint, quote schema, commission, limit, or volume has been obtained. The two Sberkassa route steps remain unavailable. The next useful evidence must come from the normal authenticated Sberkassa UI Network panel, captured with the account owner's authorization and sanitized to remove all credentials and personal data, or from official provider documentation.
