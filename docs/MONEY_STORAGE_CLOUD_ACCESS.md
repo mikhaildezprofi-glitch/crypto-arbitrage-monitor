@@ -17,7 +17,7 @@ Prior direct unauthenticated tests of this route returned HTTP 401. A subsequent
 Obtain from Money Storage support or official documentation:
 
 1. Confirmation that automated server-side read access to public offers is supported.
-2. The official API base URL and exact query parameter semantics, including the currency filters corresponding to the displayed "Мне предлагают" USDT -> ECR direction.
+2. The official API base URL and exact query parameter semantics, including the currency filters corresponding only to the displayed "Всем предлагают" USDT -> ECR direction.
 3. The supported authentication method for a server workload, if authentication is required.
 4. Rate limits and polling guidance, including whether a 15-minute interval is permitted.
 
@@ -30,14 +30,14 @@ Do not use browser cookies, session tokens, OAuth authorization codes, browser s
 - Preserve response order and calculate the arithmetic mean of the first 20 available target-direction `rate` values.
 - If fewer than 20 matching offers are returned, average the available matching offers. If none are returned, mark the source unavailable.
 - Do not sum offer amounts, select a best offer, infer partial fills, or simulate an order.
-- The displayed commission is paid by the seller when accepting an offer in this direction; retain it as source metadata but do not deduct it from this route step.
+- The displayed commission is intentionally ignored for the "Всем предлагают" tab and must never be deducted from the Money Storage route step.
 - Timestamp the resulting quote at successful observation time, not at offer creation time.
 - Reject non-success HTTP responses, malformed payloads, wrong currency direction, non-positive/non-finite rates, and empty results.
 - Never substitute a previous quote after a failed poll.
 
 ## Scheduling and persistence
 
-Do not enable a scheduled job while the endpoint cannot be accessed from the cloud. The provider deliberately makes one request per call and does not retry 401/429. A cron job that repeatedly receives access errors is not live quote monitoring. The `MONEY_STORAGE_FROM` and `MONEY_STORAGE_TO` filters are intentionally blank in `.env.example` until their exact values for the desired UI direction are confirmed.
+Do not enable a scheduled job while the endpoint cannot be accessed from the cloud. The provider deliberately makes one request per call and does not retry 401/429. A cron job that repeatedly receives access errors is not live quote monitoring. The `.env.example` filters are set to the observed `from=ECR` and `to=USDT` request for the "Всем предлагают" tab. Do not substitute the "Мне предлагают" tab.
 
 Once access is approved, implement a cloud polling worker at 900-second intervals, persist the latest quote and observation timestamp, expose explicit source health/error state, and feed only fresh quotes into the route collector. Keep credentials in the cloud provider's secret store and out of repository files, Telegram messages, and logs.
 
