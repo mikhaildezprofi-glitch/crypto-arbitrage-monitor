@@ -208,3 +208,46 @@ References:
 ### Research outcome
 
 No additional endpoint or supported server-side read method was identified. Do not infer API access from the UI's real-time rate display or from third-party user guides. The exact known frontend route remains `GET /public_deals/fetch`, but its use for unattended server polling is unconfirmed and unauthenticated calls have previously returned 401/429. Keep production polling disabled. Further progress now requires an explicit support response or an official developer specification; repeating public searches or probing the endpoint is unlikely to produce new reliable evidence.
+
+
+## Website frontend and authenticated-deals investigation (2026-11-18)
+
+A follow-up static/public-page report, `money-storage-web-analysis.md`, was reviewed. It deliberately distinguishes observed facts from unverified plans.
+
+### Confirmed public-page observations
+
+- `https://storage.money/` redirects to `https://storage.money/login`.
+- The public login page displays a **Login with E-ID** action.
+- The page links to the Android APK at `https://storage.money/resources/app-money-storage.apk`. This identifies the site's linked APK download location, but the previously analyzed local APK's authenticity is confirmed only after downloading that exact file and comparing its SHA-256 with the analyzed file.
+- The page lists `info@storage.money` as its contact address and links to `/privacy` and `/aml`.
+
+### What remains unverified
+
+The authenticated **Deals → Everyone Offers** page was not accessed in this investigation. No authenticated Fetch/XHR trace was captured. The report therefore does not establish:
+
+- the actual request used to retrieve offers;
+- request method, URL, query parameters, or required headers;
+- whether the first 20 records are selected server-side or in the browser;
+- response schema, pagination, ordering, or the exact meaning/units of `rate`;
+- whether the displayed USDT → ECR direction maps to the parser's current raw currency fields;
+- E-ID session lifetime, refresh behavior, MFA/CAPTCHA requirements, or device/IP binding;
+- whether persistent cloud-browser automation is permitted by the service.
+
+Framework, bundler, and HTTP library are also unknown because the source HTML and JavaScript bundles were not available to the report author. Third-party technology-scan claims are not treated as confirmed implementation evidence.
+
+### Architecture decision
+
+Keep the production Money Storage poller **disabled**. Do not change `money_storage.py`, its currency filters, or the first-20 arithmetic-mean business rule based on this report.
+
+The next evidence-gathering step is one of:
+
+1. Obtain written confirmation from Money Storage support of an approved read-only server API, its authentication, exact currency filters, ordering, and rate limits; or
+2. Have the account owner manually inspect the authenticated Deals page in a normal browser and provide only a manually redacted request/response structure.
+
+Do not send HAR files, cookies, Authorization values, session IDs, CSRF tokens, OAuth codes, account identifiers, or personal data. A redacted trace should retain only request method, path, query parameter names (and only non-personal values where safe), header names, status, content type, and JSON field names/types. Review the redacted output manually before sharing it.
+
+A cloud Playwright persistent profile remains a **candidate, not an approved implementation**. It may be evaluated only if the owner can complete the normal E-ID login in that cloud browser and the service permits this read-only automation. Any CAPTCHA, MFA, or device-binding challenge must remain a manual owner action; no bypass or session transfer from Android is allowed.
+
+### Current conclusion
+
+The web report adds no verified deals endpoint or authenticated response schema. The previously observed frontend route `GET /public_deals/fetch` remains an unverified frontend route, not a supported public server API. Prior 401/429 observations remain unchanged; do not repeat probes or work around rate limits. No code or business logic was changed as a result of this investigation.
