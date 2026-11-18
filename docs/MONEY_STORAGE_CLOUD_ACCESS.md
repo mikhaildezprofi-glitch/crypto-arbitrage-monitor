@@ -154,3 +154,23 @@ References:
 ### Conclusion after this check
 
 No publicly retrievable E-ID script source, OAuth discovery metadata, token endpoint, or server integration specification was obtained. Do not infer endpoint paths from OAuth conventions and do not reuse the `rtex` client. The remaining blocker is provider-side: Money Storage / e-id.cards must confirm an approved server-side client, token exchange endpoint and authentication method, redirect URI registration, PKCE requirements, token refresh policy, and permitted polling use. Live Money Storage polling remains disabled.
+
+
+## Server-side public API search (2026-11-18)
+
+The investigation was narrowed to a supported read-only server API that would avoid browser OAuth entirely.
+
+Findings:
+- Searches for official `storage.money` API documentation, developer endpoints, and public offer APIs did not return an official API specification or a documented server credential flow.
+- The only endpoint currently evidenced by the site's frontend is `GET https://storage.money/public_deals/fetch` with `offset`, `limit`, `from`, and `to`; the site's frontend reads offers from the response `data` field. This is a frontend route, not proof of a supported public API.
+- Existing unauthenticated tests of this exact route returned HTTP 401 and, on a later repeat, HTTP 429. Do not repeat requests or attempt alternate headers, user agents, paths, or query variations to evade those responses.
+- Search surfaced `docs.exchanger.money`, which documents a separate service on `api.exchanger.money` using HMAC credentials and an offers endpoint. Its hostname, product, and authentication scheme do not match `storage.money`; there is no evidence that it is operated by or integrated with Money Storage. It is explicitly excluded as a false-positive search result.
+- The Money Storage public-facing site identifies `info@storage.money` as its contact address, but no public developer/API documentation was found.
+
+References:
+- Money Storage public site/contact: https://www.money-storage.id/
+- Separate Exchanger.Money API documentation (not Money Storage): https://docs.exchanger.money/
+
+### Decision
+
+No supported unauthenticated/server-side read API for Money Storage has been verified. Keep the existing provider disabled for live polling. Do not replace the source with `api.exchanger.money` or any other similarly named service. The next useful input is explicit confirmation from Money Storage that `public_deals/fetch` is intended for server-side read use, together with its supported authentication (if any), rate limit, and exact currency-filter values; alternatively, they can provide a distinct documented read-only endpoint/API key. The first-20 arithmetic-mean calculation and all other route rules remain unchanged.
