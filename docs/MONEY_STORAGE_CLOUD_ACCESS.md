@@ -174,3 +174,16 @@ References:
 ### Decision
 
 No supported unauthenticated/server-side read API for Money Storage has been verified. Keep the existing provider disabled for live polling. Do not replace the source with `api.exchanger.money` or any other similarly named service. The next useful input is explicit confirmation from Money Storage that `public_deals/fetch` is intended for server-side read use, together with its supported authentication (if any), rate limit, and exact currency-filter values; alternatively, they can provide a distinct documented read-only endpoint/API key. The first-20 arithmetic-mean calculation and all other route rules remain unchanged.
+
+
+## Follow-up read-only API verification (2026-11-18)
+
+The current public `/login` page was opened directly and confirms the visible "Login with E-ID" action and the support contact `info@storage.money`. No API/developer documentation link is exposed in the page text. Exact public searches for `storage.money/public_deals/fetch`, `public_deals` on the official domain, and Money Storage API/developer endpoint documentation returned no indexed official specification.
+
+Direct public retrieval of `https://storage.money/public_deals/fetch` without the required query/auth context was not available through the research browser. This is an access limitation of the research browser and is not a new HTTP status observation; the previously recorded direct tests (401 and later 429) remain the only observed HTTP results. The E-ID JavaScript resource was likewise inaccessible to the research browser.
+
+The repository adapter was reviewed without changes. It currently makes a single HTTPS GET with `offset=0`, `limit=20`, and explicitly configured `from`/`to` filters, rejects non-200 and non-`result=ok` responses, does not retry, and does not reuse stale data. The parser filters the raw `src_currency=ECR`, `dst_currency=USDT` direction, then averages the first 20 matching records. The endpoint's intended server-side support and exact filter semantics remain unconfirmed, so the adapter must stay disabled in production until Money Storage confirms those points.
+
+### Next actionable provider request
+
+Ask Money Storage support to confirm in writing: (1) whether `GET /public_deals/fetch` is approved for automated server-side read-only polling, (2) exact `from`/`to` values for the displayed "Мне предлагают" USDT -> ECR direction, (3) whether an API key or other machine credential is required, (4) allowed request frequency and rate-limit behavior, and (5) whether the first page is stable and sorted in the same order as the UI. Do not send account passwords, browser cookies, session tokens, or OAuth authorization codes in that request.
