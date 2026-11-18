@@ -70,7 +70,7 @@ def _extract_rate(item: dict) -> Decimal | None:
         if raw is not None:
             try:
                 rate = Decimal(str(raw))
-                if rate > 0:
+                if rate.is_finite() and rate > 0:
                     return rate
             except (InvalidOperation, ValueError):
                 continue
