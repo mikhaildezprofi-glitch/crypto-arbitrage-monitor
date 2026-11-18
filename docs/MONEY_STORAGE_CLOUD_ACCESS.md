@@ -223,7 +223,7 @@ A follow-up static/public-page report, `money-storage-web-analysis.md`, was revi
 
 ### What remains unverified
 
-The authenticated **Deals → Everyone Offers** page was not accessed in this investigation. No authenticated Fetch/XHR trace was captured. The report therefore does not establish:
+The earlier static investigation did not access the authenticated Deals page. Its conclusions about the absence of an authenticated Fetch/XHR trace were superseded by the later browser capture documented below. At that earlier stage it did not establish:
 
 - the actual request used to retrieve offers;
 - request method, URL, query parameters, or required headers;
@@ -281,7 +281,7 @@ The captured rows all had raw `src_currency=ECR` and `dst_currency=USDT`; all 20
 
 The page's selected filters were `select_from=ECR` and `select_to=USDT`. The visible public-offer cards rendered the accepting user's direction as **Give USDT / Receive ECR**. The loaded frontend script maps public (non-own) offer fields by displaying raw `dst_amount/dst_currency` as the amount given by the accepting user, and raw `src_amount/src_currency` as the amount received. Thus the raw API pair `src=ECR,dst=USDT` corresponds to the displayed **USDT -> ECR** direction used by the existing parser.
 
-The current page's tab labels were observed as `Я предлагаю` and `Всем предлагают`; the captured public-offer request was made on the latter view. This label is recorded literally rather than silently equating it with any older UI wording such as «Мне предлагают».
+The current page's tab labels were observed as `Я предлагаю` and `Всем предлагают`; the captured request was made on the latter view. This is **not yet proven to be semantically identical** to the project's required «Мне предлагают» view. Do not treat the two labels as interchangeable without checking the intended tab and its offer population.
 
 ### Frontend behavior evidence
 
@@ -300,3 +300,10 @@ It does **not** prove that the route is officially supported for unattended serv
 - Keep the first-page limit at 20 and the arithmetic mean of the first 20 matching `rate` values; do not sum amounts or select a best offer.
 - Keep the seller-paid commission as informational metadata, not a deduction from this route step.
 - Do not enable cloud polling or change authentication behavior until Money Storage confirms that this frontend endpoint may be used by an automated cloud reader and specifies any required supported access method and rate limits.
+
+
+## Follow-up implementation guard (2026-11-18)
+
+The authenticated capture verifies the frontend request and response shape, but the observed tab label was `Всем предлагают`, while the project requirement names `Мне предлагают`. The API parser's raw currency-direction mapping is confirmed; equivalence of these two UI views is not. Therefore the parser and provider test do not by themselves establish that the correct business-defined offer set is being averaged.
+
+Before enabling the Money Storage source in the full route, verify the exact intended tab/view and confirm that its first 20 offers are the rows returned by the captured request. Keep cloud polling disabled until official server-side access permission and rate limits are confirmed. The `.env.example` filter values describe the captured frontend request only; they are not authorization or proof of production cloud access.
