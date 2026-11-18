@@ -134,3 +134,23 @@ Sources:
 ### Decision remains unchanged
 
 Do not reuse the `rtex` client or guess token endpoints. Continue to require a Money Storage / e-id.cards supported integration specification or an officially approved cloud OAuth client and callback before implementing server-side authentication. Production polling remains disabled.
+
+
+## E-ID public resource and discovery checks (2026-11-18)
+
+Additional searches and direct public-page retrieval attempts were performed:
+
+- Search-indexed technical snapshots of Money Storage and Sberkassa independently list `https://e-id.cards/js/eid.js` as a browser script. A separate public site snapshot also lists the same script. This confirms repeated use of the shared frontend library, but these snapshots expose only the script URL, not its contents.
+- The E-ID JavaScript URL could not be opened by the available research browser. Direct attempts to open `https://e-id.cards/.well-known/openid-configuration` and `https://e-id.cards/oauth/.well-known/openid-configuration` were also inaccessible. These are failed retrieval attempts, not evidence that the endpoints do not exist.
+- A public technical article documents a separate `erub.money` relying-party redirect through `e-id.cards/oauth/user`, using client ID `rtex`, scopes `firstname surname email phone`, and callback `erub.money/oauth/callback/eid`. The values differ from Money Storage's observed client ID `moneystorage` and callback `storage.money/oauth/callback/eid`; they must not be interchanged.
+- The E-ID agreement describes the Service/User/Agent relationship but does not publish an OAuth token endpoint, developer registration procedure, API credentials, or server-side integration rules.
+
+References:
+- Money Storage page snapshot listing the E-ID script: https://codomaza.com/analiz/storage.money
+- Sberkassa page snapshot listing the E-ID script: https://codomaza.com/analiz/sberkassa.site
+- E-ID agreement: https://e-id.cards/agreement/
+- Separate erub.money flow description: https://erub-razbor.com/e-id-cards/
+
+### Conclusion after this check
+
+No publicly retrievable E-ID script source, OAuth discovery metadata, token endpoint, or server integration specification was obtained. Do not infer endpoint paths from OAuth conventions and do not reuse the `rtex` client. The remaining blocker is provider-side: Money Storage / e-id.cards must confirm an approved server-side client, token exchange endpoint and authentication method, redirect URI registration, PKCE requirements, token refresh policy, and permitted polling use. Live Money Storage polling remains disabled.
