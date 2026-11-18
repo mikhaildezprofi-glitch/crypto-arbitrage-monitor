@@ -10,6 +10,13 @@ Private project for read-only monitoring and calculation of the five-step route:
 
 Starting reference capital: 1000 USDT. Winance polling interval: 300 seconds. Money Storage polling interval: 900 seconds (15 minutes).
 
+## BlackBit quote method
+
+- Resolve the exact ECR/USDT pair from the public `/site/currency_pairs` response.
+- Request the UI order-book endpoint for that pair and read only `last_rate`.
+- Ignore order-book levels, volumes, and liquidity for route calculation. The quote is indicative only and is not an execution guarantee.
+- Reject missing, non-positive, non-finite, or malformed rates and unsuccessful API envelopes.
+
 ## Money Storage quote method
 
 - Read only the first page of "Мне предлагают", with a page size of 20.
@@ -34,7 +41,7 @@ This is an indicative market-rate average, not a promise that a trade can be exe
 
 ## Current implementation status
 
-This repository includes the calculation core, public Winance quote adapter, a common read-only provider protocol, a quote collector, and a pure Money Storage offer parser plus first-20 arithmetic-average quote builder. The Money Storage parser normalizes raw API src=ECR/dst=USDT records to displayed USDT -> ECR direction. The average builder uses the first 20 available target-direction offers and timestamps the resulting quote at observation time. The Money Storage poll interval is configured as 900 seconds. The parser and average builder do not perform network requests or authentication; a supported cloud-side data-access method is still required before live Money Storage polling can be enabled. The collector requests all five configured source keys independently, validates each source's required currency direction and positive rate, records per-source failures, and marks the batch incomplete when any required provider is missing or fails. It never substitutes a previous quote. Telegram delivery, persistent history, and deployment are not yet implemented.
+This repository includes the calculation core, read-only BlackBit and Winance quote adapters, a common read-only provider protocol, a quote collector, and a pure Money Storage offer parser plus first-20 arithmetic-average quote builder. The Money Storage parser normalizes raw API src=ECR/dst=USDT records to displayed USDT -> ECR direction. The average builder uses the first 20 available target-direction offers and timestamps the resulting quote at observation time. The Money Storage poll interval is configured as 900 seconds. The parser and average builder do not perform network requests or authentication; a supported cloud-side data-access method is still required before live Money Storage polling can be enabled. The collector requests all five configured source keys independently, validates each source's required currency direction and positive rate, records per-source failures, and marks the batch incomplete when any required provider is missing or fails. It never substitutes a previous quote. Telegram delivery, persistent history, and deployment are not yet implemented.
 
 ## Run tests
 
@@ -43,9 +50,9 @@ This repository includes the calculation core, public Winance quote adapter, a c
 ## Configuration
 
 Environment variables:
-- WINANCE_POLL_SECONDS (default: 300)
+- BLACKBIT_API_BASE_URL (default: https://blackbit.exchange/site)\n- WINANCE_POLL_SECONDS (default: 300)
 - WINANCE_API_URL (default: https://winance.exchange/site/currency_pairs)
 - QUOTE_MAX_AGE_SECONDS (default: 900)
 
 Money Storage polling interval: 900 seconds (15 minutes).
-The Winance adapter is read-only and filters strictly for pair ID 18 / ERUB-USDT.
+The BlackBit adapter reads only the displayed ECR/USDT last_rate and marks it indicative. The Winance adapter is read-only and filters strictly for pair ID 18 / ERUB-USDT.
