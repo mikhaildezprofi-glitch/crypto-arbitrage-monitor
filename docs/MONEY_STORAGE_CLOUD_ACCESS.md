@@ -118,3 +118,19 @@ Sources inspected:
 The link between Money Storage and e-id.cards is now supported by both the live Money Storage login page's E-ID action and a public page snapshot referencing the E-ID JavaScript library. This confirms a browser-side integration, not a cloud/server-side OAuth contract. The library URL being referenced is not sufficient evidence to infer token endpoints or to build an OAuth client.
 
 The next safe step is to obtain the eid.js source through an ordinary browser's public page loading (without credentials or session export), or obtain the provider's integration specification. If the script is retrieved, inspect only its public client-side behavior for documented redirect construction and callback handling; do not attempt to extract secrets, tokens, cookies, or bypass access controls. Keep production polling disabled until server-side authorization is explicitly supported.
+
+
+## Additional E-ID relying-party comparison (2026-11-18)
+
+A public technical article describing the `erub.money` login flow independently records an authorization-code redirect to `e-id.cards/oauth/user`, with `response_type=code`, profile scopes `firstname surname email phone`, client ID `rtex`, and an `erub.money` callback. This is evidence that e-id.cards is used by more than one relying party and that client identifiers/callbacks are application-specific. It does not establish that the `rtex` client, callback, or any token-exchange configuration can be reused by Money Storage; the observed Money Storage client remains `moneystorage` with its own callback.
+
+The public E-ID login page and agreement are readable, but the JavaScript resource `https://e-id.cards/js/eid.js` could not be retrieved by the available research browser. A direct retrieval attempt from the working environment also failed before HTTP connection because DNS resolution was unavailable. No source code or API behavior is inferred from that failure.
+
+Sources:
+- E-ID login page: https://e-id.cards/login
+- E-ID agreement: https://e-id.cards/agreement/
+- Public third-party technical article documenting the separate erub.money relying-party flow: https://erub-razbor.com/e-id-cards/
+
+### Decision remains unchanged
+
+Do not reuse the `rtex` client or guess token endpoints. Continue to require a Money Storage / e-id.cards supported integration specification or an officially approved cloud OAuth client and callback before implementing server-side authentication. Production polling remains disabled.
