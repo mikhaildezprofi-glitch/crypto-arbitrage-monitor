@@ -19,13 +19,13 @@ Starting reference capital: 1000 USDT. Winance polling interval: 300 seconds. Mo
 
 ## Money Storage quote method
 
-- The authenticated browser capture verified the frontend request for the "Всем предлагают" tab, with a page size of 20. The project's required "Мне предлагают" view has not yet been proven equivalent to that tab.
+- The authenticated browser capture verified the frontend request for the **"Всем предлагают"** tab, with a page size of 20. This is the only Money Storage tab used by the project; "Мне предлагают" is out of scope.
 - Normalize each matching raw API row (src=ECR, dst=USDT) to the displayed USDT -> ECR direction.
 - Use the arithmetic mean of the rate field across the first 20 available target-direction offers as the Money Storage quote.
 - If fewer than 20 target-direction offers are returned, average the available offers; an empty result is unavailable.
 - Do not select one offer, add offer amounts, combine liquidity, assume partial fills, or simulate a purchase.
 - The quote timestamp is the time the page was observed during polling. The source offer creation timestamps remain available as row metadata.
-- The displayed commission belongs to the offer creator/seller when we accept offers in the "Мне предлагают" direction; it is not charged to this route calculation.
+- The displayed commission is deliberately ignored and is never deducted from the Money Storage route step.
 
 This is an indicative market-rate average, not a promise that a trade can be executed at that rate. The monitor does not buy, accept, create, or modify offers.
 
@@ -41,7 +41,7 @@ This is an indicative market-rate average, not a promise that a trade can be exe
 
 ## Current implementation status
 
-This repository includes the calculation core, read-only BlackBit and Winance quote adapters, a common read-only provider protocol, a quote collector, and a pure Money Storage offer parser plus first-20 arithmetic-average quote builder. The Money Storage parser normalizes raw API src=ECR/dst=USDT records to displayed USDT -> ECR direction. An authenticated Chrome capture verified the frontend request and response schema for the "Всем предлагают" tab; equivalence with the project's required "Мне предлагают" view remains unverified. The average builder uses the first 20 available target-direction offers and timestamps the resulting quote at observation time. The Money Storage poll interval is configured as 900 seconds. The parser and average builder do not perform network requests or authentication; official permission and a supported cloud-side access method are still required before live polling can be enabled. The collector requests all five configured source keys independently, validates each source's required currency direction and positive rate, records per-source failures, and marks the batch incomplete when any required provider is missing or fails. It never substitutes a previous quote. Telegram delivery, persistent history, and deployment are not yet implemented.
+This repository includes the calculation core, read-only BlackBit and Winance quote adapters, a common read-only provider protocol, a quote collector, and a pure Money Storage offer parser plus first-20 arithmetic-average quote builder. The Money Storage parser normalizes raw API src=ECR/dst=USDT records to displayed USDT -> ECR direction. An authenticated Chrome capture verified the frontend request and response schema for the "Всем предлагают" tab. This is the only supported tab; "Мне предлагают" is not used. The average builder uses the first 20 available target-direction offers and timestamps the resulting quote at observation time. The Money Storage poll interval is configured as 900 seconds. The parser and average builder do not perform network requests or authentication; official permission and a supported cloud-side access method are still required before live polling can be enabled. The collector requests all five configured source keys independently, validates each source's required currency direction and positive rate, records per-source failures, and marks the batch incomplete when any required provider is missing or fails. It never substitutes a previous quote. Telegram delivery, persistent history, and deployment are not yet implemented.
 
 ## Run tests
 
@@ -50,7 +50,8 @@ This repository includes the calculation core, read-only BlackBit and Winance qu
 ## Configuration
 
 Environment variables:
-- BLACKBIT_API_BASE_URL (default: https://blackbit.exchange/site)\n- WINANCE_POLL_SECONDS (default: 300)
+- BLACKBIT_API_BASE_URL (default: https://blackbit.exchange/site)
+- WINANCE_POLL_SECONDS (default: 300)
 - WINANCE_API_URL (default: https://winance.exchange/site/currency_pairs)
 - QUOTE_MAX_AGE_SECONDS (default: 900)
 
