@@ -47,3 +47,14 @@ Once access is approved, implement a cloud polling worker at 900-second interval
 - Unit tests cover the first-20 arithmetic mean, fewer-than-20 behavior, empty results, wrong pair, malformed payload, HTTP/auth errors, and timestamping.
 - An unsuccessful poll leaves the source unavailable; it does not publish a stale quote as fresh.
 - The full route remains unavailable whenever this required source is unavailable or stale.
+
+## Transport milestone (2026-11-18)
+
+A real phone-to-cloud HTTPS smoke test has passed:
+
+- The Samsung/Termux client sent a test-only JSON payload over HTTPS through a temporary Cloudflare tunnel.
+- The one-use cloud receiver validated the payload and returned HTTP 200 with a SHA-256 digest.
+- GitHub Actions confirmed `PHONE_TO_CLOUD_HTTPS_TEST=PASS`.
+- Workflow run: https://github.com/mikhaildezprofi-glitch/crypto-arbitrage-monitor/actions/runs/44260981536
+
+This proves that the phone can reach a temporary cloud HTTPS receiver. It does **not** prove Money Storage authentication, quote retrieval, or a persistent production transport. No Money Storage cookies, OAuth codes, session tokens, or account data were transferred.
