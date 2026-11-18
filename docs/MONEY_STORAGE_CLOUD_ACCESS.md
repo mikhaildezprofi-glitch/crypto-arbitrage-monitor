@@ -80,3 +80,19 @@ Do not guess token endpoint paths, attempt undocumented token exchanges, or reus
 - Do not add cookie/session-token ingestion or browser fingerprint emulation.
 - The next required technical input is an official E-ID/Money Storage integration specification or confirmation from their support of: token endpoint, client authentication, allowed redirect URI registration, PKCE policy, refresh-token policy, and server-side use permission.
 - Once those are confirmed, implement a dedicated OAuth client using a cloud callback and secret storage. Store tokens only in the cloud secret store, redact them from logs, and keep the existing first-20 offer parser and 900-second polling logic unchanged.
+
+## Important identity-provider distinction (2026-11-18)
+
+A search found a separate public OAuth SSO specification at `docs.e.id`. It documents a v1.1 server-side token exchange at `POST /api/v1.1/oauth/get-token` with `client_id`, `client_secret`, `code`, and `redirect_uri`, and describes client registration with an exact callback URL.
+
+However, Money Storage's observed login redirects to the distinct hostname `e-id.cards`, not `e.id`. The public `docs.e.id` specification uses `api-dev.e.id` / `api-wallet.e.id` and does not establish that `e-id.cards` is the same identity provider, shares its API, or accepts the Money Storage OAuth client. Search results and the accessible `e-id.cards/login` page did not expose a matching token-exchange specification or OpenID discovery document.
+
+Therefore the `docs.e.id` token endpoint is **not** to be called with the observed `moneystorage` client ID, and no OAuth code or credentials should be sent to it. Treating similarly named domains as one provider would be an unsafe integration assumption.
+
+### Verified conclusion
+
+- The Money Storage authorization-code redirect is observed.
+- A generic server-side OAuth code-exchange pattern exists for a separately documented e.id service.
+- A supported token exchange for the actual `e-id.cards` identity provider remains unverified.
+- The exact `e-id.cards` issuer metadata, authorization/token endpoints, client registration rules, and redirect URI policy must be supplied or confirmed by that provider / Money Storage.
+- Until then, do not implement a token client, do not change the existing provider, and keep live Money Storage polling disabled.
