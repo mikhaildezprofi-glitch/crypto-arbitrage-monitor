@@ -1,4 +1,4 @@
-name: Temporary HTTPS transfer smoke test
+name: Phone to cloud HTTPS transfer smoke test
 
 on:
   workflow_dispatch:
@@ -14,14 +14,16 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - name: Start one-use HTTPS receiver
+      - name: Start one-use HTTPS receiver and wait for the phone
         shell: bash
+        env:
+          PYTHONUNBUFFERED: '1'
         run: |
           set -euo pipefail
           cat > /tmp/receiver.py <<'PY'
           from http.server import BaseHTTPRequestHandler, HTTPServer
           from pathlib import Path
-          import hashlib, json, secrets
+          import hashlib, json, secrets, time
 
           token = secrets.token_urlsafe(24)
           Path('/tmp/receiver-token').write_text(token)
@@ -41,7 +43,7 @@ jobs:
                   except Exception:
                       self.send_error(400)
                       return
-                  if data.get('test') != 'https-transfer-smoke-test':
+                  if data.get('test') != 'phone-to-cloud-smoke-test':
                       self.send_error(422)
                       return
                   digest = hashlib.sha256(raw).hexdigest()
@@ -51,16 +53,22 @@ jobs:
                   self.send_header('Content-Length', str(len(body)))
                   self.end_headers()
                   self.wfile.write(body)
-                  print('HTTPS_PAYLOAD_RECEIVED=PASS', flush=True)
+                  print('PHONE_HTTPS_PAYLOAD_RECEIVED=PASS', flush=True)
                   print('PAYLOAD_BYTES=' + str(len(raw)), flush=True)
                   print('PAYLOAD_SHA256=' + digest, flush=True)
                   self.server.received = True
               def log_message(self, fmt, *args):
                   pass
+
           server = HTTPServer(('127.0.0.1', 8765), Handler)
           server.received = False
-          while not server.received:
+          deadline = time.monotonic() + 600
+          while not server.received and time.monotonic() < deadline:
+              server.timeout = min(30, max(1, deadline - time.monotonic()))
               server.handle_request()
+          if not server.received:
+              print('PHONE_HTTPS_PAYLOAD_RECEIVED=TIMEOUT', flush=True)
+              raise SystemExit(2)
           PY
           python3 /tmp/receiver.py >/tmp/receiver.log 2>&1 &
           echo $! > /tmp/receiver.pid
@@ -80,37 +88,34 @@ jobs:
             exit 1
           fi
           TOKEN="$(cat /tmp/receiver-token)"
-          COMMAND="curl -fsS -X POST '$URL/upload/$TOKEN' -H 'Content-Type: application/json' --data '{\"test\":\"https-transfer-smoke-test\",\"source\":\"termux\",\"value\":123}'"
+          COMMAND="curl -fsS --max-time 30 -X POST '$URL/upload/$TOKEN' -H 'Content-Type: application/json' --data '{\\"test\\":\\"phone-to-cloud-smoke-test\\",\\"source\\":\\"termux\\",\\"value\\":123}'"
           {
-            echo '## Одноразовый HTTPS-приёмник'
+            echo '## Одноразовый HTTPS-приёмник для телефона'
             echo
             echo "Адрес: $URL/upload/$TOKEN"
             echo
-            echo 'Отправляй только тестовый JSON. Не отправляй cookies, токены или реальные данные аккаунта.'
+            echo 'Выполни команду ниже в Termux на телефоне. Приёмник ждёт один запрос до 10 минут.'
+            echo 'Отправляется только тестовый JSON. Не отправляй cookies, токены или данные аккаунта.'
             echo
-            echo 'Команда для Termux:'
-            echo '```bash'
+            echo '\x60\x60\x60bash'
             echo "$COMMAND"
-            echo '```'
-            echo
-            echo 'Приёмник одноразовый и завершится после одного корректного запроса.'
+            echo '\x60\x60\x60'
           } >> "$GITHUB_STEP_SUMMARY"
           echo 'TEMPORARY_RECEIVER_READY=1'
-          echo "TERMUX_COMMAND=$COMMAND"
-          echo 'The command above is a one-use test request, not an account credential.'
-          echo 'Sending an automated smoke-test payload through the public HTTPS tunnel.'
-          RESPONSE="$(curl --retry 10 --retry-connrefused --retry-delay 2 -fsS -X POST "$URL/upload/$TOKEN" -H 'Content-Type: application/json' --data '{"test":"https-transfer-smoke-test","source":"github-actions","value":123}')"
-          echo "HTTPS_RECEIVER_RESPONSE=$RESPONSE"
-          for i in $(seq 1 10); do
-            if grep -q 'HTTPS_PAYLOAD_RECEIVED=PASS' /tmp/receiver.log 2>/dev/null; then
+          echo 'Waiting for the phone to POST the test payload (10-minute window).'
+          for i in $(seq 1 620); do
+            if grep -q 'PHONE_HTTPS_PAYLOAD_RECEIVED=PASS' /tmp/receiver.log 2>/dev/null; then
               cat /tmp/receiver.log
-              echo 'HTTPS_TUNNEL_SMOKE_TEST=PASS'
+              echo 'PHONE_TO_CLOUD_HTTPS_TEST=PASS'
               exit 0
+            fi
+            if ! kill -0 "$(cat /tmp/receiver.pid)" 2>/dev/null; then
+              cat /tmp/receiver.log || true
+              echo 'Receiver stopped before the phone request was accepted.'
+              exit 1
             fi
             sleep 1
           done
-          echo 'Receiver did not confirm the smoke-test payload.'
           cat /tmp/receiver.log || true
+          echo 'PHONE_TO_CLOUD_HTTPS_TEST=TIMEOUT'
           exit 1
-        env:
-          PYTHONUNBUFFERED: '1'
