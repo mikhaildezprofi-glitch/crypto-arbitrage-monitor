@@ -20,7 +20,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y xvfb x11vnc novnc websockify curl x11-utils
+          sudo apt-get install -y xvfb x11vnc novnc websockify curl x11-utils nginx apache2-utils
           python3 -m pip install --break-system-packages playwright
           python3 -m playwright install --with-deps chromium
 
@@ -32,7 +32,30 @@ jobs:
 
           # VNC's classic password authentication uses only the first 8 characters.
           VNC_PASSWORD="$(python3 -c 'import secrets,string; print("".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(8)))')"
+          HTTP_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(36))')"
           printf '%s' "$VNC_PASSWORD" > /tmp/eid-vnc-password
+          printf '%s' "$HTTP_PASSWORD" > /tmp/eid-http-password
+          htpasswd -Bbn viewer "$HTTP_PASSWORD" > /etc/nginx/eid.htpasswd
+          chmod 600 /etc/nginx/eid.htpasswd
+          cat >/etc/nginx/sites-available/eid-browser <<'NGINX'
+          server {
+            listen 8080;
+            server_name _;
+            location / {
+              auth_basic "Private E-ID browser";
+              auth_basic_user_file /etc/nginx/eid.htpasswd;
+              proxy_pass http://127.0.0.1:6080;
+              proxy_http_version 1.1;
+              proxy_set_header Upgrade $http_upgrade;
+              proxy_set_header Connection "upgrade";
+              proxy_set_header Host $host;
+            }
+          }
+          NGINX
+          rm -f /etc/nginx/sites-enabled/default
+          ln -s /etc/nginx/sites-available/eid-browser /etc/nginx/sites-enabled/eid-browser
+          nginx -t
+          sudo systemctl start nginx
 
           Xvfb :99 -screen 0 1440x900x24 -ac +extension RANDR >/tmp/xvfb.log 2>&1 &
           echo $! >/tmp/xvfb.pid
@@ -102,7 +125,7 @@ jobs:
 
           curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /tmp/cloudflared
           sudo install -m 0755 /tmp/cloudflared /usr/local/bin/cloudflared
-          nohup cloudflared tunnel --no-autoupdate --url http://127.0.0.1:6080 >/tmp/cloudflared.log 2>&1 &
+          nohup cloudflared tunnel --no-autoupdate --url http://127.0.0.1:8080 >/tmp/cloudflared.log 2>&1 &
           echo $! >/tmp/cloudflared.pid
 
           TUNNEL_URL=""
@@ -123,7 +146,7 @@ jobs:
             exit 1
           fi
 
-          if ! curl -fsS --max-time 15 http://127.0.0.1:6080/vnc.html >/dev/null; then
+          if ! curl -fsS --max-time 15 -u "viewer:$HTTP_PASSWORD" http://127.0.0.1:8080/vnc.html >/dev/null; then
             echo "noVNC web interface did not become ready."
             exit 1
           fi
@@ -154,10 +177,15 @@ jobs:
             echo "Ссылка для подключения:"
             echo "$TUNNEL_URL/vnc.html?autoconnect=true&resize=scale&quality=6&compression=2"
             echo
-            echo "Пароль удалённого экрана:"
+            echo "HTTP-логин: viewer"
+            echo "HTTP-пароль доступа:"
+            echo "$HTTP_PASSWORD"
+            echo
+            echo "Пароль VNC (внутри noVNC):"
             echo "$VNC_PASSWORD"
             echo
-            echo "Сессия доступна примерно 30 минут. Ссылка и пароль дают доступ к активной сессии. Не пересылай их."
+            echo "Сессия доступна примерно 30 минут. Ссылка и оба пароля дают доступ к активной сессии. Не пересылай их."
+            echo "Перед noVNC включена HTTP Basic Auth защита с длинным случайным паролем. Сам VNC-протокол всё равно ограничивает пароль восемью символами."
             echo "Вводи данные E-ID только на сайте e-id.cards внутри удалённого браузера."
             echo "Ссылку подтверждения открывай в этом же удалённом браузере."
             echo "Для вставки ссылки используй Clipboard в панели noVNC; если не работает, открой ссылку подтверждения вручную через адресную строку удалённого браузера."
@@ -171,7 +199,7 @@ jobs:
             echo
             echo "Данные подключения приложены к этому запуску отдельным файлом `CONNECTION.txt` (раздел Artifacts). Скачай артефакт `eid-browser-connection` и открой файл."
             echo
-            echo "Не публикуй и не пересылай файл: он содержит временный адрес и пароль удалённого экрана."
+            echo "Не публикуй и не пересылай файл: он содержит временный адрес и два пароля удалённого экрана."
             echo
             echo "Вводи данные E-ID только внутри удалённого браузера. Ссылку подтверждения открывай в той же удалённой сессии."
           } >> "$GITHUB_STEP_SUMMARY"
@@ -244,4 +272,4 @@ jobs:
               kill "$(cat "$file")" 2>/dev/null || true
             fi
           done
-          rm -f /tmp/eid-vnc-password
+          rm -f /tmp/eid-vnc-password /tmp/eid-http-password
