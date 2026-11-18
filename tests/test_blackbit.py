@@ -4,8 +4,10 @@ from decimal import Decimal
 
 from arbitrage_monitor.providers.blackbit import (
     BlackBitQuoteError,
+    BlackBitQuoteProvider,
     parse_ecr_usdt_pair_id,
     parse_order_book_rate,
+    fetch_quote,
 )
 
 
@@ -77,6 +79,50 @@ class BlackBitProviderTests(unittest.TestCase):
     def test_rejects_missing_currency_pair_list(self):
         with self.assertRaises(BlackBitQuoteError):
             parse_ecr_usdt_pair_id({"result": "ok", "status": 200})
+
+    def test_provider_rejects_zero_timeout(self):
+        with self.assertRaises(ValueError):
+            BlackBitQuoteProvider(timeout_seconds=0)
+
+    def test_fetch_quote_requests_resolved_pair_and_reads_displayed_last_rate(self):
+        import json
+        from unittest.mock import patch
+
+        class FakeResponse:
+            status = 200
+
+            def __init__(self, payload):
+                self.payload = json.dumps(payload).encode()
+
+            def read(self):
+                return self.payload
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        pairs = {
+            "currency_pairs": [
+                {"id": "6", "name": "ECR/USDT", "base_currency": "ECR", "quoted_currency": "USDT"}
+            ],
+            "result": "ok",
+            "status": 200,
+        }
+        book = {"last_rate": "0.52901", "result": "ok", "status": 200}
+        with patch(
+            "arbitrage_monitor.providers.blackbit.urlopen",
+            side_effect=[FakeResponse(pairs), FakeResponse(book)],
+        ) as mocked:
+            quote = fetch_quote(timeout_seconds=7)
+
+        self.assertEqual(quote.rate, Decimal("0.52901"))
+        self.assertTrue(quote.indicative_only)
+        self.assertEqual(mocked.call_count, 2)
+        self.assertTrue(mocked.call_args_list[0].args[0].full_url.endswith("/currency_pairs"))
+        self.assertIn("currency_pair=6", mocked.call_args_list[1].args[0].full_url)
+        self.assertIn("depth=100", mocked.call_args_list[1].args[0].full_url)
 
 
 if __name__ == "__main__":
