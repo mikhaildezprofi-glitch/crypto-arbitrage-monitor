@@ -96,3 +96,25 @@ Therefore the `docs.e.id` token endpoint is **not** to be called with the observ
 - A supported token exchange for the actual `e-id.cards` identity provider remains unverified.
 - The exact `e-id.cards` issuer metadata, authorization/token endpoints, client registration rules, and redirect URI policy must be supplied or confirmed by that provider / Money Storage.
 - Until then, do not implement a token client, do not change the existing provider, and keep live Money Storage polling disabled.
+
+
+## E-ID frontend integration evidence (2026-11-18)
+
+Further public-page inspection found additional evidence that the e-id.cards frontend library is used by Money Storage:
+
+- The current public https://storage.money/login page displays a "Login with E-ID" action.
+- A third-party archived site-technology snapshot of https://storage.money/login lists https://e-id.cards/js/eid.js among the page's loaded JavaScript resources.
+- The same library URL is listed in third-party snapshots of sberkassa.site and several unrelated payment/project sites. This supports that eid.js is a shared browser-side integration library, but does not reveal its API contract.
+- Direct retrieval of https://e-id.cards/js/eid.js was not available through the public research browser. No source code, endpoint names, token exchange method, or client-secret handling could therefore be verified.
+- The accessible E-ID agreement describes the identity provider's relationship with relying-party "Agents" and says user data is shared according to the individual authorization, but it does not publish developer documentation or server API details.
+
+Sources inspected:
+- Money Storage login page: https://storage.money/login
+- E-ID agreement: https://e-id.cards/agreement/
+- Third-party page technology snapshot: https://codomaza.com/analiz/storage.money
+
+### Updated conclusion
+
+The link between Money Storage and e-id.cards is now supported by both the live Money Storage login page's E-ID action and a public page snapshot referencing the E-ID JavaScript library. This confirms a browser-side integration, not a cloud/server-side OAuth contract. The library URL being referenced is not sufficient evidence to infer token endpoints or to build an OAuth client.
+
+The next safe step is to obtain the eid.js source through an ordinary browser's public page loading (without credentials or session export), or obtain the provider's integration specification. If the script is retrieved, inspect only its public client-side behavior for documented redirect construction and callback handling; do not attempt to extract secrets, tokens, cookies, or bypass access controls. Keep production polling disabled until server-side authorization is explicitly supported.
