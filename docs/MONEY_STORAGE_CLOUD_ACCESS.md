@@ -281,7 +281,7 @@ The captured rows all had raw `src_currency=ECR` and `dst_currency=USDT`; all 20
 
 The page's selected filters were `select_from=ECR` and `select_to=USDT`. The visible public-offer cards rendered the accepting user's direction as **Give USDT / Receive ECR**. The loaded frontend script maps public (non-own) offer fields by displaying raw `dst_amount/dst_currency` as the amount given by the accepting user, and raw `src_amount/src_currency` as the amount received. Thus the raw API pair `src=ECR,dst=USDT` corresponds to the displayed **USDT -> ECR** direction used by the existing parser.
 
-The current page's tab labels were observed as `Я предлагаю` and `Всем предлагают`; the captured request was made on the latter view. This is **not yet proven to be semantically identical** to the project's required «Всем предлагают» view. Do not treat the two labels as interchangeable without checking the intended tab and its offer population.
+The current page's tab labels were observed as `Я предлагаю` and `Всем предлагают`; the captured request was made on `Всем предлагают`. This is the required and only in-scope tab. No comparison with `Я предлагаю` is needed.
 
 ### Frontend behavior evidence
 
@@ -304,6 +304,6 @@ It does **not** prove that the route is officially supported for unattended serv
 
 ## Follow-up implementation guard (2026-11-18)
 
-The authenticated capture verifies the frontend request and response shape, but the observed tab label was `Всем предлагают`, while the project requirement is the `Всем предлагают` tab. The API parser's raw currency-direction mapping is confirmed; no equivalence with another UI view is required. Therefore the parser and provider test do not by themselves establish that the correct business-defined offer set is being averaged.
+The authenticated capture verifies the frontend request and response shape for `Всем предлагают`, which is the only tab in scope. The API parser's raw currency-direction mapping is confirmed. Before go-live, Polydev's fresh read-only capture should confirm that the first 20 rows still match this request and that the UI remains on this tab.
 
 Before enabling the Money Storage source in the full route, verify the exact intended tab/view and confirm that its first 20 offers are the rows returned by the captured request. Keep cloud polling disabled until official server-side access permission and rate limits are confirmed. The `.env.example` filter values describe the captured frontend request only; they are not authorization or proof of production cloud access.
