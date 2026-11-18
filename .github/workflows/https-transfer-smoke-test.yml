@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - name: Start one-use HTTPS receiver and wait for the phone
+      - name: Prepare one-use HTTPS receiver
         shell: bash
         env:
           PYTHONUNBUFFERED: '1'
@@ -70,11 +70,11 @@ jobs:
               print('PHONE_HTTPS_PAYLOAD_RECEIVED=TIMEOUT', flush=True)
               raise SystemExit(2)
           PY
-          python3 /tmp/receiver.py >/tmp/receiver.log 2>&1 &
+          nohup python3 /tmp/receiver.py >/tmp/receiver.log 2>&1 </dev/null &
           echo $! > /tmp/receiver.pid
           curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /tmp/cloudflared
           sudo install -m 0755 /tmp/cloudflared /usr/local/bin/cloudflared
-          nohup cloudflared tunnel --no-autoupdate --url http://127.0.0.1:8765 >/tmp/cloudflared.log 2>&1 &
+          nohup cloudflared tunnel --no-autoupdate --url http://127.0.0.1:8765 >/tmp/cloudflared.log 2>&1 </dev/null &
           echo $! > /tmp/cloudflared.pid
           URL=''
           for i in $(seq 1 60); do
@@ -88,22 +88,37 @@ jobs:
             exit 1
           fi
           TOKEN="$(cat /tmp/receiver-token)"
-          COMMAND="curl -fsS --max-time 30 -X POST '$URL/upload/$TOKEN' -H 'Content-Type: application/json' --data-binary '{\"test\":\"phone-to-cloud-smoke-test\",\"source\":\"termux\",\"value\":123}'"
+          COMMAND="curl -fsS --max-time 30 -X POST '$URL/upload/$TOKEN' -H 'Content-Type: application/json' --data-binary '{\\"test\\":\\"phone-to-cloud-smoke-test\\",\\"source\\":\\"termux\\",\\"value\\":123}'"
+          printf '%s\\n' "$COMMAND" > /tmp/connection.txt
           {
             echo '## Одноразовый HTTPS-приёмник для телефона'
             echo
             echo "Адрес: $URL/upload/$TOKEN"
             echo
-            echo 'Выполни команду ниже в Termux на телефоне. Приёмник ждёт один запрос до 10 минут.'
-            echo 'Отправляется только тестовый JSON. Не отправляй cookies, токены или данные аккаунта.'
+            echo 'Команду отправки можно взять из артефакта phone-https-connection.'
+            echo 'Приёмник ждёт один запрос до 10 минут. Только тестовый JSON, без cookies и токенов аккаунта.'
             echo
-            echo '\x60\x60\x60bash'
             echo "$COMMAND"
-            echo '\x60\x60\x60'
           } >> "$GITHUB_STEP_SUMMARY"
           echo 'TEMPORARY_RECEIVER_READY=1'
-          echo "TERMUX_COMMAND=$COMMAND"
-          echo 'Waiting for the phone to POST the test payload (10-minute window).'
+          if ! kill -0 "$(cat /tmp/receiver.pid)" 2>/dev/null; then
+            cat /tmp/receiver.log || true
+            echo 'Receiver did not remain alive after startup.'
+            exit 1
+          fi
+
+      - name: Upload one-use connection command
+        uses: actions/upload-artifact@v4
+        with:
+          name: phone-https-connection
+          path: /tmp/connection.txt
+          retention-days: 1
+
+      - name: Wait for phone HTTPS request
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'Waiting up to 10 minutes for the phone request.'
           for i in $(seq 1 620); do
             if grep -q 'PHONE_HTTPS_PAYLOAD_RECEIVED=PASS' /tmp/receiver.log 2>/dev/null; then
               cat /tmp/receiver.log
