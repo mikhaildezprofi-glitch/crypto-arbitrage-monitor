@@ -220,6 +220,28 @@ class SQLiteQuoteStore:
                 )
         return fresh
 
+    def is_due(
+        self,
+        source: str,
+        interval_seconds: int,
+        *,
+        now: datetime | None = None,
+    ) -> bool:
+        """Return whether a provider poll is due based on its last attempt."""
+        if interval_seconds < 0:
+            raise ValueError("interval_seconds cannot be negative.")
+        current = _utc(now)
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT last_attempt_at FROM source_status WHERE source = ?",
+                (source.lower(),),
+            ).fetchone()
+        if row is None:
+            return True
+        last_attempt = datetime.fromisoformat(row["last_attempt_at"])
+        elapsed = (current - _utc(last_attempt)).total_seconds()
+        return elapsed >= interval_seconds
+
     def source_status(self) -> dict[str, dict[str, str | None]]:
         with self._lock:
             rows = self._connection.execute(
