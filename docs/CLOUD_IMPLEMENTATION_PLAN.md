@@ -36,7 +36,7 @@ Do not infer an endpoint, fee, rate, volume, or permission from a similar domain
 - [x] Durable SQLite quote history and source health.
 - [x] Explicit provider enable/disable configuration; unverified sources fail closed.
 - [x] Partial-batch, stale-quote, future-timestamp, and storage tests.
-- [ ] Verify the full CI run and review test output.
+- [x] Verify the full CI run and review test output (unit tests and Docker image build both passed).
 
 ### Stage 2: Deployment packaging
 - [x] Dockerfile for the one-shot cloud task.
