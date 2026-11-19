@@ -40,6 +40,10 @@ jobs:
           sudo htpasswd -Bbn viewer "$HTTP_PASSWORD" | sudo tee /etc/nginx/eid.htpasswd >/dev/null
           sudo chmod 600 /etc/nginx/eid.htpasswd
           sudo tee /etc/nginx/sites-available/eid-browser >/dev/null <<'NGINX'
+          map $http_upgrade $connection_upgrade {
+            default upgrade;
+            '' close;
+          }
           server {
             listen 8080;
             server_name _;
@@ -49,7 +53,7 @@ jobs:
               proxy_pass http://127.0.0.1:6080;
               proxy_http_version 1.1;
               proxy_set_header Upgrade $http_upgrade;
-              proxy_set_header Connection "upgrade";
+              proxy_set_header Connection $connection_upgrade;
               proxy_set_header Host $host;
             }
           }
@@ -171,8 +175,41 @@ jobs:
             exit 1
           fi
 
-          if ! curl -fsS --max-time 15 -u "viewer:$HTTP_PASSWORD" http://127.0.0.1:8080/vnc.html >/dev/null; then
-            echo "noVNC web interface did not become ready."
+          BACKEND_READY=""
+          for i in $(seq 1 30); do
+            if curl -fsS --max-time 5 http://127.0.0.1:6080/vnc.html -o /dev/null; then
+              BACKEND_READY="yes"
+              break
+            fi
+            sleep 2
+          done
+          if [ -z "$BACKEND_READY" ]; then
+            echo "noVNC backend on port 6080 did not become ready."
+            echo "--- websockify log ---"
+            tail -n 60 /tmp/websockify.log || true
+            echo "--- x11vnc log ---"
+            tail -n 40 /tmp/x11vnc.log || true
+            echo "--- nginx error log ---"
+            sudo tail -n 60 /var/log/nginx/error.log || true
+            exit 1
+          fi
+
+          PROXY_READY=""
+          for i in $(seq 1 30); do
+            HTTP_CODE="$(curl -sS --max-time 5 -u "viewer:$HTTP_PASSWORD" -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/vnc.html || true)"
+            if [ "$HTTP_CODE" = "200" ]; then
+              PROXY_READY="yes"
+              break
+            fi
+            echo "Waiting for protected noVNC proxy (HTTP code: $HTTP_CODE, attempt $i/30)."
+            sleep 2
+          done
+          if [ -z "$PROXY_READY" ]; then
+            echo "Protected noVNC proxy did not become ready."
+            echo "--- websockify log ---"
+            tail -n 60 /tmp/websockify.log || true
+            echo "--- nginx error log ---"
+            sudo tail -n 60 /var/log/nginx/error.log || true
             exit 1
           fi
 
