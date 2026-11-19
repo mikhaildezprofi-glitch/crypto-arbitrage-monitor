@@ -138,7 +138,11 @@ jobs:
           from playwright.sync_api import sync_playwright
           sys.path.insert(0, str(Path.cwd()))
           sys.path.insert(0, str(Path.cwd() / "src"))
-          from scripts.money_storage_cloud_read import (\n    TransientMoneyStorageReadError,\n    fetch_from_authenticated_page,\n    write_normalized_snapshot,\n)
+          from scripts.money_storage_cloud_read import (
+    TransientMoneyStorageReadError,
+    fetch_from_authenticated_page,
+    write_normalized_snapshot,
+)
 
           status_file = Path("/tmp/eid-auth-status")
           status_file.write_text("WAITING_FOR_LOGIN", encoding="utf-8")
