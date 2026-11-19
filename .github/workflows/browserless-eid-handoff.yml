@@ -38,7 +38,8 @@ jobs:
           printf '%s' "$VNC_PASSWORD" > /tmp/eid-vnc-password
           printf '%s' "$HTTP_PASSWORD" > /tmp/eid-http-password
           sudo htpasswd -Bbn viewer "$HTTP_PASSWORD" | sudo tee /etc/nginx/eid.htpasswd >/dev/null
-          sudo chmod 600 /etc/nginx/eid.htpasswd
+          sudo chown root:www-data /etc/nginx/eid.htpasswd
+          sudo chmod 640 /etc/nginx/eid.htpasswd
           sudo tee /etc/nginx/sites-available/eid-browser >/dev/null <<'NGINX'
           map $http_upgrade $connection_upgrade {
             default upgrade;
