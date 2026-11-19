@@ -55,6 +55,13 @@ async def _fetch_winance(env) -> Quote:
     return parse_winance_response(payload, observed_at=datetime.now(timezone.utc))
 
 
+def _poll_interval(value, name: str) -> int:
+    seconds = int(value)
+    if seconds < 900 or seconds > 3600:
+        raise ValueError(f"INVALID_{name}_RANGE")
+    return seconds
+
+
 async def _is_due(db, source: str, interval_seconds: int, now: datetime) -> bool:
     row = await db.prepare(
         "SELECT last_attempt_at FROM source_status WHERE source = ?"
@@ -69,10 +76,14 @@ async def _is_due(db, source: str, interval_seconds: int, now: datetime) -> bool
 
 async def _record_success(db, quote: Quote, attempted_at: datetime) -> None:
     await db.prepare(
-        """INSERT INTO quote_observations
+        """INSERT INTO current_quotes
         (source, pair, base_currency, quote_currency, rate, observed_at,
          indicative_only, source_pair_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)"""
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(source) DO UPDATE SET pair=excluded.pair,
+        base_currency=excluded.base_currency, quote_currency=excluded.quote_currency,
+        rate=excluded.rate, observed_at=excluded.observed_at,
+        indicative_only=excluded.indicative_only, source_pair_id=excluded.source_pair_id"""
     ).bind(
         quote.source.lower(),
         quote.pair,
@@ -151,11 +162,11 @@ class Default(WorkerEntrypoint):
         max_age = int(getattr(runtime_env, "QUOTE_MAX_AGE_SECONDS", "900"))
         providers = {
             "blackbit": (
-                int(getattr(runtime_env, "BLACKBIT_POLL_SECONDS", "300")),
+                _poll_interval(getattr(runtime_env, "BLACKBIT_POLL_SECONDS", "900"), "BLACKBIT_INTERVAL"),
                 _fetch_blackbit,
             ),
             "winance": (
-                int(getattr(runtime_env, "WINANCE_POLL_SECONDS", "300")),
+                _poll_interval(getattr(runtime_env, "WINANCE_POLL_SECONDS", "900"), "WINANCE_INTERVAL"),
                 _fetch_winance,
             ),
         }
