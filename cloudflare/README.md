@@ -25,7 +25,7 @@ From the repository root:
     uv sync --project cloudflare
     uv run --project cloudflare pywrangler deploy --dry-run
 
-The dry run compiles and packages the Worker without deploying it. CI runs this command on every relevant push and pull request.
+The dry run compiles and packages the Worker without deploying it. CI also applies the migration to local D1, starts Wrangler in local scheduled-test mode with deterministic mock quotes, invokes the scheduled handler, and verifies both source-health rows were persisted. The mock mode is disabled by default in wrangler.toml and is used only by the CI-created .dev.vars file.
 
 For local runtime testing after configuring a real D1 database binding:
 
