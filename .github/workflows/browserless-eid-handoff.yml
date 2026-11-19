@@ -331,7 +331,7 @@ jobs:
 
       - name: Publish normalized current offers only
         if: success() && hashFiles('money-storage-current-offers.json') != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: money-storage-current-offers
           path: money-storage-current-offers.json
