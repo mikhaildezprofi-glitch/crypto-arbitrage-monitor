@@ -45,6 +45,7 @@ test("scheduled handler persists only deterministic mock quotes to D1", async ()
         },
       };
     },
+    batch: async (statements) => Promise.all(statements.map((statement) => statement.run())),
   };
   await scheduledHandler({ DB: db, MOCK_QUOTES: "true" }, new Date("2026-11-19T00:00:00Z"));
   assert.equal(calls.filter(x => x.sql.includes("INSERT INTO quote_observations")).length, 2);
@@ -55,4 +56,34 @@ test("scheduled handler persists only deterministic mock quotes to D1", async ()
 
 test("scheduled handler fails closed without D1", async () => {
   await assert.rejects(() => scheduledHandler({}, new Date()), /D1_BINDING_UNAVAILABLE/);
+});
+
+
+test("Winance parser rejects excessively complex payloads", () => {
+  const root = {};
+  let cursor = root;
+  for (let i = 0; i < 70; i++) {
+    cursor.next = {};
+    cursor = cursor.next;
+  }
+  assert.throws(() => parseWinanceRate(root), /PAYLOAD_TOO_COMPLEX/);
+});
+
+test("scheduled handler rejects invalid polling configuration without accepting quotes", async () => {
+  const calls = [];
+  const db = {
+    prepare(sql) {
+      return { bind(...args) {
+        return {
+          first: async () => null,
+          run: async () => { calls.push({ sql, args }); return {}; },
+        };
+      }};
+    },
+    batch: async (statements) => Promise.all(statements.map((statement) => statement.run())),
+  };
+  await scheduledHandler({ DB: db, MOCK_QUOTES: "true", QUOTE_MAX_AGE_SECONDS: "NaN" },
+    new Date("2026-11-19T00:00:00Z"));
+  assert.equal(calls.filter((x) => x.sql.includes("INSERT INTO quote_observations")).length, 0);
+  assert.equal(calls.filter((x) => x.sql.includes("INSERT INTO source_status")).length, 2);
 });
