@@ -21,30 +21,62 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # GitHub-hosted runners occasionally hit transient Ubuntu mirror/socket errors.
-          # Retry metadata refresh and package installation; avoid optional packages
-          # (notably unrelated Node.js dependencies) to reduce downloads.
-          sudo apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
+          # GitHub's Ubuntu image may configure mirror+file sources that select
+          # an unstable regional endpoint. Use the canonical Ubuntu mirrors.
+          sudo python3 - <<'PY'
+          from pathlib import Path
+
+          source_dir = Path("/etc/apt/sources.list.d")
+          for path in source_dir.glob("*.sources"):
+              text = path.read_text()
+              if "mirror+file:/etc/apt/apt-mirrors.txt" not in text:
+                  continue
+              stanzas = []
+              for stanza in text.strip().split("\\n\\n"):
+                  if not stanza.strip():
+                      continue
+                  suites = ""
+                  for line in stanza.splitlines():
+                      if line.lower().startswith("suites:"):
+                          suites = line.split(":", 1)[1].strip()
+                  uri = ("https://security.ubuntu.com/ubuntu/"
+                         if "security" in suites
+                         else "https://archive.ubuntu.com/ubuntu/")
+                  stanza = stanza.replace(
+                      "mirror+file:/etc/apt/apt-mirrors.txt", uri
+                  )
+                  stanzas.append(stanza)
+              path.write_text("\\n\\n".join(stanzas) + "\\n")
+              print(f"Reconfigured Ubuntu mirror source: {path}")
+
+          PY
+          APT_OPTS=(
+            -o Acquire::Retries=8
+            -o Acquire::http::Timeout=45
+            -o Acquire::https::Timeout=45
+            -o Acquire::http::Pipeline-Depth=0
+            -o Acquire::https::Pipeline-Depth=0
+          )
+          sudo apt-get "${APT_OPTS[@]}" update
           install_ok=""
           for attempt in 1 2 3; do
-            if sudo apt-get -y --no-install-recommends \
-              -o Acquire::Retries=5 \
-              -o Acquire::http::Timeout=30 \
-              -o Acquire::https::Timeout=30 \
-              install xvfb x11vnc novnc websockify curl x11-utils nginx apache2-utils; then
+            if sudo apt-get -y --no-install-recommends "${APT_OPTS[@]}" install \
+              xvfb x11vnc novnc websockify curl x11-utils nginx apache2-utils; then
               install_ok="yes"
               break
             fi
             echo "Ubuntu package installation attempt $attempt/3 failed; refreshing package indexes before retry."
-            sleep 10
-            sudo apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
+            sleep 15
+            sudo apt-get "${APT_OPTS[@]}" update
           done
           if [ -z "$install_ok" ]; then
             echo "Required browser packages could not be installed after three attempts."
             exit 1
           fi
-          python3 -m pip install --retries 5 --timeout 30 --break-system-packages playwright
-          python3 -m playwright install --with-deps chromium
+          python3 -m pip install --retries 5 --timeout 45 --break-system-packages playwright
+          # Avoid Playwright's --with-deps path: it launches a second apt
+          # transaction and reintroduces the same mirror/socket failure.
+          python3 -m playwright install chromium
 
       - name: Start protected remote browser
         shell: bash
