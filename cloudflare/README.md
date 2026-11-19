@@ -24,12 +24,17 @@ From the repository root:
 
     uv sync --project cloudflare
     uv run --project cloudflare pywrangler deploy --dry-run
+    uv run --project cloudflare python scripts/vendor_core.py
 
-The dry run compiles and packages the Worker without deploying it. CI also applies the migration to local D1, starts Wrangler in local scheduled-test mode with deterministic mock quotes, invokes the scheduled handler, and verifies both source-health rows were persisted. The mock mode is disabled by default in wrangler.toml and is used only by the CI-created .dev.vars file.
+The last command copies the shared `src/arbitrage_monitor` package into Cloudflare's `python_modules` bundle after Pywrangler has synchronized third-party dependencies. This avoids maintaining a second copy of the parsers and data models. Re-run it whenever the core package changes, after the next Pywrangler sync.
+
+CI then applies the migration to local D1, starts Wrangler in local scheduled-test mode with deterministic mock quotes, invokes the scheduled handler, and verifies both source-health rows were persisted. The mock mode is disabled by default in wrangler.toml and is used only by the CI-created .dev.vars file.
 
 For local runtime testing after configuring a real D1 database binding:
 
     cd cloudflare
+    uv run pywrangler d1 migrations apply crypto-arbitrage-monitor --local
+    uv run python scripts/vendor_core.py
     uv run pywrangler dev --test-scheduled
 
 Then invoke the local scheduled handler:
