@@ -13,7 +13,7 @@ from .calculator import calculate_route, five_step_route
 from .models import Quote
 from .providers.base import QuoteProvider
 from .providers.blackbit import BlackBitQuoteProvider
-from .providers.collection import REQUIRED_PROVIDER_KEYS, QuoteBatch, collect_quotes
+from .providers.collection import QuoteBatch, collect_quotes
 from .providers.money_storage import MoneyStorageQuoteProvider
 from .providers.winance import fetch_quote as fetch_winance_quote
 from .storage import SQLiteQuoteStore
