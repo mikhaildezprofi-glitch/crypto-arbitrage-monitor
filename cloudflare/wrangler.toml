@@ -13,7 +13,8 @@ WINANCE_POLL_SECONDS = "300"
 [[d1_databases]]
 binding = "DB"
 database_name = "crypto-arbitrage-monitor"
-database_id = "REPLACE_WITH_OWNER_CREATED_D1_DATABASE_ID"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
 
 # Cron is intentionally not enabled in this prototype.
 # Enable only after local scheduled-handler tests and a measured Free-plan CPU check.
