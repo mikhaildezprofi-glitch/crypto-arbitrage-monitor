@@ -40,12 +40,13 @@ class QuoteBatch:
 
 def collect_quotes(
     providers: Mapping[str, QuoteProvider],
+    required_keys: tuple[str, ...] = REQUIRED_PROVIDER_KEYS,
 ) -> QuoteBatch:
-    """Fetch all required sources independently and retain only this cycle's results."""
+    """Fetch selected sources independently and retain only this cycle's results."""
     quotes: dict[str, Quote] = {}
     errors: dict[str, str] = {}
 
-    for key in REQUIRED_PROVIDER_KEYS:
+    for key in required_keys:
         provider = providers.get(key)
         if provider is None:
             errors[key] = "Provider is not configured."
