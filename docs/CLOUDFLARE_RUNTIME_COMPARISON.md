@@ -37,7 +37,7 @@ The Python implementation remains valuable as the reference integration with the
 
 ## Storage and retention
 
-The approved policy is documented in [QUOTE_DATA_RETENTION.md](QUOTE_DATA_RETENTION.md): every source keeps only its current validated snapshot; a successful refresh replaces it, and no historical quote/offer archive is retained. BlackBit and Winance polling is configurable from 900 to 3600 seconds (15 minutes to 1 hour); the exact interval remains undecided. The current prototypes still append quote observations and therefore do not yet enforce the policy. This is a production blocker.
+The approved policy is documented in [QUOTE_DATA_RETENTION.md](QUOTE_DATA_RETENTION.md): every source keeps only its current validated snapshot; a successful refresh replaces it, and no historical quote/offer archive is retained. BlackBit and Winance polling is configurable from 900 to 3600 seconds (15 minutes to 1 hour); the exact interval remains undecided. The Python and JavaScript prototype schemas and handlers have now been changed to use a one-row-per-source `current_quotes` table with UPSERT replacement. CI validation is pending. Money Storage and Sberkassa adapters remain unimplemented.
 
 ## Remaining blockers
 
