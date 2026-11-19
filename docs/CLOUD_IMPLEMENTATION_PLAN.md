@@ -8,12 +8,12 @@ The system remains read-only. It must never create/accept/edit/cancel offers or 
 
 ## Architecture
 
-1. Cloud worker: long-running process in a managed container/service. GitHub Actions remains CI/deployment automation, not the production scheduler.
+1. Cloud worker: one-shot task packaged as a Docker container and invoked by a managed cloud scheduler. GitHub Actions is CI/deployment automation, not the production scheduler.
 2. Provider adapters: isolated read-only adapters for Money Storage, BlackBit, Winance, Sberkassa ERUB/RUB, and Sberkassa Exchange RUB/USDT.
-3. Collector: polls each enabled provider independently. A source failure does not stop other polls, but makes the five-source batch incomplete.
-4. Quote persistence: store normalized Decimal rate, pair, observed_at, source status, and redacted error category. Do not persist raw authenticated responses or credentials.
+3. Collector: polls providers independently. A source failure does not stop other polls, but makes the five-source batch incomplete.
+4. Quote persistence: SQLite stores normalized Decimal rate, pair, observed_at, source status, and redacted error category. It never stores raw authenticated payloads or credentials.
 5. Freshness gate: maximum quote age 900 seconds. Failed polls never reuse stale quotes.
-6. Calculator: calculate only when all five quotes are fresh, correctly directed, and required fee information is known. Money Storage displayed commission is ignored by explicit project rule.
+6. Calculator: calculates only when all five quotes are fresh, correctly directed, and required fee information is known. Money Storage displayed commission is ignored by explicit project rule.
 7. Notifier: Telegram informational alerts only. No execution buttons or transaction callbacks.
 8. Health/status: worker liveness and source health, without secret or personal-data exposure.
 
@@ -32,22 +32,22 @@ Do not infer an endpoint, fee, rate, volume, or permission from a similar domain
 ## Development sequence
 
 ### Stage 1: Cloud runtime foundation
-- Implement a single poll-cycle entry point.
-- Add a durable, minimal quote/status store.
-- Add explicit provider enable/disable configuration.
-- Ensure disabled providers report unavailable, never fake or reuse data.
-- Add tests for partial batches, stale quotes, future timestamps, and storage recovery.
+- [x] One-shot poll-cycle entry point.
+- [x] Durable SQLite quote history and source health.
+- [x] Explicit provider enable/disable configuration; unverified sources fail closed.
+- [x] Partial-batch, stale-quote, future-timestamp, and storage tests.
+- [ ] Verify the full CI run and review test output.
 
 ### Stage 2: Deployment packaging
-- Add Dockerfile and health-check command.
-- Keep secrets external to the repository.
-- Document environment variables and startup/shutdown behavior.
-- Run CI on GitHub Actions; do not use scheduled GitHub Actions as the permanent worker.
+- [x] Dockerfile for the one-shot cloud task.
+- [x] Environment-variable configuration with unverified providers disabled.
+- [ ] Document a selected managed scheduler/host after checking free-tier, persistence, secrets, outbound HTTPS, and payment-card requirements.
+- [ ] Prove a real cloud task execution before claiming deployment.
 
 ### Stage 3: Notifications
-- Add Telegram delivery for complete profitable routes and source-health alerts.
-- Send no stale or incomplete route result.
-- Keep messages informational and omit transaction/action buttons.
+- [ ] Telegram delivery for complete profitable routes and source-health alerts.
+- [ ] Send no stale or incomplete route result.
+- [ ] Keep messages informational and omit transaction/action buttons.
 
 ### Stage 4: Remaining provider evidence
 - Continue cloud-side public technical research only.
