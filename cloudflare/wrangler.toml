@@ -7,8 +7,8 @@ compatibility_flags = ["python_workers"]
 BLACKBIT_API_BASE_URL = "https://blackbit.exchange/site"
 WINANCE_API_URL = "https://winance.exchange/site/currency_pairs"
 QUOTE_MAX_AGE_SECONDS = "900"
-BLACKBIT_POLL_SECONDS = "300"
-WINANCE_POLL_SECONDS = "300"
+BLACKBIT_POLL_SECONDS = "900"
+WINANCE_POLL_SECONDS = "900"
 MOCK_QUOTES = "false"
 
 [[d1_databases]]
