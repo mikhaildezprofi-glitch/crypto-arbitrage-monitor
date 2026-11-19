@@ -66,5 +66,13 @@ jobs:
             cat /tmp/cloudflare-worker.log
             exit 1
           fi
-          curl --silent --show-error --fail 'http://127.0.0.1:8787/cdn-cgi/local/scheduled?cron=*/5+*+*+*+*'
-          curl --silent --show-error --fail http://127.0.0.1:8787/health | python -c 'import json,sys; data=json.load(sys.stdin); sources={row["source"]: row["status"] for row in data["sources"]}; assert sources == {"blackbit":"fresh","winance":"fresh"}, sources; print("D1 smoke test passed:", sources)'
+          if ! curl --silent --show-error --fail 'http://127.0.0.1:8787/cdn-cgi/local/scheduled?cron=*/5+*+*+*+*'; then
+            echo "Scheduled handler returned an error. Wrangler/Worker log follows:"
+            cat /tmp/cloudflare-worker.log
+            exit 1
+          fi
+          if ! curl --silent --show-error --fail http://127.0.0.1:8787/health | python -c 'import json,sys; data=json.load(sys.stdin); sources={row["source"]: row["status"] for row in data["sources"]}; assert sources == {"blackbit":"fresh","winance":"fresh"}, sources; print("D1 smoke test passed:", sources)'; then
+            echo "D1 health verification failed. Wrangler/Worker log follows:"
+            cat /tmp/cloudflare-worker.log
+            exit 1
+          fi
