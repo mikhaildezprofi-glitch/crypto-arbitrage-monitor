@@ -77,3 +77,19 @@ jobs:
             cat /tmp/cloudflare-worker.log
             exit 1
           fi
+
+  cloudflare-js-worker:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: cloudflare-js
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Run JavaScript Worker parser and D1-handler tests
+        run: npm test
+      - name: Compile JavaScript Worker without deploying
+        run: npx --yes wrangler@4 deploy --dry-run --outdir /tmp/cloudflare-js-worker
