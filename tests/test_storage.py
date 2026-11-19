@@ -1,4 +1,6 @@
 import unittest
+import tempfile
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -77,6 +79,23 @@ class SQLiteQuoteStoreTests(unittest.TestCase):
             now=self.now,
         )
         self.assertEqual(result, {})
+
+    def test_file_database_survives_store_reopen(self):
+        with tempfile.TemporaryDirectory() as directory:
+            database = str(Path(directory) / "quotes.sqlite3")
+            first = SQLiteQuoteStore(database)
+            first.record_success(self.quote(), attempted_at=self.now)
+            first.close()
+
+            reopened = SQLiteQuoteStore(database)
+            try:
+                result = reopened.latest_fresh_quotes(
+                    max_age_seconds=900,
+                    now=self.now + timedelta(seconds=30),
+                )
+                self.assertEqual(result["winance"].rate, Decimal("0.04"))
+            finally:
+                reopened.close()
 
     def test_negative_max_age_is_rejected(self):
         with self.assertRaises(ValueError):
