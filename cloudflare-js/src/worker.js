@@ -266,7 +266,16 @@ export default {
       const result = await env.DB.prepare(
         "SELECT source, status, last_attempt_at, last_success_at, error_type FROM source_status ORDER BY source",
       ).all();
-      return Response.json({ sources: result.results ?? [] });
+      const maxAge = positiveInteger(env.QUOTE_MAX_AGE_SECONDS, DEFAULT_MAX_AGE_SECONDS, "MAX_AGE");
+      const now = Date.now();
+      const sources = (result.results ?? []).map((row) => {
+        const lastSuccess = row.last_success_at ? Date.parse(row.last_success_at) : NaN;
+        const ageSeconds = Number.isFinite(lastSuccess) ? (now - lastSuccess) / 1000 : null;
+        const isFresh = ageSeconds !== null && ageSeconds >= 0 && ageSeconds <= maxAge;
+        const status = row.status === "unavailable" ? "unavailable" : isFresh ? "fresh" : "stale";
+        return { ...row, status, age_seconds: ageSeconds === null ? null : Math.max(0, Math.floor(ageSeconds)) };
+      });
+      return Response.json({ sources });
     } catch {
       return Response.json({ error: "D1_QUERY_FAILED" }, { status: 503 });
     }
