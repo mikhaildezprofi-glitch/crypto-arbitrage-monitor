@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - "cloud-only-*"
+      - "cloudflare-js-runtime-experiment"
       - "feature/**"
       - "fix/**"
   pull_request:
