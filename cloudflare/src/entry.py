@@ -121,7 +121,23 @@ class Default(WorkerEntrypoint):
             """SELECT source, status, last_attempt_at, last_success_at, error_type
             FROM source_status ORDER BY source"""
         ).all()
-        return Response.json({"sources": rows.results})
+        sources = [
+            {
+                "source": str(row["source"]),
+                "status": str(row["status"]),
+                "last_attempt_at": str(row["last_attempt_at"]),
+                "last_success_at": (
+                    None if row["last_success_at"] is None
+                    else str(row["last_success_at"])
+                ),
+                "error_type": (
+                    None if row["error_type"] is None
+                    else str(row["error_type"])
+                ),
+            }
+            for row in rows.results
+        ]
+        return Response.json({"sources": sources})
 
     async def scheduled(self, controller, env, ctx):
         now = datetime.now(timezone.utc)
@@ -141,7 +157,31 @@ class Default(WorkerEntrypoint):
             try:
                 if not await _is_due(env.DB, source, interval, now):
                     continue
-                quote = await fetcher(env)
+                if str(getattr(env, "MOCK_QUOTES", "false")).lower() == "true":
+                    if source == "blackbit":
+                        quote = Quote(
+                            source="BlackBit",
+                            pair="ECR/USDT",
+                            base_currency="ECR",
+                            quote_currency="USDT",
+                            rate=Decimal("0.05"),
+                            observed_at=now,
+                            indicative_only=True,
+                            source_pair_id="ci-mock",
+                        )
+                    else:
+                        quote = Quote(
+                            source="Winance",
+                            pair="ERUB/USDT",
+                            base_currency="ERUB",
+                            quote_currency="USDT",
+                            rate=Decimal("0.04"),
+                            observed_at=now,
+                            indicative_only=False,
+                            source_pair_id="18",
+                        )
+                else:
+                    quote = await fetcher(env)
                 if quote.rate <= 0 or quote.observed_at > now:
                     raise ValueError("Invalid or future-dated quote")
                 age = (now - quote.observed_at).total_seconds()
