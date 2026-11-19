@@ -9,13 +9,14 @@ Status: approved requirement. The Python and JavaScript prototype schemas and ha
 | BlackBit | One current normalized ECR/USDT quote | Until the next polling request replaces it |
 | Winance | One current normalized ERUB/USDT quote | Until the next polling request replaces it |
 | Money Storage | Current eligible offers needed for calculation | Until the next successful refresh replaces them |
-| Sberkassa | Current rates/offers needed for calculation | Until the next successful refresh replaces them |
+| Sberkassa deals | Current eligible rates/offers needed for the ERUB → RUB stage | Until the next successful refresh replaces them |
+| Sberkassa `/exchange` | One current displayed RUB → USDT exchange rate used for the RUB → USDT stage | Until the next successful refresh replaces it |
 
 No source has a historical quote/offer archive. Do not append snapshots to an observations table.
 
 ## Replacement and failures
 
-- Store at most one current snapshot per source (or per source + market key if a source later returns multiple independently needed offers).
+- Store at most one current snapshot per source/market key. The Sberkassa `/exchange` RUB → USDT rate is a separate current value from Sberkassa deal offers; do not store the full page or a rate history.
 - On a successful refresh, atomically replace the previous snapshot with the newly validated data.
 - On a failed, empty, malformed, or invalid refresh, do not overwrite a valid snapshot with bad data. Mark the source unavailable/stale; the previous value may remain for diagnostics but must not be treated as current or used in the full route.
 - Keep operational source-health metadata separately. It is not quote history and must not contain credentials or raw provider payloads.
@@ -27,4 +28,4 @@ BlackBit and Winance polling is to be configurable within **900 to 3600 seconds 
 
 ## Current implementation gap
 
-The prototype schemas now define `current_quotes` with `source` as the primary key, and successful BlackBit/Winance polls use UPSERT rather than appending history. A failed poll leaves the last snapshot in place but marks the source unavailable, so it cannot be treated as current. CI must verify the schema and handler behavior. Money Storage and Sberkassa adapters are not implemented; when added, they must use the same current-only pattern. Do not enable production polling until CI and failure-path tests pass.
+The prototype schemas now define `current_quotes` with `source` as the primary key, and successful BlackBit/Winance polls use UPSERT rather than appending history. A failed poll leaves the last snapshot in place but marks the source unavailable, so it cannot be treated as current. CI must verify the schema and handler behavior. Money Storage and Sberkassa adapters are not implemented. When added, Sberkassa `/exchange` must persist only the validated displayed RUB → USDT rate as its current snapshot, replacing it on the next successful refresh. Do not enable production polling until CI and failure-path tests pass.
