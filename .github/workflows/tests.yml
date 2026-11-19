@@ -91,5 +91,7 @@ jobs:
           node-version: '24'
       - name: Run JavaScript Worker parser and D1-handler tests
         run: npm test
+      - name: Benchmark JavaScript parser CPU proxy (synthetic fixtures)
+        run: npm run benchmark
       - name: Compile JavaScript Worker without deploying
         run: npx --yes wrangler@4 deploy --dry-run --outdir /tmp/cloudflare-js-worker
