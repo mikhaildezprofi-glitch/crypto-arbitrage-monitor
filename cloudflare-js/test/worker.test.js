@@ -69,7 +69,7 @@ test("Winance parser rejects excessively complex payloads", () => {
   assert.throws(() => parseWinanceRate(root), /PAYLOAD_TOO_COMPLEX/);
 });
 
-test("scheduled handler rejects invalid polling configuration without accepting quotes", async () => {
+test("scheduled handler rejects invalid polling configuration", async () => {
   const calls = [];
   const db = {
     prepare(sql) {
@@ -82,8 +82,10 @@ test("scheduled handler rejects invalid polling configuration without accepting 
     },
     batch: async (statements) => Promise.all(statements.map((statement) => statement.run())),
   };
-  await scheduledHandler({ DB: db, MOCK_QUOTES: "true", QUOTE_MAX_AGE_SECONDS: "NaN" },
-    new Date("2026-11-19T00:00:00Z"));
-  assert.equal(calls.filter((x) => x.sql.includes("INSERT INTO quote_observations")).length, 0);
-  assert.equal(calls.filter((x) => x.sql.includes("INSERT INTO source_status")).length, 2);
+  await assert.rejects(
+    () => scheduledHandler({ DB: db, MOCK_QUOTES: "true", QUOTE_MAX_AGE_SECONDS: "NaN" },
+      new Date("2026-11-19T00:00:00Z")),
+    /INVALID_MAX_AGE/,
+  );
+  assert.equal(calls.length, 0);
 });
