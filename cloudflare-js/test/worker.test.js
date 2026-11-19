@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   parseBlackBitPairId, parseBlackBitRate, parseWinanceRate, readBoundedBody, scheduledHandler,
+  default as worker,
 } from "../src/worker.js";
 
 test("BlackBit resolves one exact ECR/USDT pair", () => {
@@ -175,4 +176,41 @@ test("bounded response reader accepts small bodies and rejects oversized streams
 test("bounded response reader rejects a declared oversized body before reading", async () => {
   const response = new Response("{}", { headers: { "content-length": "100" } });
   await assert.rejects(() => readBoundedBody(response, 10), /HTTP_RESPONSE_TOO_LARGE/);
+});
+
+
+test("health endpoint reports an old successful quote as stale", async () => {
+  const lastSuccess = new Date(Date.now() - 901_000).toISOString();
+  const db = {
+    prepare() {
+      return { all: async () => ({ results: [{
+        source: "blackbit", status: "fresh", last_attempt_at: lastSuccess,
+        last_success_at: lastSuccess, error_type: null,
+      }] }) };
+    },
+  };
+  const response = await worker.fetch(new Request("https://worker.test/health"), {
+    DB: db, QUOTE_MAX_AGE_SECONDS: "900",
+  });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.sources[0].status, "stale");
+  assert.ok(body.sources[0].age_seconds >= 901);
+});
+
+test("health endpoint does not report a future timestamp as fresh", async () => {
+  const future = new Date(Date.now() + 60_000).toISOString();
+  const db = {
+    prepare() {
+      return { all: async () => ({ results: [{
+        source: "winance", status: "fresh", last_attempt_at: future,
+        last_success_at: future, error_type: null,
+      }] }) };
+    },
+  };
+  const response = await worker.fetch(new Request("https://worker.test/health"), {
+    DB: db, QUOTE_MAX_AGE_SECONDS: "900",
+  });
+  const body = await response.json();
+  assert.equal(body.sources[0].status, "stale");
 });
