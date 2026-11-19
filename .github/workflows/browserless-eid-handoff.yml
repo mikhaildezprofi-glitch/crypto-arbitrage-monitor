@@ -131,10 +131,10 @@ jobs:
               page.on("response", on_response)
               page.on("pageerror", lambda error: print("BROWSER_PAGE_ERROR=%s" % str(error)[:200], flush=True))
 
-              # Start the actual Money Storage E-ID authorization flow.
-              # Opening e-id.cards/login directly omits the OAuth redirect state.
+              # Start on Money Storage itself. Let its own login flow establish OAuth state
+              # and redirect the browser to E-ID; do not open the E-ID endpoint directly.
               page.goto(
-                  "https://storage.money/oauth/authorize/eid",
+                  "https://storage.money/deals#tab-3",
                   wait_until="domcontentloaded",
                   timeout=60000
               )
@@ -147,7 +147,8 @@ jobs:
                   return {javascript: jsWorks, firstPartyCookieWriteRead: cookiesWork};
               }""")
               print("BROWSER_FEATURE_CHECKS=%s" % json.dumps(browser_checks, sort_keys=True), flush=True)
-              print("Money Storage E-ID authorization flow opened.", flush=True)
+              print("Money Storage entry page opened; waiting for its E-ID redirect.", flush=True)
+              print("INITIAL_URL=%s" % urlparse(page.url).netloc + urlparse(page.url).path, flush=True)
 
               deadline = time.monotonic() + 1800
               authenticated = False
