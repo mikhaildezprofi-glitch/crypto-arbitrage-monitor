@@ -1,105 +1,64 @@
-# Sberkassa quote-source investigation
+# Sberkassa cloud quote-source investigation
 
-Research date: 2026-11-18
+Research baseline: 2026-11-18
 
-## Scope
+## Required route steps
 
-The route requires two distinct read-only quote steps:
+These are two separate markets and must have independently verified quote sources:
 
-1. Sberkassa: ERUB -> RUB
-2. Sberkassa Exchange: RUB -> USDT
+1. Sberkassa deals: ERUB -> RUB
+   UI page: https://sberkassa.site/deals#tab-3
+2. Sberkassa exchange: RUB -> USDT
+   UI page: https://sberkassa.site/exchange
+   Required value only: current displayed rate in the form 1 RUB = X USDT.
 
-Do not assume these are the same market, endpoint, fee schedule, or direction. No order placement, payment, deposit, withdrawal, or account mutation is part of this project.
+The exchange page is not an order-book research task. For RUB -> USDT, the calculator needs only the current displayed conversion rate and its observation time.
 
-## Confirmed public-page observations
+## Confirmed public observations
 
-- Opening https://sberkassa.site redirects to https://sberkassa.site/login.
-- The current public login page displays an E-ID login action.
-- The page is a login/marketing page; it does not expose a public quote table or API documentation in the retrieved page text.
-- A third-party site-technology snapshot dated 2025-04-07 lists these frontend resources for the Sberkassa login page:
-  - `/js/alert.js?v=0.226`
-  - `/js/auth.js`
-  - `/js/lib/clipboard.min.js`
-  - `/js/lib/jquery-ui.min.js`
-  - `/js/lib/jquery.min.js`
-  - `/js/lib/selectBoxIt.min.js`
-  - `/js/lib/sortable.js`
-  - `/translations/ru`
-  - `https://e-id.cards/js/eid.js`
-- The public research browser could not retrieve the JavaScript resources as text: it rejected the JavaScript content type or reported the URL inaccessible. This is a tooling limitation, not proof that the resources are unavailable to a normal browser.
-- The earlier attempt to retrieve `/site/currency_pairs` through the research browser returned an internal retrieval error. This does not establish that the route is absent or that the live service is down.
+- Opening https://sberkassa.site redirects to /login.
+- The public login page displays an E-ID login action.
+- Public page research exposed frontend resource names including /js/app.js, /js/auth.js, and /translations/ru.
+- A prior Android-side public HTML retrieval succeeded for the login page, but it did not expose quote endpoints.
+- Attempts to retrieve some JavaScript resources through the research browser failed because of content-type or retrieval limitations. These failures do not prove that the resources or endpoints do not exist.
+- No authenticated quote response has been captured for either required direction.
 
-## Exclusions and false positives
+## Unconfirmed information
 
-- `erub.site` is a different hostname and must not be substituted for `sberkassa.site`.
-- Public routes documented for `erub.site` (such as `/site/rates` and `/site/merchant_config`) are not evidence of Sberkassa quote endpoints.
-- Winance ERUB/USDT is a separate route step and does not provide the Sberkassa ERUB/RUB or Sberkassa Exchange RUB/USDT quote.
-- No endpoint names, response schemas, rates, commissions, limits, or volumes are inferred from frontend filenames.
+For ERUB -> RUB, no verified quote endpoint, HTTP method, response schema, rate, fee, min/max volume, available volume, or freshness semantics are known.
 
-## Current implementation decision
+For RUB -> USDT, no verified current rate source, endpoint, response schema, fee, or freshness semantics are known. A previously seen screenshot value is historical only and must never be treated as a current quote.
 
-No Sberkassa or Sberkassa Exchange provider adapter is implemented. Both route steps remain unavailable until their own read-only quote sources are verified.
+Do not infer API paths from frontend filenames. Do not use Winance ERUB/USDT as a substitute. Do not use erub.site endpoints: it is a different hostname and service.
 
-Do not guess undocumented endpoint paths or replay authenticated requests. Do not export or transfer browser cookies, session tokens, authorization headers, CSRF values, or personal account data. Any authenticated inspection must be explicitly authorized by the account owner and limited to redacted request metadata and response schema. Do not bypass CAPTCHA, MFA, or device binding.
+## Cloud implementation decision
 
-## Next evidence required
+- No Sberkassa provider adapter is enabled.
+- Both Sberkassa route steps are explicitly unavailable until their own read-only data sources are verified.
+- The collector must not synthesize, estimate, or reuse either rate.
+- Unknown fees remain unknown; they must not be assumed to be zero.
+- The five-step calculator must refuse to publish a full-route result if either Sberkassa quote or its required fee data is missing.
+- No provider-support request will be sent. Continue cloud-side research using public technical material and the existing repository evidence only.
 
-For each of the two route steps, obtain:
+## Security boundaries
 
-1. The exact UI page/section that displays the relevant direction.
-2. The normal browser request method and path used to load that quote.
-3. Redacted query parameter names and non-sensitive filter values.
-4. HTTP status, content type, response envelope, and JSON field names/types.
-5. The precise rate meaning and direction.
-6. Applicable commission, min/max limits, available volume, and quote timestamp/freshness semantics.
-7. Confirmation that read-only automated cloud polling is permitted, plus supported authentication and rate limits if authentication is required.
+- Do not guess or probe undocumented authenticated endpoints.
+- Do not export or transfer browser cookies, session tokens, authorization headers, CSRF values, or personal account data.
+- Do not bypass CAPTCHA, MFA, device binding, or other access controls.
+- Do not create, accept, edit, or cancel deals; do not pay, transfer, deposit, or withdraw.
+- Only GET/read-only access is in scope.
 
-Until those facts are established independently for both steps, the full route must remain unavailable. Unknown fees or limits must not be treated as zero or unlimited.
+## Evidence required before enabling either adapter
 
-## Sources inspected
+A future implementation must have, independently for each direction:
+1. Exact quote source and host.
+2. Request method and path.
+3. Sanitized parameter names and safe non-personal values.
+4. HTTP status and content type.
+5. Response envelope and field names/types.
+6. Verified rate direction and meaning.
+7. Required fee semantics.
+8. Quote observation/freshness behavior.
+9. A permitted cloud-side access method.
 
-- Current public login page: https://sberkassa.site/login
-- Third-party frontend-resource snapshot (dated 2025-04-07): https://codomaza.com/analiz/sberkassa.site
-
-The third-party snapshot is used only to identify historical frontend resource paths. It is not treated as authoritative API documentation.
-
-
-## Follow-up public resource checks (2026-11-18)
-
-Additional exact-host searches for Sberkassa rate endpoints and API routes returned no official API documentation or indexed response schema.
-
-Direct retrieval attempts:
-- `https://sberkassa.site/js/auth.js` was rejected by the research browser because the response content type is JavaScript.
-- `https://sberkassa.site/js/alert.js?v=0.226` was inaccessible through the research browser.
-- `https://sberkassa.site/site/currency_pairs` was also inaccessible through the research browser.
-These are retrieval limitations only; they do not prove that the resources or route do not exist.
-
-Search results also surfaced technical material for the separate hostname `erub.site`, including `/site/rates` and `/site/merchant_config`. These endpoints belong to `erub.site`, not `sberkassa.site`, and are explicitly excluded from this provider investigation. Likewise, Winance pair IDs and endpoints cannot substitute for either Sberkassa step.
-
-### Current result
-
-No verified Sberkassa endpoint, quote schema, commission, limit, or volume has been obtained. The two Sberkassa route steps remain unavailable. The next useful evidence must come from the normal authenticated Sberkassa UI Network panel, captured with the account owner's authorization and sanitized to remove all credentials and personal data, or from official provider documentation.
-
-## Public frontend inspection from Android (2026-11-18)
-
-A read-only request from the user's Android environment successfully retrieved `https://sberkassa.site/login` (HTTP success; HTML content type; 9,083 bytes). The HTML referenced these same-origin scripts:
-
-- `/translations/ru`
-- `/js/lib/jquery.min.js`
-- `/js/lib/jquery-ui.min.js`
-- `/js/lib/clipboard.min.js`
-- `/js/lib/sortable.js`
-- `/js/lib/selectBoxIt.min.js`
-- `/js/app.js`
-- `/js/alert.js`
-- `/js/auth.js`
-
-The public translation resource contains UI labels such as "Public deals proposed by you", "Who can accept this deal", "Who offer the deal", "Create deal", and "Confirmation to exchange". These strings show that the site frontend includes deal/exchange concepts, but they do not identify a quote endpoint or establish the rate semantics for either required route direction.
-
-The direct public fetch of `/js/app.js` failed with an HTTP error. No response body or API schema was obtained from it. No credentials, cookies, tokens, account data, or authenticated response bodies were requested or collected.
-
-An attempted Chrome DevTools Protocol connection through the existing local forwarding port returned `RemoteDisconnected`; no authenticated network events were captured. This is a connection/forwarding failure, not evidence that Sberkassa has no API.
-
-### Updated current result
-
-The public frontend structure is now partially confirmed, but no Sberkassa quote endpoint, quote schema, rate, commission, limit, volume, or freshness rule is confirmed. Both Sberkassa route steps remain unavailable. Next evidence must come from a successful, authorized, sanitized Network capture in the exact authenticated UI pages for ERUB -> RUB and RUB -> USDT, or official provider documentation.
+Until then both provider keys remain unavailable and the full route remains blocked.
