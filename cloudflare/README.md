@@ -67,3 +67,6 @@ Cloudflare currently documents 10 ms CPU per Cron Trigger invocation on Workers 
 - No Telegram notification code is enabled.
 - No Cloudflare account, D1 database, token, or deployment is connected to this repository.
 - The placeholder D1 ID is intentionally nonfunctional until the owner creates a database.
+## Scheduled handler binding detail
+
+The Python Workers ABI requires the scheduled handler signature `scheduled(self, controller, env, ctx)`. The handler uses `self.env` for bindings, which is the WorkerEntrypoint binding interface; this also avoids relying on a nullable explicit `env` argument in the local Wrangler scheduled-event bridge. The handler fails closed if the D1 binding is unavailable.
