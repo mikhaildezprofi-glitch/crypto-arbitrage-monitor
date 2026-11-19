@@ -91,7 +91,10 @@ def fetch_from_authenticated_page(page) -> dict[str, Any]:
         }""",
         API_URL,
     )
-    if result.get("invalidOrigin"):\n        raise RuntimeError("Money Storage read redirected outside the approved origin.")\n    if result.get("tooLarge"):\n        raise RuntimeError("Money Storage response exceeded the 1 MB safety limit.")\n    if result["status"] in (401, 403, 429):
+    if result.get("invalidOrigin"):
+        raise RuntimeError("Money Storage read redirected outside the approved origin.")
+    if result.get("tooLarge"):
+        raise RuntimeError("Money Storage response exceeded the 1 MB safety limit.")\n    if result["status"] in (401, 403, 429):
         raise RuntimeError(f"Money Storage refused the authenticated read with HTTP {result['status']}; no retry.")
     if result["status"] != 200:
         raise RuntimeError(f"Money Storage returned HTTP {result['status']}; no retry.")
