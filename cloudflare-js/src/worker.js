@@ -1,5 +1,5 @@
 const DEFAULT_MAX_AGE_SECONDS = 900;
-const DEFAULT_POLL_SECONDS = 300;
+const DEFAULT_POLL_SECONDS = 900;
 const HTTP_TIMEOUT_MS = 8000;
 const MAX_RESPONSE_BYTES = 1_000_000;
 const MAX_JSON_NODES = 10_000;
@@ -184,6 +184,12 @@ function positiveInteger(value, fallback, name) {
   return parsed;
 }
 
+function pollInterval(value, fallback, name) {
+  const seconds = positiveInteger(value, fallback, name);
+  if (seconds < 900 || seconds > 3600) throw new Error(`INVALID_${name}_RANGE`);
+  return seconds;
+}
+
 async function isDue(db, source, intervalSeconds, now) {
   const row = await db.prepare(
     "SELECT last_attempt_at FROM source_status WHERE source = ?",
@@ -194,9 +200,13 @@ async function isDue(db, source, intervalSeconds, now) {
 }
 
 async function recordSuccess(db, quote, attemptedAt) {
-  const observation = db.prepare(`INSERT INTO quote_observations
+  const snapshot = db.prepare(`INSERT INTO current_quotes
     (source, pair, base_currency, quote_currency, rate, observed_at, indicative_only, source_pair_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(source) DO UPDATE SET pair=excluded.pair,
+    base_currency=excluded.base_currency, quote_currency=excluded.quote_currency,
+    rate=excluded.rate, observed_at=excluded.observed_at,
+    indicative_only=excluded.indicative_only, source_pair_id=excluded.source_pair_id`)
     .bind(quote.source, quote.pair, quote.base_currency, quote.quote_currency,
       quote.rate, quote.observed_at, quote.indicative_only, quote.source_pair_id);
   const status = db.prepare(`INSERT INTO source_status
@@ -206,7 +216,7 @@ async function recordSuccess(db, quote, attemptedAt) {
     last_attempt_at=excluded.last_attempt_at, last_success_at=excluded.last_success_at,
     error_type=NULL`)
     .bind(quote.source, attemptedAt.toISOString(), quote.observed_at);
-  await db.batch([observation, status]);
+  await db.batch([snapshot, status]);
 }
 
 async function recordFailure(db, source, error, attemptedAt) {
@@ -230,8 +240,8 @@ export async function scheduledHandler(env, now = new Date()) {
   if (!env?.DB) throw new Error("D1_BINDING_UNAVAILABLE");
   const maxAge = positiveInteger(env.QUOTE_MAX_AGE_SECONDS, DEFAULT_MAX_AGE_SECONDS, "MAX_AGE");
   const providers = {
-    blackbit: [positiveInteger(env.BLACKBIT_POLL_SECONDS, DEFAULT_POLL_SECONDS, "BLACKBIT_INTERVAL"), fetchBlackBit],
-    winance: [positiveInteger(env.WINANCE_POLL_SECONDS, DEFAULT_POLL_SECONDS, "WINANCE_INTERVAL"), fetchWinance],
+    blackbit: [pollInterval(env.BLACKBIT_POLL_SECONDS, DEFAULT_POLL_SECONDS, "BLACKBIT_INTERVAL"), fetchBlackBit],
+    winance: [pollInterval(env.WINANCE_POLL_SECONDS, DEFAULT_POLL_SECONDS, "WINANCE_INTERVAL"), fetchWinance],
   };
   for (const [source, [interval, fetcher]] of Object.entries(providers)) {
     try {
