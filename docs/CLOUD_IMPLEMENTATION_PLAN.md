@@ -41,7 +41,8 @@ Do not infer an endpoint, fee, rate, volume, or permission from a similar domain
 ### Stage 2: Deployment packaging
 - [x] Dockerfile for the one-shot cloud task.
 - [x] Environment-variable configuration with unverified providers disabled.
-- [ ] Document a selected managed scheduler/host after checking free-tier, persistence, secrets, outbound HTTPS, and payment-card requirements.
+- [ ] Select a managed scheduler/host after checking free-tier, persistence, secrets, outbound HTTPS, and payment-card requirements. Current comparison: CLOUD_HOSTING_RESEARCH.md.
+- [ ] Mount persistent storage at /app/data and enforce one active task at a time; ephemeral storage is not durable.
 - [ ] Prove a real cloud task execution before claiming deployment.
 
 ### Stage 3: Notifications
