@@ -5,15 +5,19 @@ from __future__ import annotations
 import json
 import os
 from datetime import datetime, timezone
-from types import MappingProxyType
 from decimal import Decimal, InvalidOperation
+from types import MappingProxyType
 from typing import Mapping
 
 from .calculator import calculate_route, five_step_route
 from .models import Quote
 from .providers.base import QuoteProvider
 from .providers.blackbit import BlackBitQuoteProvider
-from .providers.collection import QuoteBatch, collect_quotes
+from .providers.collection import (
+    REQUIRED_PROVIDER_KEYS,
+    QuoteBatch,
+    collect_quotes,
+)
 from .providers.money_storage import MoneyStorageQuoteProvider
 from .providers.winance import fetch_quote as fetch_winance_quote
 from .storage import SQLiteQuoteStore
@@ -114,28 +118,77 @@ def run_cycle(
     fees_percent: Mapping[str, Decimal | None],
     starting_amount: Decimal = Decimal("1000"),
     max_quote_age_seconds: int = 900,
+    poll_intervals_seconds: Mapping[str, int] | None = None,
     now: datetime | None = None,
 ) -> dict:
-    """Collect once, persist normalized state, and calculate only a complete route."""
+    """Poll only due sources; reuse only cached quotes that are still fresh."""
     observed_now = now or datetime.now(timezone.utc)
-    collected: QuoteBatch = collect_quotes(providers)
-    accepted_quotes = {}
-    source_errors = dict(collected.errors)
+    intervals = poll_intervals_seconds or {}
+    cached_quotes = store.latest_fresh_quotes(
+        max_age_seconds=max_quote_age_seconds,
+        now=observed_now,
+    )
+
+    due_keys = tuple(
+        key
+        for key in REQUIRED_PROVIDER_KEYS
+        if store.is_due(
+            key,
+            intervals.get(key, 0),
+            now=observed_now,
+        )
+    )
+    due_providers = {
+        key: providers[key]
+        for key in due_keys
+        if key in providers
+    }
+    collected = collect_quotes(due_providers, required_keys=due_keys)
+
+    due_quotes: dict[str, Quote] = {}
+    due_errors = dict(collected.errors)
     for key, quote in collected.quotes.items():
         if quote.status(max_quote_age_seconds, observed_now).value != "fresh":
-            source_errors[key] = "StaleQuoteError: quote is stale or future-dated."
+            due_errors[key] = "StaleQuoteError: quote is stale or future-dated."
         else:
-            accepted_quotes[key] = quote
+            due_quotes[key] = quote
+
+    attempted_batch = QuoteBatch(
+        quotes=MappingProxyType(due_quotes),
+        errors=MappingProxyType(due_errors),
+    )
+    store.record_batch(attempted_batch, attempted_at=observed_now)
+
+    accepted_quotes: dict[str, Quote] = {}
+    source_errors: dict[str, str] = {}
+    for key in REQUIRED_PROVIDER_KEYS:
+        if key in due_keys:
+            if key in due_quotes:
+                accepted_quotes[key] = due_quotes[key]
+            else:
+                source_errors[key] = due_errors.get(
+                    key,
+                    "ProviderUnavailable: no quote was returned.",
+                )
+        else:
+            cached = cached_quotes.get(key)
+            if cached is not None:
+                accepted_quotes[key] = cached
+            else:
+                source_errors[key] = (
+                    "NoFreshCachedQuoteError: source is not due and no fresh "
+                    "cached quote is available."
+                )
+
     batch = QuoteBatch(
         quotes=MappingProxyType(accepted_quotes),
         errors=MappingProxyType(source_errors),
     )
-    store.record_batch(batch, attempted_at=observed_now)
-
     result = {
         "status": "incomplete",
         "complete": batch.complete,
         "observed_at": observed_now.isoformat(),
+        "polled_sources": list(due_keys),
         "quotes": {
             key: _quote_record(quote)
             for key, quote in batch.quotes.items()
@@ -203,6 +256,13 @@ def main() -> int:
         "sberkassa_sell": _optional_decimal("FEE_SBERKASSA_SELL_PERCENT"),
         "sberkassa_exchange": _optional_decimal("FEE_SBERKASSA_EXCHANGE_PERCENT"),
     }
+    intervals = {
+        "blackbit": int(os.getenv("BLACKBIT_POLL_SECONDS", "300")),
+        "winance": int(os.getenv("WINANCE_POLL_SECONDS", "300")),
+        "money_storage": int(os.getenv("MONEY_STORAGE_POLL_SECONDS", "900")),
+        "sberkassa_sell": int(os.getenv("SBERKASSA_POLL_SECONDS", "300")),
+        "sberkassa_exchange": int(os.getenv("SBERKASSA_POLL_SECONDS", "300")),
+    }
     store = SQLiteQuoteStore(database_path)
     try:
         result = run_cycle(
@@ -211,6 +271,7 @@ def main() -> int:
             fees_percent=fees,
             starting_amount=Decimal(os.getenv("STARTING_AMOUNT_USDT", "1000")),
             max_quote_age_seconds=int(os.getenv("QUOTE_MAX_AGE_SECONDS", "900")),
+            poll_intervals_seconds=intervals,
         )
         print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
         # An incomplete route is a valid monitoring outcome, not a worker crash.
