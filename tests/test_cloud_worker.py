@@ -12,8 +12,10 @@ class FakeProvider:
     def __init__(self, quote=None, error=None):
         self.quote = quote
         self.error = error
+        self.calls = 0
 
     def fetch_quote(self):
+        self.calls += 1
         if self.error:
             raise self.error
         return self.quote
@@ -68,6 +70,64 @@ class CloudWorkerTests(unittest.TestCase):
             now=self.now,
         )
         self.assertEqual(set(stored), set(REQUIRED_PROVIDER_KEYS))
+
+    def test_not_due_sources_reuse_only_fresh_cached_quotes(self):
+        initial = run_cycle(
+            self.providers(),
+            self.store,
+            fees_percent=self.fees,
+            poll_intervals_seconds={key: 300 for key in REQUIRED_PROVIDER_KEYS},
+            now=self.now,
+        )
+        self.assertEqual(initial["status"], "calculated")
+
+        providers = self.providers()
+        later = self.now.replace(minute=1)
+        result = run_cycle(
+            providers,
+            self.store,
+            fees_percent=self.fees,
+            poll_intervals_seconds={key: 300 for key in REQUIRED_PROVIDER_KEYS},
+            now=later,
+        )
+        self.assertEqual(result["status"], "calculated")
+        self.assertEqual(result["polled_sources"], [])
+        self.assertTrue(all(provider.calls == 0 for provider in providers.values()))
+
+    def test_failed_due_poll_invalidates_old_quote_until_next_due_time(self):
+        intervals = {key: 300 for key in REQUIRED_PROVIDER_KEYS}
+        run_cycle(
+            self.providers(),
+            self.store,
+            fees_percent=self.fees,
+            poll_intervals_seconds=intervals,
+            now=self.now,
+        )
+
+        due_time = self.now.replace(minute=5)
+        providers = self.providers()
+        providers["winance"] = FakeProvider(error=TimeoutError("temporary outage"))
+        failed = run_cycle(
+            providers,
+            self.store,
+            fees_percent=self.fees,
+            poll_intervals_seconds=intervals,
+            now=due_time,
+        )
+        self.assertEqual(failed["status"], "incomplete")
+        self.assertIn("winance", failed["errors"])
+
+        not_due_time = self.now.replace(minute=5, second=1)
+        skipped = run_cycle(
+            self.providers(),
+            self.store,
+            fees_percent=self.fees,
+            poll_intervals_seconds=intervals,
+            now=not_due_time,
+        )
+        self.assertEqual(skipped["status"], "incomplete")
+        self.assertIn("winance", skipped["errors"])
+        self.assertEqual(skipped["errors"]["winance"], "NoFreshCachedQuoteError")
 
     def test_missing_provider_blocks_route(self):
         providers = self.providers()
