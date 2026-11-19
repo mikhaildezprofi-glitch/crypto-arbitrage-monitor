@@ -113,7 +113,7 @@ jobs:
                           try:
                               page.goto("https://storage.money/deals#tab-3", wait_until="domcontentloaded", timeout=60000)
                               snapshot = fetch_from_authenticated_page(page)
-                              write_normalized_snapshot(snapshot)
+                              write_normalized_snapshot(snapshot, str(Path(os.environ["GITHUB_WORKSPACE"]) / "money-storage-current-offers.json"))
                               status_file.write_text("OFFERS_READ_OK", encoding="utf-8")
                               summary = [
                                   "", "## Money Storage: актуальные предложения «Всем предлагают»", "",
@@ -291,11 +291,11 @@ jobs:
           echo "Browser session monitoring window ended."
 
       - name: Publish normalized current offers only
-        if: success() && hashFiles('/tmp/money-storage-current-offers.json') != ''
+        if: success() && hashFiles('money-storage-current-offers.json') != ''
         uses: actions/upload-artifact@v4
         with:
           name: money-storage-current-offers
-          path: /tmp/money-storage-current-offers.json
+          path: money-storage-current-offers.json
           if-no-files-found: error
           retention-days: 1
 
