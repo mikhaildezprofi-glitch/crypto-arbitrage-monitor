@@ -15,6 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
+      - uses: actions/checkout@v5
+
       - name: Install temporary browser and remote display
         shell: bash
         run: |
@@ -73,9 +75,12 @@ jobs:
 
           cat >/tmp/launch_eid_browser.py <<'PY'
           import time
+          import os, sys, json
           from pathlib import Path
           from urllib.parse import urlparse
           from playwright.sync_api import sync_playwright
+          sys.path.insert(0, str(Path.cwd() / "src"))
+          from scripts.money_storage_cloud_read import fetch_from_authenticated_page, write_normalized_snapshot
 
           status_file = Path("/tmp/eid-auth-status")
           status_file.write_text("WAITING_FOR_LOGIN", encoding="utf-8")
@@ -103,9 +108,28 @@ jobs:
                   try:
                       current = urlparse(page.url)
                       if current.scheme == "https" and current.netloc.lower() == "storage.money" and current.path.rstrip("/") == "/account":
-                          status_file.write_text("ACCOUNT_REACHED", encoding="utf-8")
                           print("AUTH_STATUS=ACCOUNT_REACHED", flush=True)
                           authenticated = True
+                          try:
+                              page.goto("https://storage.money/deals#tab-3", wait_until="domcontentloaded", timeout=60000)
+                              snapshot = fetch_from_authenticated_page(page)
+                              write_normalized_snapshot(snapshot)
+                              status_file.write_text("OFFERS_READ_OK", encoding="utf-8")
+                              summary = [
+                                  "", "## Money Storage: актуальные предложения «Всем предлагают»", "",
+                                  f"- Статус: успешно прочитано в облачном браузере",
+                                  f"- Предложений: {snapshot['offer_count']}",
+                                  f"- Средний курс USDT → ECR: **{snapshot['rate']} ECR за 1 USDT**",
+                                  f"- Время наблюдения UTC: {snapshot['observed_at']}",
+                                  "- Комиссия не учитывалась; история не сохранялась.",
+                                  "- Сессионные cookies, токены и исходный ответ API не экспортировались.", ""
+                              ]
+                              with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as output:
+                                  output.write("\\n".join(summary))
+                              print("OFFERS_READ_OK count=%s mean_rate=%s" % (snapshot['offer_count'], snapshot['rate']), flush=True)
+                          except Exception as error:
+                              status_file.write_text("OFFERS_READ_FAILED", encoding="utf-8")
+                              print("OFFERS_READ_FAILED=%s" % type(error).__name__, flush=True)
                           break
                   except Exception:
                       pass
@@ -232,20 +256,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "Waiting for the E-ID flow to return to https://storage.money/account."
+          echo "Waiting for E-ID login and one authenticated read of Everyone Offers."
           for i in $(seq 1 900); do
             if [ -f /tmp/eid-auth-status ]; then
               STATUS="$(cat /tmp/eid-auth-status)"
-              if [ "$STATUS" = "ACCOUNT_REACHED" ]; then
+              if [ "$STATUS" = "OFFERS_READ_OK" ]; then
                 {
                   echo
-                  echo "## Авторизация Money Storage"
+                  echo "## Авторизация и чтение Money Storage"
                   echo
-                  echo "<badge>Адрес аккаунта достигнут</badge>"
-                  echo "Удалённый браузер перешёл на https://storage.money/account."
+                  echo "Облачный браузер вернулся в аккаунт и успешно прочитал актуальные предложения из вкладки «Всем предлагают». Нормализованный снимок приложен отдельным артефактом."
                 } >> "$GITHUB_STEP_SUMMARY"
                 echo "Money Storage account redirect detected."
                 exit 0
+              fi
+              if [ "$STATUS" = "OFFERS_READ_FAILED" ]; then
+                echo "E-ID login completed but authenticated offer read failed. No retry was attempted."
+                exit 1
               fi
               if [ "$STATUS" = "TIMEOUT_NOT_RETURNED_TO_ACCOUNT" ]; then
                 {
@@ -262,6 +289,15 @@ jobs:
             sleep 2
           done
           echo "Browser session monitoring window ended."
+
+      - name: Publish normalized current offers only
+        if: success() && hashFiles('/tmp/money-storage-current-offers.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: money-storage-current-offers
+          path: /tmp/money-storage-current-offers.json
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Stop temporary browser services
         if: always()
