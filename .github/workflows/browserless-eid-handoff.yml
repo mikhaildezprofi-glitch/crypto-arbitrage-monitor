@@ -79,7 +79,7 @@ jobs:
           from pathlib import Path
           from urllib.parse import urlparse
           from playwright.sync_api import sync_playwright
-          sys.path.insert(0, str(Path.cwd() / "src"))
+          sys.path.insert(0, str(Path.cwd()))\n          sys.path.insert(0, str(Path.cwd() / "src"))
           from scripts.money_storage_cloud_read import fetch_from_authenticated_page, write_normalized_snapshot
 
           status_file = Path("/tmp/eid-auth-status")
@@ -125,7 +125,7 @@ jobs:
                                   "- Сессионные cookies, токены и исходный ответ API не экспортировались.", ""
                               ]
                               with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as output:
-                                  output.write("\\n".join(summary))
+                                  output.write("\n".join(summary))
                               print("OFFERS_READ_OK count=%s mean_rate=%s" % (snapshot['offer_count'], snapshot['rate']), flush=True)
                           except Exception as error:
                               status_file.write_text("OFFERS_READ_FAILED", encoding="utf-8")
