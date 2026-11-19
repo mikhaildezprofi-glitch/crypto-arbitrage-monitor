@@ -140,24 +140,31 @@ class Default(WorkerEntrypoint):
         return Response.json({"sources": sources})
 
     async def scheduled(self, controller, env, ctx):
+        # WorkerEntrypoint exposes bindings on self.env. The scheduled handler's
+        # explicit env argument is required by the Python Workers ABI, but the
+        # local Wrangler scheduled-event bridge may pass None for that argument.
+        runtime_env = self.env
+        if runtime_env is None or getattr(runtime_env, "DB", None) is None:
+            raise RuntimeError("Worker D1 binding is unavailable")
+
         now = datetime.now(timezone.utc)
-        max_age = int(getattr(env, "QUOTE_MAX_AGE_SECONDS", "900"))
+        max_age = int(getattr(runtime_env, "QUOTE_MAX_AGE_SECONDS", "900"))
         providers = {
             "blackbit": (
-                int(getattr(env, "BLACKBIT_POLL_SECONDS", "300")),
+                int(getattr(runtime_env, "BLACKBIT_POLL_SECONDS", "300")),
                 _fetch_blackbit,
             ),
             "winance": (
-                int(getattr(env, "WINANCE_POLL_SECONDS", "300")),
+                int(getattr(runtime_env, "WINANCE_POLL_SECONDS", "300")),
                 _fetch_winance,
             ),
         }
 
         for source, (interval, fetcher) in providers.items():
             try:
-                if not await _is_due(env.DB, source, interval, now):
+                if not await _is_due(runtime_env.DB, source, interval, now):
                     continue
-                if str(getattr(env, "MOCK_QUOTES", "false")).lower() == "true":
+                if str(getattr(runtime_env, "MOCK_QUOTES", "false")).lower() == "true":
                     if source == "blackbit":
                         quote = Quote(
                             source="BlackBit",
@@ -181,15 +188,15 @@ class Default(WorkerEntrypoint):
                             source_pair_id="18",
                         )
                 else:
-                    quote = await fetcher(env)
+                    quote = await fetcher(runtime_env)
                 if quote.rate <= 0 or quote.observed_at > now:
                     raise ValueError("Invalid or future-dated quote")
                 age = (now - quote.observed_at).total_seconds()
                 if age > max_age:
                     raise ValueError("Stale quote")
-                await _record_success(env.DB, quote, now)
+                await _record_success(runtime_env.DB, quote, now)
             except Exception as exc:
-                await _record_failure(env.DB, source, exc, now)
+                await _record_failure(runtime_env.DB, source, exc, now)
 
         # Three required sources are deliberately absent: no full route is calculated.
         # This Worker only validates public-source collection and D1 persistence.
