@@ -49,7 +49,7 @@ test("scheduled handler persists only deterministic mock quotes to D1", async ()
     batch: async (statements) => Promise.all(statements.map((statement) => statement.run())),
   };
   await scheduledHandler({ DB: db, MOCK_QUOTES: "true" }, new Date("2026-11-19T00:00:00Z"));
-  assert.equal(calls.filter(x => x.sql.includes("INSERT INTO quote_observations")).length, 2);
+  assert.equal(calls.filter(x => x.sql.includes("INSERT INTO current_quotes")).length, 2);
   assert.equal(calls.filter(x => x.sql.includes("INSERT INTO source_status")).length, 2);
   assert.deepEqual(calls.map(x => x.args[0]).filter(x => ["blackbit", "winance"].includes(x)).sort(),
     ["blackbit", "blackbit", "winance", "winance"]);
@@ -113,7 +113,7 @@ test("failure of one provider does not prevent polling the other", async () => {
     }, new Date("2026-11-19T00:00:00Z"));
     assert.equal(requested.length, 2);
     assert.equal(writes.some(x => x.sql.includes("INSERT INTO source_status") && x.args[0] === "blackbit" && x.args[2] === "Error"), true);
-    assert.equal(writes.some(x => x.sql.includes("INSERT INTO quote_observations") && x.args[0] === "winance"), true);
+    assert.equal(writes.some(x => x.sql.includes("INSERT INTO current_quotes") && x.args[0] === "winance"), true);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -132,6 +132,12 @@ test("Winance parser rejects excessively complex payloads", () => {
     cursor = cursor.next;
   }
   assert.throws(() => parseWinanceRate(root), /PAYLOAD_TOO_COMPLEX/);
+});
+
+test("poll interval is limited to 15 minutes through 1 hour", async () => {
+  const db = { prepare() { return { bind() { return { first: async () => null, run: async () => ({}) }; } }; }, batch: async () => ({}) };
+  await assert.rejects(() => scheduledHandler({ DB: db, MOCK_QUOTES: "true", BLACKBIT_POLL_SECONDS: "899" }, new Date()), /INVALID_BLACKBIT_INTERVAL_RANGE/);
+  await assert.rejects(() => scheduledHandler({ DB: db, MOCK_QUOTES: "true", WINANCE_POLL_SECONDS: "3601" }, new Date()), /INVALID_WINANCE_INTERVAL_RANGE/);
 });
 
 test("scheduled handler rejects invalid polling configuration", async () => {
