@@ -96,8 +96,40 @@ jobs:
                   headless=False,
                   args=["--no-sandbox", "--disable-dev-shm-usage", "--start-maximized"]
               )
-              context = browser.new_context(viewport={"width": 1440, "height": 900})
+              # Keep standard browser security and web features enabled explicitly.
+              context = browser.new_context(
+                  viewport={"width": 1440, "height": 900},
+                  java_script_enabled=True,
+                  accept_downloads=False
+              )
               page = context.new_page()
+
+              # Diagnostics only: log Cloudflare resource failures without query strings,
+              # cookies, challenge tokens, or other sensitive values.
+              def safe_resource_label(url):
+                  parsed = urlparse(url)
+                  return parsed.netloc + parsed.path
+
+              def on_request_failed(request):
+                  parsed = urlparse(request.url)
+                  host = (parsed.hostname or "").lower()
+                  if "cloudflare" in host or host.endswith(".cloudflare.com") or host.endswith(".cloudflareinsights.com"):
+                      print("CLOUDFLARE_RESOURCE_FAILED=%s failure=%s" % (
+                          safe_resource_label(request.url),
+                          (request.failure or "unknown")[:160]
+                      ), flush=True)
+
+              def on_response(response):
+                  parsed = urlparse(response.url)
+                  host = (parsed.hostname or "").lower()
+                  if response.status >= 400 and ("cloudflare" in host or host.endswith(".cloudflare.com") or host.endswith(".cloudflareinsights.com")):
+                      print("CLOUDFLARE_RESOURCE_HTTP_ERROR=%s status=%s" % (
+                          safe_resource_label(response.url), response.status
+                      ), flush=True)
+
+              page.on("requestfailed", on_request_failed)
+              page.on("response", on_response)
+              page.on("pageerror", lambda error: print("BROWSER_PAGE_ERROR=%s" % str(error)[:200], flush=True))
 
               # Start the actual Money Storage E-ID authorization flow.
               # Opening e-id.cards/login directly omits the OAuth redirect state.
