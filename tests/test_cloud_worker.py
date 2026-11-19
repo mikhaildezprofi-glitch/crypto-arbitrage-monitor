@@ -95,6 +95,20 @@ class CloudWorkerTests(unittest.TestCase):
         self.assertIsNone(result["route"])
         self.assertIn("Fee for Winance is unknown", result["route_error"])
 
+    def test_future_quote_blocks_route(self):
+        providers = self.providers()
+        future = datetime(2026, 11, 19, 12, 0, 1, tzinfo=timezone.utc)
+        providers["winance"] = FakeProvider(quote=make_quote("winance", future))
+        result = run_cycle(
+            providers,
+            self.store,
+            fees_percent=self.fees,
+            now=self.now,
+        )
+        self.assertEqual(result["status"], "incomplete")
+        self.assertIsNone(result["route"])
+        self.assertIn("future", result["route_error"].lower())
+
     def test_stale_quote_blocks_route(self):
         providers = self.providers()
         old = datetime(2026, 11, 19, 11, 0, tzinfo=timezone.utc)
@@ -107,7 +121,7 @@ class CloudWorkerTests(unittest.TestCase):
         )
         self.assertEqual(result["status"], "incomplete")
         self.assertIsNone(result["route"])
-        self.assertIn("stale", result["route_error"])
+        self.assertIn("stale", result["route_error"].lower())
 
 
 if __name__ == "__main__":
