@@ -195,7 +195,7 @@ jobs:
             exit 1
           fi
 
-          mkdir -p /tmp/eid-connection
+          mkdir -p "$GITHUB_WORKSPACE/.artifacts/eid-browser-connection"
           {
             echo "ВРЕМЕННЫЙ ОБЛАЧНЫЙ БРАУЗЕР E-ID"
             echo
@@ -214,8 +214,9 @@ jobs:
             echo "Вводи данные E-ID только на сайте e-id.cards внутри удалённого браузера."
             echo "Ссылку подтверждения открывай в этом же удалённом браузере."
             echo "Для вставки ссылки используй Clipboard в панели noVNC; если не работает, открой ссылку подтверждения вручную через адресную строку удалённого браузера."
-          } > /tmp/eid-connection/CONNECTION.txt
-          chmod 600 /tmp/eid-connection/CONNECTION.txt
+          } > "$GITHUB_WORKSPACE/.artifacts/eid-browser-connection/CONNECTION.txt"
+          chmod 600 "$GITHUB_WORKSPACE/.artifacts/eid-browser-connection/CONNECTION.txt"
+          test -s "$GITHUB_WORKSPACE/.artifacts/eid-browser-connection/CONNECTION.txt"
 
           {
             echo "# Временный облачный браузер E-ID"
@@ -233,10 +234,10 @@ jobs:
 
       - name: Publish private connection details
         id: connection
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: eid-browser-connection
-          path: /tmp/eid-connection/CONNECTION.txt
+          path: .artifacts/eid-browser-connection/CONNECTION.txt
           if-no-files-found: error
           retention-days: 1
 
