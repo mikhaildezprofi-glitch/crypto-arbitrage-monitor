@@ -53,6 +53,21 @@ The Money Storage adapter remains opt-in and disabled by default. When disabled,
 
 When a permitted read method is established, retain the existing first-20 parser and 900-second target interval. Respect provider rate limits and Retry-After. A failed poll must mark the source unavailable, never freshen or reuse a stale quote.
 
+
+## One-shot authenticated cloud read
+
+A manual GitHub Actions diagnostic now supports an owner-completed E-ID login in a temporary, protected cloud browser. After the browser returns to the Money Storage account, it opens `/deals#tab-3` and performs the observed same-origin GET using the browser's active session. It reads only the current "Всем предлагают" page and produces a normalized current snapshot plus the first-20 arithmetic mean.
+
+Security and scope:
+- The owner completes the normal E-ID flow in the temporary remote browser; no credentials are entered into GitHub workflow inputs.
+- The request runs inside the same authenticated browser context. Cookies and tokens remain in that temporary browser and are not copied to artifacts, D1, GitHub Secrets, or logs.
+- The raw provider response is parsed in memory. Only normalized offer amounts/rates and observation time may be published as a one-day artifact.
+- HTTP 401, 403, and 429 fail without retry.
+- The temporary browser and tunnel are destroyed at the end of the workflow.
+- This is a one-shot diagnostic read, not unattended production authentication, a persistent session, or a scheduler. It does not yet make Money Storage available to the continuously running bot.
+
+Production gate: unattended polling remains disabled until a documented, permitted cloud credential/delegation/refresh method exists. A temporary browser login cannot be promoted to a permanent bot session by exporting its cookies or tokens.
+
 ## Acceptance checks
 
 - Correct tab and raw/displayed direction mapping.
