@@ -1,6 +1,5 @@
-CREATE TABLE IF NOT EXISTS quote_observations (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    source TEXT NOT NULL,
+CREATE TABLE IF NOT EXISTS current_quotes (
+    source TEXT PRIMARY KEY,
     pair TEXT NOT NULL,
     base_currency TEXT NOT NULL,
     quote_currency TEXT NOT NULL,
@@ -9,10 +8,6 @@ CREATE TABLE IF NOT EXISTS quote_observations (
     indicative_only INTEGER NOT NULL,
     source_pair_id TEXT
 );
-
-CREATE INDEX IF NOT EXISTS idx_quote_observations_source_id
-    ON quote_observations(source, id DESC);
-
 CREATE TABLE IF NOT EXISTS source_status (
     source TEXT PRIMARY KEY,
     status TEXT NOT NULL,
