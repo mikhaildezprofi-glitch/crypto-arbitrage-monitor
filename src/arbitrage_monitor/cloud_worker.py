@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from datetime import datetime, timezone
+from types import MappingProxyType
 from decimal import Decimal, InvalidOperation
 from typing import Mapping
 
@@ -117,7 +118,18 @@ def run_cycle(
 ) -> dict:
     """Collect once, persist normalized state, and calculate only a complete route."""
     observed_now = now or datetime.now(timezone.utc)
-    batch: QuoteBatch = collect_quotes(providers)
+    collected: QuoteBatch = collect_quotes(providers)
+    accepted_quotes = {}
+    source_errors = dict(collected.errors)
+    for key, quote in collected.quotes.items():
+        if quote.status(max_quote_age_seconds, observed_now).value != "fresh":
+            source_errors[key] = "StaleQuoteError: quote is stale or future-dated."
+        else:
+            accepted_quotes[key] = quote
+    batch = QuoteBatch(
+        quotes=MappingProxyType(accepted_quotes),
+        errors=MappingProxyType(source_errors),
+    )
     store.record_batch(batch, attempted_at=observed_now)
 
     result = {
@@ -138,7 +150,13 @@ def run_cycle(
     }
 
     if not batch.complete:
-        result["route_error"] = "At least one required quote source is unavailable."
+        unavailable = ", ".join(
+            f"{key} ({_error_category(message)})"
+            for key, message in batch.errors.items()
+        )
+        result["route_error"] = (
+            f"Required quote sources are unavailable: {unavailable}."
+        )
         return result
 
     try:
