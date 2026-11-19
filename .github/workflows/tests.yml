@@ -44,10 +44,12 @@ jobs:
         run: uv sync
       - name: Compile Cloudflare Worker without deploying
         run: uv run pywrangler deploy --dry-run
+      - name: Vendor shared core package into Worker bundle
+        run: uv run python scripts/vendor_core.py
       - name: Test scheduled handler and D1 persistence locally
         shell: bash
         run: |
-          printf 'MOCK_QUOTES=true\n' > .dev.vars
+          printf 'MOCK_QUOTES=true\\n' > .dev.vars
           uv run pywrangler d1 migrations apply crypto-arbitrage-monitor --local
           uv run pywrangler dev --test-scheduled --ip 127.0.0.1 --port 8787 > /tmp/cloudflare-worker.log 2>&1 &
           worker_pid=$!
