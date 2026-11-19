@@ -58,7 +58,7 @@ A one-shot cloud worker is available:
 
     PYTHONPATH=src python -m arbitrage_monitor.cloud_worker
 
-It collects enabled sources, stores normalized quote history and source health in SQLite, and emits one JSON result. An incomplete route is a normal monitoring outcome and does not make the worker crash. The Dockerfile packages the same one-shot task for a managed cloud scheduler. No permanent hosting vendor or scheduler is configured yet.
+It collects enabled sources, stores normalized quote history and source health in SQLite, and emits one JSON result. An incomplete route is a normal monitoring outcome and does not make the worker crash. The Dockerfile packages the same one-shot task for a managed cloud scheduler. The scheduler must serialize runs and mount persistent storage at /app/data; an ephemeral container filesystem would lose quote history. No production hosting vendor or scheduler is configured yet. See docs/CLOUD_HOSTING_RESEARCH.md for the current comparison.
 
 Money Storage and both Sberkassa sources are disabled by default. The worker must not be scheduled for production route alerts until all five sources and required fee data are valid.
 
