@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from decimal import Decimal
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import RLock
@@ -86,7 +87,7 @@ class SQLiteQuoteStore:
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    quote.source,
+                    quote.source.lower(),
                     quote.pair,
                     quote.base_currency,
                     quote.quote_currency,
@@ -107,13 +108,13 @@ class SQLiteQuoteStore:
                     last_success_at=excluded.last_success_at,
                     error_type=NULL
                 """,
-                (quote.source, QuoteStatus.FRESH.value, attempt, observed),
+                (quote.source.lower(), QuoteStatus.FRESH.value, attempt, observed),
             )
 
     def record_failure(
         self,
         source: str,
-        error: Exception,
+        error: Exception | str,
         *,
         attempted_at: datetime | None = None,
     ) -> None:
@@ -134,7 +135,7 @@ class SQLiteQuoteStore:
                     source,
                     QuoteStatus.UNAVAILABLE.value,
                     attempt,
-                    type(error).__name__,
+                    error if isinstance(error, str) else type(error).__name__,
                 ),
             )
 
@@ -153,7 +154,7 @@ class SQLiteQuoteStore:
             error_type = message.split(":", 1)[0].strip() or "ProviderError"
             self.record_failure(
                 source,
-                RuntimeError(error_type),
+                error_type,
                 attempted_at=attempt,
             )
 
@@ -190,7 +191,7 @@ class SQLiteQuoteStore:
                 pair=row["pair"],
                 base_currency=row["base_currency"],
                 quote_currency=row["quote_currency"],
-                rate=__import__("decimal").Decimal(row["rate"]),
+                rate=Decimal(row["rate"]),
                 observed_at=datetime.fromisoformat(row["observed_at"]),
                 indicative_only=bool(row["indicative_only"]),
                 source_pair_id=row["source_pair_id"],
