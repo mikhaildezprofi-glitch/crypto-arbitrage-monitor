@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  parseBlackBitPairId, parseBlackBitRate, parseWinanceRate, scheduledHandler,
+  parseBlackBitPairId, parseBlackBitRate, parseWinanceRate, readBoundedBody, scheduledHandler,
 } from "../src/worker.js";
 
 test("BlackBit resolves one exact ECR/USDT pair", () => {
@@ -88,4 +88,27 @@ test("scheduled handler rejects invalid polling configuration", async () => {
     /INVALID_MAX_AGE/,
   );
   assert.equal(calls.length, 0);
+});
+
+
+test("bounded response reader accepts small bodies and rejects oversized streams", async () => {
+  const small = new Response(new TextEncoder().encode('{"ok":true}'));
+  assert.equal(await readBoundedBody(small, 32), '{"ok":true}');
+
+  let cancelled = false;
+  const stream = new ReadableStream({
+    pull(controller) {
+      controller.enqueue(new Uint8Array(8));
+      controller.enqueue(new Uint8Array(8));
+    },
+    cancel() { cancelled = true; },
+  });
+  const oversized = new Response(stream);
+  await assert.rejects(() => readBoundedBody(oversized, 10), /HTTP_RESPONSE_TOO_LARGE/);
+  assert.equal(cancelled, true);
+});
+
+test("bounded response reader rejects a declared oversized body before reading", async () => {
+  const response = new Response("{}", { headers: { "content-length": "100" } });
+  await assert.rejects(() => readBoundedBody(response, 10), /HTTP_RESPONSE_TOO_LARGE/);
 });
