@@ -9,6 +9,7 @@ WINANCE_API_URL = "https://winance.exchange/site/currency_pairs"
 QUOTE_MAX_AGE_SECONDS = "900"
 BLACKBIT_POLL_SECONDS = "300"
 WINANCE_POLL_SECONDS = "300"
+MOCK_QUOTES = "false"
 
 [[d1_databases]]
 binding = "DB"
