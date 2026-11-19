@@ -46,10 +46,10 @@ def parse_authenticated_payload(payload: Mapping[str, Any], observed_at: datetim
     }
 
 
-async def fetch_from_authenticated_page(page) -> dict[str, Any]:
+def fetch_from_authenticated_page(page) -> dict[str, Any]:
     if not page.url.startswith("https://storage.money/"):
         raise RuntimeError("Authenticated page is not on storage.money.")
-    result = await page.evaluate(
+    result = page.evaluate(
         """async (url) => {
           const response = await fetch(url, {
             method: "GET",
