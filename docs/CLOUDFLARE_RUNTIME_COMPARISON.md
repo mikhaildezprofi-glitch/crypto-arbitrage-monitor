@@ -37,7 +37,7 @@ The Python implementation remains valuable as the reference integration with the
 
 ## Storage and retention
 
-Retention is now specified in [QUOTE_DATA_RETENTION.md](QUOTE_DATA_RETENTION.md): keep BlackBit and Winance quote history for 30 rolling days; do not retain Money Storage or Sberkassa offer history, keeping only a replace-in-place current snapshot until the next successful refresh. The current prototype schemas and handlers do not yet enforce this policy: both still append observations indefinitely, and Money Storage/Sberkassa adapters are not implemented. This is a production blocker. At two historical providers polled every five minutes, the theoretical unpruned maximum is 576 observations/day or 210,240/year; this is a count estimate, not a measured D1 storage footprint.
+The approved policy is documented in [QUOTE_DATA_RETENTION.md](QUOTE_DATA_RETENTION.md): every source keeps only its current validated snapshot; a successful refresh replaces it, and no historical quote/offer archive is retained. BlackBit and Winance polling is configurable from 900 to 3600 seconds (15 minutes to 1 hour); the exact interval remains undecided. The current prototypes still append quote observations and therefore do not yet enforce the policy. This is a production blocker.
 
 ## Remaining blockers
 
@@ -47,7 +47,7 @@ Retention is now specified in [QUOTE_DATA_RETENTION.md](QUOTE_DATA_RETENTION.md)
 4. Sberkassa ERUB/RUB and RUB/USDT sources remain unavailable and unimplemented.
 5. BlackBit remains indicative-only; its liquidity and execution are not verified.
 6. `observed_at` is the Worker observation time, not an upstream exchange timestamp.
-7. The 30-day BlackBit/Winance retention and current-only Money Storage/Sberkassa storage rules are specified but not yet enforced; no alerting channel is enabled.
+7. Current-only storage and the 15-minute to 1-hour polling range are specified but not yet enforced; no alerting channel is enabled.
 
 ## Safety
 
