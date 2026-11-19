@@ -8,5 +8,4 @@ __pycache__
 data/
 .env
 .env.*
-! .env.example
 tests/
