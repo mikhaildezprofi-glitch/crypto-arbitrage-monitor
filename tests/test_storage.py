@@ -97,6 +97,24 @@ class SQLiteQuoteStoreTests(unittest.TestCase):
             finally:
                 reopened.close()
 
+    def test_poll_interval_uses_last_attempt_time(self):
+        self.assertTrue(self.store.is_due("winance", 300, now=self.now))
+        self.store.record_success(self.quote(), attempted_at=self.now)
+        self.assertFalse(
+            self.store.is_due(
+                "winance", 300, now=self.now + timedelta(seconds=299)
+            )
+        )
+        self.assertTrue(
+            self.store.is_due(
+                "winance", 300, now=self.now + timedelta(seconds=300)
+            )
+        )
+
+    def test_negative_poll_interval_is_rejected(self):
+        with self.assertRaises(ValueError):
+            self.store.is_due("winance", -1, now=self.now)
+
     def test_negative_max_age_is_rejected(self):
         with self.assertRaises(ValueError):
             self.store.latest_fresh_quotes(max_age_seconds=-1, now=self.now)
