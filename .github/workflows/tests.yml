@@ -44,3 +44,25 @@ jobs:
         run: uv sync
       - name: Compile Cloudflare Worker without deploying
         run: uv run pywrangler deploy --dry-run
+      - name: Test scheduled handler and D1 persistence locally
+        shell: bash
+        run: |
+          printf 'MOCK_QUOTES=true\n' > .dev.vars
+          uv run pywrangler d1 migrations apply crypto-arbitrage-monitor --local
+          uv run pywrangler dev --test-scheduled --ip 127.0.0.1 --port 8787 > /tmp/cloudflare-worker.log 2>&1 &
+          worker_pid=$!
+          trap 'kill "$worker_pid" 2>/dev/null || true' EXIT
+          ready=0
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail http://127.0.0.1:8787/health >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ready" -ne 1 ]; then
+            cat /tmp/cloudflare-worker.log
+            exit 1
+          fi
+          curl --silent --show-error --fail 'http://127.0.0.1:8787/cdn-cgi/local/scheduled?cron=*/5+*+*+*+*'
+          curl --silent --show-error --fail http://127.0.0.1:8787/health | python -c 'import json,sys; data=json.load(sys.stdin); sources={row["source"]: row["status"] for row in data["sources"]}; assert sources == {"blackbit":"fresh","winance":"fresh"}, sources; print("D1 smoke test passed:", sources)'
