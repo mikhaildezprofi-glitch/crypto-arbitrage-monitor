@@ -1,8 +1,12 @@
 const DEFAULT_MAX_AGE_SECONDS = 900;
 const DEFAULT_POLL_SECONDS = 300;
+const HTTP_TIMEOUT_MS = 8000;
+const MAX_RESPONSE_BYTES = 1_000_000;
+const MAX_JSON_NODES = 10_000;
+const MAX_JSON_DEPTH = 64;
 
 function normalizePair(value) {
-  return String(value ?? "").toUpperCase().replace(/[-_]/g, "/").replace(/\s/g, "");
+  return String(value ?? "").toUpperCase().replace(/[-_]/g, "/").replace(/\\s/g, "");
 }
 
 function checkEnvelope(payload, endpoint) {
@@ -17,7 +21,9 @@ function checkEnvelope(payload, endpoint) {
 
 export function parseBlackBitPairId(payload) {
   const data = checkEnvelope(payload, "currency_pairs");
-  if (!Array.isArray(data.currency_pairs)) throw new Error("MISSING_CURRENCY_PAIRS");
+  if (!Array.isArray(data.currency_pairs) || data.currency_pairs.length > MAX_JSON_NODES) {
+    throw new Error("MISSING_OR_OVERSIZED_CURRENCY_PAIRS");
+  }
   const matches = [];
   for (const item of data.currency_pairs) {
     if (!item || typeof item !== "object") continue;
@@ -50,11 +56,25 @@ export function parseBlackBitRate(payload, pairId, observedAt = new Date()) {
 }
 
 function* walk(value) {
-  if (Array.isArray(value)) {
-    for (const child of value) yield* walk(child);
-  } else if (value && typeof value === "object") {
-    yield value;
-    for (const child of Object.values(value)) yield* walk(child);
+  const stack = [{ value, depth: 0 }];
+  const seen = new Set();
+  let visited = 0;
+  while (stack.length) {
+    const current = stack.pop();
+    const item = current.value;
+    if (!item || typeof item !== "object") continue;
+    if (seen.has(item)) continue;
+    seen.add(item);
+    if (++visited > MAX_JSON_NODES || current.depth > MAX_JSON_DEPTH) {
+      throw new Error("WINANCE_PAYLOAD_TOO_COMPLEX");
+    }
+    yield item;
+    const children = Array.isArray(item) ? item : Object.values(item);
+    for (const child of children) {
+      if (child && typeof child === "object") {
+        stack.push({ value: child, depth: current.depth + 1 });
+      }
+    }
   }
 }
 
@@ -93,13 +113,24 @@ async function getJson(url) {
   const response = await fetch(url, {
     method: "GET",
     headers: { Accept: "application/json", "User-Agent": "CryptoArbitrageMonitor/0.1" },
+    signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
   });
   if (!response.ok) throw new Error(`HTTP_${response.status}`);
-  return response.json();
+  const declaredLength = Number(response.headers.get("content-length") ?? 0);
+  if (declaredLength > MAX_RESPONSE_BYTES) throw new Error("HTTP_RESPONSE_TOO_LARGE");
+  const body = await response.text();
+  if (new TextEncoder().encode(body).byteLength > MAX_RESPONSE_BYTES) {
+    throw new Error("HTTP_RESPONSE_TOO_LARGE");
+  }
+  try {
+    return JSON.parse(body);
+  } catch {
+    throw new Error("INVALID_JSON_RESPONSE");
+  }
 }
 
 async function fetchBlackBit(env, now) {
-  const base = String(env.BLACKBIT_API_BASE_URL).replace(/\/+$/, "");
+  const base = String(env.BLACKBIT_API_BASE_URL).replace(/\\/+$/, "");
   const pairs = await getJson(`${base}/currency_pairs`);
   const pairId = parseBlackBitPairId(pairs);
   const query = new URLSearchParams({ currency_pair: pairId, depth: "100" });
@@ -109,6 +140,12 @@ async function fetchBlackBit(env, now) {
 
 async function fetchWinance(env, now) {
   return parseWinanceRate(await getJson(String(env.WINANCE_API_URL)), now);
+}
+
+function positiveInteger(value, fallback, name) {
+  const parsed = Number(value ?? fallback);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) throw new Error(`INVALID_${name}`);
+  return parsed;
 }
 
 async function isDue(db, source, intervalSeconds, now) {
@@ -121,18 +158,19 @@ async function isDue(db, source, intervalSeconds, now) {
 }
 
 async function recordSuccess(db, quote, attemptedAt) {
-  await db.prepare(`INSERT INTO quote_observations
+  const observation = db.prepare(`INSERT INTO quote_observations
     (source, pair, base_currency, quote_currency, rate, observed_at, indicative_only, source_pair_id)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
     .bind(quote.source, quote.pair, quote.base_currency, quote.quote_currency,
-      quote.rate, quote.observed_at, quote.indicative_only, quote.source_pair_id).run();
-  await db.prepare(`INSERT INTO source_status
+      quote.rate, quote.observed_at, quote.indicative_only, quote.source_pair_id);
+  const status = db.prepare(`INSERT INTO source_status
     (source, status, last_attempt_at, last_success_at, error_type)
     VALUES (?, 'fresh', ?, ?, NULL)
     ON CONFLICT(source) DO UPDATE SET status='fresh',
     last_attempt_at=excluded.last_attempt_at, last_success_at=excluded.last_success_at,
     error_type=NULL`)
-    .bind(quote.source, attemptedAt.toISOString(), quote.observed_at).run();
+    .bind(quote.source, attemptedAt.toISOString(), quote.observed_at);
+  await db.batch([observation, status]);
 }
 
 async function recordFailure(db, source, error, attemptedAt) {
@@ -154,10 +192,10 @@ function mockQuote(source, now) {
 
 export async function scheduledHandler(env, now = new Date()) {
   if (!env?.DB) throw new Error("D1_BINDING_UNAVAILABLE");
-  const maxAge = Number(env.QUOTE_MAX_AGE_SECONDS ?? DEFAULT_MAX_AGE_SECONDS);
+  const maxAge = positiveInteger(env.QUOTE_MAX_AGE_SECONDS, DEFAULT_MAX_AGE_SECONDS, "MAX_AGE");
   const providers = {
-    blackbit: [Number(env.BLACKBIT_POLL_SECONDS ?? DEFAULT_POLL_SECONDS), fetchBlackBit],
-    winance: [Number(env.WINANCE_POLL_SECONDS ?? DEFAULT_POLL_SECONDS), fetchWinance],
+    blackbit: [positiveInteger(env.BLACKBIT_POLL_SECONDS, DEFAULT_POLL_SECONDS, "BLACKBIT_INTERVAL"), fetchBlackBit],
+    winance: [positiveInteger(env.WINANCE_POLL_SECONDS, DEFAULT_POLL_SECONDS, "WINANCE_INTERVAL"), fetchWinance],
   };
   for (const [source, [interval, fetcher]] of Object.entries(providers)) {
     try {
@@ -172,7 +210,11 @@ export async function scheduledHandler(env, now = new Date()) {
       }
       await recordSuccess(env.DB, quote, now);
     } catch (error) {
-      await recordFailure(env.DB, source, error, now);
+      try {
+        await recordFailure(env.DB, source, error, now);
+      } catch {
+        // A D1 status-write failure must not prevent polling the other provider.
+      }
     }
   }
 }
@@ -184,10 +226,14 @@ export default {
       return new Response("Not found", { status: 404 });
     }
     if (!env?.DB) return Response.json({ error: "D1_BINDING_UNAVAILABLE" }, { status: 503 });
-    const result = await env.DB.prepare(
-      "SELECT source, status, last_attempt_at, last_success_at, error_type FROM source_status ORDER BY source",
-    ).all();
-    return Response.json({ sources: result.results ?? [] });
+    try {
+      const result = await env.DB.prepare(
+        "SELECT source, status, last_attempt_at, last_success_at, error_type FROM source_status ORDER BY source",
+      ).all();
+      return Response.json({ sources: result.results ?? [] });
+    } catch {
+      return Response.json({ error: "D1_QUERY_FAILED" }, { status: 503 });
+    }
   },
   async scheduled(controller, env, ctx) {
     ctx.waitUntil(scheduledHandler(env));
