@@ -50,6 +50,22 @@ jobs:
           server {
             listen 8080;
             server_name _;
+
+            # Browser WebSocket APIs cannot attach the HTTP Basic credentials
+            # used for the page itself. Keep the RFB endpoint public at the
+            # transport layer; x11vnc still enforces its fresh VNC password.
+            location = /websockify {
+              auth_basic off;
+              proxy_pass http://127.0.0.1:6080;
+              proxy_http_version 1.1;
+              proxy_set_header Upgrade $http_upgrade;
+              proxy_set_header Connection $connection_upgrade;
+              proxy_set_header Host $host;
+              proxy_read_timeout 3600s;
+              proxy_send_timeout 3600s;
+              proxy_buffering off;
+            }
+
             location / {
               auth_basic "Private E-ID browser";
               auth_basic_user_file /etc/nginx/eid.htpasswd;
@@ -215,7 +231,35 @@ jobs:
           fi
 
           echo "PUBLIC_TUNNEL_HEALTHCHECK=HTTP_200"
-          echo "REMOTE_BROWSER_URL=$TUNNEL_URL/vnc.html?autoconnect=true&resize=scale&quality=6&compression=2"
+
+          # Verify the actual WebSocket upgrade through Cloudflare and Nginx.
+          # A page-only HTTP 200 is not enough: it was the source of the
+          # misleading green health checks in the previous run.
+          WS_OK=""
+          for i in $(seq 1 10); do
+            curl --http1.1 -sS -D /tmp/eid-ws-headers -o /dev/null --max-time 4 \
+              -H "Connection: Upgrade" \
+              -H "Upgrade: websocket" \
+              -H "Sec-WebSocket-Version: 13" \
+              -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
+              "$TUNNEL_URL/websockify" || true
+            if grep -qE '^HTTP/[0-9.]+ 101' /tmp/eid-ws-headers; then
+              WS_OK=yes
+              break
+            fi
+            echo "PUBLIC_WEBSOCKET_WAIT attempt=$i/10"
+            cat /tmp/eid-ws-headers || true
+            sleep 2
+          done
+          if [ -z "$WS_OK" ]; then
+            echo "PUBLIC_WEBSOCKET_HEALTHCHECK_FAILED"
+            tail -n 80 /tmp/websockify.log || true
+            tail -n 80 /tmp/x11vnc.log || true
+            exit 1
+          fi
+          echo "PUBLIC_WEBSOCKET_HEALTHCHECK=HTTP_101"
+
+          echo "REMOTE_BROWSER_URL=$TUNNEL_URL/vnc.html?autoconnect=true&path=websockify&resize=scale&quality=6&compression=2"
           echo "REMOTE_BROWSER_HTTP_LOGIN=viewer"
           echo "REMOTE_BROWSER_HTTP_PASSWORD=$HTTP_PASSWORD"
           echo "REMOTE_BROWSER_VNC_PASSWORD=$VNC_PASSWORD"
@@ -245,8 +289,17 @@ jobs:
             fi
             if [ $((i % 15)) -eq 0 ]; then
               CODE="$(curl -sS --connect-timeout 8 --max-time 15 -u "viewer:$HTTP_PASSWORD" -o /dev/null -w '%{http_code}' "$TUNNEL_URL/vnc.html" || true)"
-              echo "PUBLIC_TUNNEL_HEALTHCHECK interval=30s http=$CODE"
-              if [ "$CODE" != "200" ]; then tail -n 30 /tmp/cloudflared.log || true; fi
+              WS_CODE="$(curl --http1.1 -sS -D /tmp/eid-ws-headers -o /dev/null --max-time 4 \
+                -H "Connection: Upgrade" -H "Upgrade: websocket" \
+                -H "Sec-WebSocket-Version: 13" \
+                -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
+                "$TUNNEL_URL/websockify" >/dev/null 2>&1 || true)"
+              if grep -qE '^HTTP/[0-9.]+ 101' /tmp/eid-ws-headers; then WS_STATUS=101; else WS_STATUS=FAILED; fi
+              echo "PUBLIC_TUNNEL_HEALTHCHECK interval=30s http=$CODE websocket=$WS_STATUS"
+              if [ "$CODE" != "200" ] || [ "$WS_STATUS" != "101" ]; then
+                tail -n 30 /tmp/cloudflared.log || true
+                cat /tmp/eid-ws-headers || true
+              fi
             fi
             sleep 2
           done
