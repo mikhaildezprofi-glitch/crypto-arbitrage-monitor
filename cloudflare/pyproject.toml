@@ -5,12 +5,12 @@ description = "Cloudflare Python Worker adapter for the read-only quote monitor"
 requires-python = ">=3.13"
 dependencies = [
     "crypto-arbitrage-monitor",
-    "workers-runtime-sdk",
 ]
 
 [dependency-groups]
 dev = [
     "workers-py",
+    "workers-runtime-sdk",
 ]
 
 [tool.uv.sources]
