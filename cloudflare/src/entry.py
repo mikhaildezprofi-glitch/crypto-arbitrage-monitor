@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from decimal import Decimal
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 from js import Object, fetch
 from pyodide.ffi import to_js
@@ -115,7 +115,7 @@ async def _record_failure(db, source: str, error: Exception, attempted_at: datet
 
 class Default(WorkerEntrypoint):
     async def fetch(self, request):
-        if str(request.method) != "GET" or str(request.url).split("?")[0].rstrip("/").endswith("/health") is False:
+        if str(request.method) != "GET" or urlparse(str(request.url)).path.rstrip("/") != "/health":
             return Response("Not found", status=404)
         rows = await self.env.DB.prepare(
             """SELECT source, status, last_attempt_at, last_success_at, error_type
