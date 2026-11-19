@@ -6,7 +6,7 @@ const MAX_JSON_NODES = 10_000;
 const MAX_JSON_DEPTH = 64;
 
 function normalizePair(value) {
-  return String(value ?? "").toUpperCase().replace(/[-_]/g, "/").replace(/\s/g, "");
+  return String(value ?? "").toUpperCase().replace(/[-_]/g, "/").replace(/[ \t\r\n]/g, "");
 }
 
 function checkEnvelope(payload, endpoint) {
@@ -130,7 +130,8 @@ async function getJson(url) {
 }
 
 async function fetchBlackBit(env, now) {
-  const base = String(env.BLACKBIT_API_BASE_URL).replace(/\\/+$/, "");
+  let base = String(env.BLACKBIT_API_BASE_URL);
+  while (base.endsWith("/")) base = base.slice(0, -1);
   const pairs = await getJson(`${base}/currency_pairs`);
   const pairId = parseBlackBitPairId(pairs);
   const query = new URLSearchParams({ currency_pair: pairId, depth: "100" });
