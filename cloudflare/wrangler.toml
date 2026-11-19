@@ -1,0 +1,19 @@
+name = "crypto-arbitrage-monitor-readonly"
+main = "src/entry.py"
+compatibility_date = "2026-11-19"
+compatibility_flags = ["python_workers"]
+
+[vars]
+BLACKBIT_API_BASE_URL = "https://blackbit.exchange/site"
+WINANCE_API_URL = "https://winance.exchange/site/currency_pairs"
+QUOTE_MAX_AGE_SECONDS = "900"
+BLACKBIT_POLL_SECONDS = "300"
+WINANCE_POLL_SECONDS = "300"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "crypto-arbitrage-monitor"
+database_id = "REPLACE_WITH_OWNER_CREATED_D1_DATABASE_ID"
+
+# Cron is intentionally not enabled in this prototype.
+# Enable only after local scheduled-handler tests and a measured Free-plan CPU check.
