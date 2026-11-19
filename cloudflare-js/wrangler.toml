@@ -1,0 +1,19 @@
+name = "crypto-arbitrage-monitor-js-experiment"
+main = "src/worker.js"
+compatibility_date = "2026-11-19"
+
+[vars]
+BLACKBIT_API_BASE_URL = "https://blackbit.exchange/site"
+WINANCE_API_URL = "https://winance.exchange/site/currency_pairs"
+QUOTE_MAX_AGE_SECONDS = "900"
+BLACKBIT_POLL_SECONDS = "300"
+WINANCE_POLL_SECONDS = "300"
+MOCK_QUOTES = "false"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "crypto-arbitrage-monitor-js-experiment"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+# No Cron trigger is configured in this experiment.
