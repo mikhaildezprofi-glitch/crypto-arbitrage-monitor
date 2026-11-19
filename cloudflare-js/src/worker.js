@@ -6,7 +6,7 @@ const MAX_JSON_NODES = 10_000;
 const MAX_JSON_DEPTH = 64;
 
 function normalizePair(value) {
-  return String(value ?? "").toUpperCase().replace(/[-_]/g, "/").replace(/\\s/g, "");
+  return String(value ?? "").toUpperCase().replace(/[-_]/g, "/").replace(/\s/g, "");
 }
 
 function checkEnvelope(payload, endpoint) {
