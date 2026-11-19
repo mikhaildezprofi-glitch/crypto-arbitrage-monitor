@@ -131,6 +131,14 @@ jobs:
               page.on("response", on_response)
               page.on("pageerror", lambda error: print("BROWSER_PAGE_ERROR=%s" % str(error)[:200], flush=True))
 
+              def on_main_frame_navigation(frame):
+                  if frame == page.main_frame:
+                      parsed = urlparse(frame.url)
+                      # Never log query strings or fragments: OAuth state and codes may be present.
+                      print("MAIN_FRAME_NAVIGATION=%s%s" % (parsed.netloc, parsed.path), flush=True)
+
+              page.on("framenavigated", on_main_frame_navigation)
+
               # Start on Money Storage itself. Let its own login flow establish OAuth state
               # and redirect the browser to E-ID; do not open the E-ID endpoint directly.
               page.goto(
@@ -258,12 +266,12 @@ jobs:
 
           BROWSER_READY=""
           for i in $(seq 1 60); do
-            if grep -q "Money Storage E-ID authorization flow opened." /tmp/eid-browser.log; then
+            if grep -q "Money Storage entry page opened; waiting for its E-ID redirect." /tmp/eid-browser.log; then
               BROWSER_READY="yes"
               break
             fi
             if ! kill -0 "$(cat /tmp/eid-browser.pid)" 2>/dev/null; then
-              echo "Chromium exited before the E-ID page was ready."
+              echo "Chromium exited before the Money Storage entry page was ready."
               cat /tmp/eid-browser.log
               exit 1
             fi
