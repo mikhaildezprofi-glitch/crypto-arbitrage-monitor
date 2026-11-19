@@ -52,9 +52,19 @@ Starting reference capital: 1000 USDT. Target polling intervals: Winance 300 sec
 - Never substitute stale data.
 - BlackBit makes the overall result indicative, not guaranteed.
 
+## Cloud runtime
+
+A one-shot cloud worker is available:
+
+    PYTHONPATH=src python -m arbitrage_monitor.cloud_worker
+
+It collects enabled sources, stores normalized quote history and source health in SQLite, and emits one JSON result. An incomplete route is a normal monitoring outcome and does not make the worker crash. The Dockerfile packages the same one-shot task for a managed cloud scheduler. No permanent hosting vendor or scheduler is configured yet.
+
+Money Storage and both Sberkassa sources are disabled by default. The worker must not be scheduled for production route alerts until all five sources and required fee data are valid.
+
 ## Current implementation status
 
-The repository contains the calculation core, BlackBit and Winance read-only adapters, a common provider interface, a fail-closed quote collector, and the Money Storage parser/first-20 average builder. A cloud runtime, persistent quote history, Telegram notifications, and production deployment are not yet complete. Money Storage unattended cloud access and both Sberkassa quote sources remain blocked by missing verified access evidence. The full route must not be reported as available until all five sources and required fees are valid.
+The repository contains the calculation core, BlackBit and Winance read-only adapters, the Money Storage parser/first-20 average builder, the fail-closed collector, SQLite quote history/source health, and the one-shot cloud worker. Telegram notifications, provider adapters for Sberkassa, an approved Money Storage cloud access method, and production deployment remain incomplete.
 
 ## Run tests
 
