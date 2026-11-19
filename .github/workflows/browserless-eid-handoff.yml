@@ -32,7 +32,7 @@ jobs:
               if "mirror+file:/etc/apt/apt-mirrors.txt" not in text:
                   continue
               stanzas = []
-              for stanza in text.strip().split("\\n\\n"):
+              for stanza in text.strip().split("\n\n"):
                   if not stanza.strip():
                       continue
                   suites = ""
@@ -46,7 +46,7 @@ jobs:
                       "mirror+file:/etc/apt/apt-mirrors.txt", uri
                   )
                   stanzas.append(stanza)
-              path.write_text("\\n\\n".join(stanzas) + "\\n")
+              path.write_text("\n\n".join(stanzas) + "\n")
               print(f"Reconfigured Ubuntu mirror source: {path}")
 
           PY
