@@ -21,6 +21,11 @@ API_URL = "https://storage.money/public_deals/fetch?offset=0&limit=20&from=ECR&t
 MAX_BODY_CHARS = 1_000_000
 
 
+class TransientMoneyStorageReadError(RuntimeError):
+    """A read failure that is safe to retry a small, bounded number of times."""
+
+
+
 def parse_authenticated_payload(payload: Mapping[str, Any], observed_at: datetime | None = None) -> dict[str, Any]:
     if not isinstance(payload, Mapping) or payload.get("result") != "ok":
         raise ValueError("Money Storage did not return result=ok.")
@@ -99,6 +104,10 @@ def fetch_from_authenticated_page(page) -> dict[str, Any]:
         raise RuntimeError("Money Storage response exceeded the 1 MB safety limit.")
     if result["status"] in (401, 403, 429):
         raise RuntimeError(f"Money Storage refused the authenticated read with HTTP {result['status']}; no retry.")
+    if 500 <= result["status"] <= 599:
+        raise TransientMoneyStorageReadError(
+            f"Money Storage temporarily returned HTTP {result['status']}."
+        )
     if result["status"] != 200:
         raise RuntimeError(f"Money Storage returned HTTP {result['status']}; no retry.")
     if len(result["text"]) > MAX_BODY_CHARS:
