@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Mapping
+from urllib.parse import urlparse
 
 from arbitrage_monitor.providers.money_storage import (
     average_first_20_offer_rate,
@@ -47,7 +48,8 @@ def parse_authenticated_payload(payload: Mapping[str, Any], observed_at: datetim
 
 
 def fetch_from_authenticated_page(page) -> dict[str, Any]:
-    if not page.url.startswith("https://storage.money/"):
+    page_url = urlparse(page.url)
+    if page_url.scheme != "https" or page_url.netloc.lower() != "storage.money":
         raise RuntimeError("Authenticated page is not on storage.money.")
     result = page.evaluate(
         """async (url) => {
@@ -94,7 +96,8 @@ def fetch_from_authenticated_page(page) -> dict[str, Any]:
     if result.get("invalidOrigin"):
         raise RuntimeError("Money Storage read redirected outside the approved origin.")
     if result.get("tooLarge"):
-        raise RuntimeError("Money Storage response exceeded the 1 MB safety limit.")\n    if result["status"] in (401, 403, 429):
+        raise RuntimeError("Money Storage response exceeded the 1 MB safety limit.")
+    if result["status"] in (401, 403, 429):
         raise RuntimeError(f"Money Storage refused the authenticated read with HTTP {result['status']}; no retry.")
     if result["status"] != 200:
         raise RuntimeError(f"Money Storage returned HTTP {result['status']}; no retry.")
