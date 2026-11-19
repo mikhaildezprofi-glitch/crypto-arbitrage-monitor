@@ -7,11 +7,11 @@ This is an isolated cloud runtime adapter for the existing read-only quote monit
 - Runs as a Python Worker using Cloudflare's Pyodide runtime.
 - Uses the Workers Fetch API for outbound HTTPS, not Python's urllib network client.
 - Reuses the existing BlackBit and Winance response parsers and Quote model.
-- Persists normalized observations and source health to D1.
+- Persists normalized BlackBit/Winance observations and source health to D1. The intended 30-day retention policy is documented, but automatic pruning is not implemented yet.
 - Polls only BlackBit ECR/USDT and Winance ERUB/USDT.
 - Uses 300-second per-source intervals and rejects stale/future quotes.
 - Exposes a read-only /health endpoint with source status only.
-- Does not calculate a full route because Money Storage and both Sberkassa adapters are deliberately unavailable.
+- Does not calculate a full route because Money Storage and both Sberkassa adapters are deliberately unavailable. Those sources must use replace-in-place current snapshots only, never quote history; see [QUOTE_DATA_RETENTION.md](../docs/QUOTE_DATA_RETENTION.md).
 - Has no scheduled trigger configured yet.
 
 The existing SQLite store is not used here: Cloudflare Python Workers have an ephemeral in-memory filesystem, and Python's threading module is non-functional in the Workers WebAssembly runtime. D1 is the durable storage layer for this adapter.
