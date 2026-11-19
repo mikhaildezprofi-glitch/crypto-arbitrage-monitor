@@ -107,7 +107,7 @@ class CloudWorkerTests(unittest.TestCase):
         )
         self.assertEqual(result["status"], "incomplete")
         self.assertIsNone(result["route"])
-        self.assertIn("future", result["route_error"].lower())
+        self.assertIn("stale", result["route_error"].lower())
 
     def test_stale_quote_blocks_route(self):
         providers = self.providers()
