@@ -195,7 +195,8 @@ def main() -> int:
             max_quote_age_seconds=int(os.getenv("QUOTE_MAX_AGE_SECONDS", "900")),
         )
         print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
-        return 0 if result["status"] == "calculated" else 2
+        # An incomplete route is a valid monitoring outcome, not a worker crash.
+        return 0
     finally:
         store.close()
 
