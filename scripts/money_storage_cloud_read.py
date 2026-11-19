@@ -58,12 +58,40 @@ def fetch_from_authenticated_page(page) -> dict[str, Any]:
             cache: "no-store",
             redirect: "follow"
           });
-          const text = await response.text();
-          return { status: response.status, contentType: response.headers.get("content-type") || "", text };
+          const finalUrl = new URL(response.url);
+          if (finalUrl.origin !== "https://storage.money") {
+            return { status: response.status, finalUrl: response.url, contentType: "", text: "", invalidOrigin: true };
+          }
+          const declaredLength = Number(response.headers.get("content-length") || 0);
+          if (Number.isFinite(declaredLength) && declaredLength > 1000000) {
+            await response.body?.cancel();
+            return { status: response.status, finalUrl: response.url, contentType: "", text: "", tooLarge: true };
+          }
+          if (!response.body) {
+            return { status: response.status, finalUrl: response.url, contentType: "", text: "" };
+          }
+          const reader = response.body.getReader();
+          const chunks = [];
+          let total = 0;
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            total += value.byteLength;
+            if (total > 1000000) {
+              await reader.cancel();
+              return { status: response.status, finalUrl: response.url, contentType: "", text: "", tooLarge: true };
+            }
+            chunks.push(value);
+          }
+          const bytes = new Uint8Array(total);
+          let offset = 0;
+          for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+          const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+          return { status: response.status, finalUrl: response.url, contentType: response.headers.get("content-type") || "", text };
         }""",
         API_URL,
     )
-    if result["status"] in (401, 403, 429):
+    if result.get("invalidOrigin"):\n        raise RuntimeError("Money Storage read redirected outside the approved origin.")\n    if result.get("tooLarge"):\n        raise RuntimeError("Money Storage response exceeded the 1 MB safety limit.")\n    if result["status"] in (401, 403, 429):
         raise RuntimeError(f"Money Storage refused the authenticated read with HTTP {result['status']}; no retry.")
     if result["status"] != 200:
         raise RuntimeError(f"Money Storage returned HTTP {result['status']}; no retry.")
