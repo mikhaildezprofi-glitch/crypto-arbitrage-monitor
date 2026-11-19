@@ -138,6 +138,15 @@ jobs:
                   wait_until="domcontentloaded",
                   timeout=60000
               )
+              browser_checks = page.evaluate("""() => {
+                  const jsWorks = typeof window === "object" && typeof document === "object";
+                  const cookieName = "__eid_browser_cookie_test";
+                  document.cookie = cookieName + "=1; path=/; SameSite=Lax";
+                  const cookiesWork = document.cookie.split(";").some(item => item.trim() === cookieName + "=1");
+                  document.cookie = cookieName + "=; Max-Age=0; path=/; SameSite=Lax";
+                  return {javascript: jsWorks, firstPartyCookieWriteRead: cookiesWork};
+              }""")
+              print("BROWSER_FEATURE_CHECKS=%s" % json.dumps(browser_checks, sort_keys=True), flush=True)
               print("Money Storage E-ID authorization flow opened.", flush=True)
 
               deadline = time.monotonic() + 1800
