@@ -39,25 +39,34 @@ Do not infer an endpoint, fee, rate, volume, or permission from a similar domain
 - [x] Partial-batch, stale-quote, future-timestamp, and storage tests.
 - [x] Verify the full CI run and review test output (unit tests and Docker image build both passed).
 
-### Stage 2: Deployment packaging
+### Stage 2: Cloudflare runtime prototype
+- [x] Add isolated Python Worker entrypoint using Workers Fetch API and D1 bindings.
+- [x] Reuse the existing BlackBit and Winance parsers and Quote model.
+- [x] Add D1 schema for quote history and source health.
+- [x] Keep Cron Trigger disabled until Free-plan CPU usage is measured.
+- [ ] Complete Pywrangler dry-run build in CI.
+- [ ] Test the scheduled handler locally with a local D1 database.
+- [ ] Benchmark a remote Free-plan invocation before enabling any schedule.
+
+## Stage 3: Deployment packaging
 - [x] Dockerfile for the one-shot cloud task.
 - [x] Environment-variable configuration with unverified providers disabled.
 - [ ] Select a managed scheduler/host after checking free-tier, persistence, secrets, outbound HTTPS, and payment-card requirements. Current comparison: CLOUD_HOSTING_RESEARCH.md.
 - [ ] Mount persistent storage at /app/data and enforce one active task at a time; ephemeral storage is not durable.
 - [ ] Prove a real cloud task execution before claiming deployment.
 
-### Stage 3: Notifications
+### Stage 4: Notifications
 - [ ] Telegram delivery for complete profitable routes and source-health alerts.
 - [ ] Send no stale or incomplete route result.
 - [ ] Keep messages informational and omit transaction/action buttons.
 
-### Stage 4: Remaining provider evidence
+### Stage 5: Remaining provider evidence
 - Continue cloud-side public technical research only.
 - Do not send provider-support requests.
 - Do not probe or bypass 401/403/429 responses.
 - Do not implement Money Storage or Sberkassa production authentication until a permitted cloud access method is established.
 
-### Stage 5: Production readiness
+### Stage 6: Production readiness
 - Verify persistence, restart recovery, source health, quote age, fee handling, and notification deduplication.
 - Confirm transaction-capable actions are absent.
 - Enable only sources whose cloud access and semantics are independently verified.
