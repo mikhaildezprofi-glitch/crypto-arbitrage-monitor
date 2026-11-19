@@ -1,6 +1,7 @@
 name: tests
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -22,3 +23,5 @@ jobs:
         env:
           PYTHONPATH: src
         run: python -m unittest discover -s tests -v
+      - name: Build cloud worker container
+        run: docker build --tag crypto-arbitrage-monitor:test .
