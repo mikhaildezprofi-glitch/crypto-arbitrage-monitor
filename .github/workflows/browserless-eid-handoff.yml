@@ -79,7 +79,8 @@ jobs:
           from pathlib import Path
           from urllib.parse import urlparse
           from playwright.sync_api import sync_playwright
-          sys.path.insert(0, str(Path.cwd()))\n          sys.path.insert(0, str(Path.cwd() / "src"))
+          sys.path.insert(0, str(Path.cwd()))
+          sys.path.insert(0, str(Path.cwd() / "src"))
           from scripts.money_storage_cloud_read import fetch_from_authenticated_page, write_normalized_snapshot
 
           status_file = Path("/tmp/eid-auth-status")
