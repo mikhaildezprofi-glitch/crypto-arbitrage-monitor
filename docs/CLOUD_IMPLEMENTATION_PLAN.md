@@ -35,6 +35,7 @@ Do not infer an endpoint, fee, rate, volume, or permission from a similar domain
 - [x] One-shot poll-cycle entry point.
 - [x] Durable SQLite quote history and source health.
 - [x] Explicit provider enable/disable configuration; unverified sources fail closed.
+- [x] Persisted per-provider poll cadence; cached quotes are reused only while fresh, and failed polls invalidate them.
 - [x] Partial-batch, stale-quote, future-timestamp, and storage tests.
 - [x] Verify the full CI run and review test output (unit tests and Docker image build both passed).
 
