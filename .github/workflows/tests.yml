@@ -25,3 +25,19 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Build cloud worker container
         run: docker build --tag crypto-arbitrage-monitor:test .
+
+  cloudflare-worker-build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: astral-sh/setup-uv@v6
+      - name: Resolve Cloudflare Python Worker dependencies
+        run: uv sync --project cloudflare
+      - name: Compile Cloudflare Worker without deploying
+        run: uv run --project cloudflare pywrangler deploy --dry-run
