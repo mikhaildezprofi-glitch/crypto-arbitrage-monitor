@@ -9,7 +9,7 @@ This is an isolated cloud runtime adapter for the existing read-only quote monit
 - Reuses the existing BlackBit and Winance response parsers and Quote model.
 - Currently appends BlackBit/Winance observations to D1; this is a known prototype gap. The approved design is one current snapshot per source, replaced on the next successful poll, with no history.
 - Polls only BlackBit ECR/USDT and Winance ERUB/USDT.
-- Prototype config currently uses 300-second intervals; the approved production range is configurable from 900 to 3600 seconds (15 minutes to 1 hour), with the exact interval still undecided. Rejects stale/future quotes.
+- Prototype config now defaults to 900-second intervals; the allowed production range is 900 to 3600 seconds (15 minutes to 1 hour), with the exact interval still undecided. Rejects stale/future quotes.
 - Exposes a read-only /health endpoint with source status only.
 - Does not calculate a full route because Money Storage and both Sberkassa adapters are deliberately unavailable. Those sources must use replace-in-place current snapshots only, never quote history; see [QUOTE_DATA_RETENTION.md](../docs/QUOTE_DATA_RETENTION.md).
 - Has no scheduled trigger configured yet.
@@ -51,7 +51,7 @@ Use local D1 state only for development. No production database is configured by
 
        uv run pywrangler d1 migrations apply crypto-arbitrage-monitor --local
 
-4. Run the local scheduled-handler test and verify rows in quote_observations and source_status.
+4. Run the local scheduled-handler test and verify one row per provider in current_quotes and corresponding rows in source_status.
 
 Do not add a real account ID, API token, database credentials, or other secrets to Git. Do not deploy or create remote resources from CI.
 
