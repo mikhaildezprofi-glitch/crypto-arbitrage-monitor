@@ -109,6 +109,39 @@ export function parseWinanceRate(payload, observedAt = new Date()) {
   throw new Error("MISSING_WINANCE_ERUB_USDT_RATE");
 }
 
+export async function readBoundedBody(response, maxBytes = MAX_RESPONSE_BYTES) {
+  const declaredLength = Number(response.headers.get("content-length") ?? 0);
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+    await response.body?.cancel();
+    throw new Error("HTTP_RESPONSE_TOO_LARGE");
+  }
+  if (!response.body) throw new Error("EMPTY_HTTP_RESPONSE");
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel();
+        throw new Error("HTTP_RESPONSE_TOO_LARGE");
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+}
+
 async function getJson(url) {
   const response = await fetch(url, {
     method: "GET",
@@ -116,11 +149,13 @@ async function getJson(url) {
     signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
   });
   if (!response.ok) throw new Error(`HTTP_${response.status}`);
-  const declaredLength = Number(response.headers.get("content-length") ?? 0);
-  if (declaredLength > MAX_RESPONSE_BYTES) throw new Error("HTTP_RESPONSE_TOO_LARGE");
-  const body = await response.text();
-  if (new TextEncoder().encode(body).byteLength > MAX_RESPONSE_BYTES) {
-    throw new Error("HTTP_RESPONSE_TOO_LARGE");
+  let body;
+  try {
+    body = await readBoundedBody(response);
+  } catch (error) {
+    if (error?.message === "HTTP_RESPONSE_TOO_LARGE" ||
+        error?.message === "EMPTY_HTTP_RESPONSE") throw error;
+    throw new Error("INVALID_HTTP_RESPONSE_BODY");
   }
   try {
     return JSON.parse(body);
