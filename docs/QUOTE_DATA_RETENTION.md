@@ -1,6 +1,6 @@
 # Quote and offer storage policy
 
-Status: approved requirement. The Python and JavaScript prototype schemas and handlers have now been changed to store only one current BlackBit/Winance snapshot per source using UPSERT. CI validation is pending; Money Storage and Sberkassa adapters remain unimplemented.
+Status: approved requirement. The Python and JavaScript prototype schemas and handlers store only one current BlackBit/Winance snapshot per source using UPSERT. CI passed for the current prototype changes; Money Storage and Sberkassa adapters remain unimplemented.
 
 ## Storage rules
 
@@ -28,4 +28,4 @@ BlackBit and Winance polling is to be configurable within **900 to 3600 seconds 
 
 ## Current implementation gap
 
-The prototype schemas now define `current_quotes` with `source` as the primary key, and successful BlackBit/Winance polls use UPSERT rather than appending history. A failed poll leaves the last snapshot in place but marks the source unavailable, so it cannot be treated as current. CI must verify the schema and handler behavior. Money Storage and Sberkassa adapters are not implemented. When added, Sberkassa `/exchange` must persist only the validated displayed RUB → USDT rate as its current snapshot, replacing it on the next successful refresh. Do not enable production polling until CI and failure-path tests pass.
+The prototype schemas now define `current_quotes` with `source` as the primary key, and successful BlackBit/Winance polls use UPSERT rather than appending history. A failed poll leaves the last snapshot in place but marks the source unavailable, so it cannot be treated as current. CI has passed for the existing Python and JavaScript prototype schema/handler behavior. Money Storage and Sberkassa adapters are not implemented. When added, Sberkassa `/exchange` must persist only the validated displayed RUB → USDT rate as its current snapshot, replacing it on the next successful refresh. Do not enable production polling until CI and failure-path tests pass.
