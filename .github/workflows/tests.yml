@@ -28,6 +28,9 @@ jobs:
 
   cloudflare-worker-build:
     runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: cloudflare
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v5
@@ -38,6 +41,6 @@ jobs:
           node-version: '24'
       - uses: astral-sh/setup-uv@v6
       - name: Resolve Cloudflare Python Worker dependencies
-        run: uv sync --project cloudflare
+        run: uv sync
       - name: Compile Cloudflare Worker without deploying
-        run: uv run --project cloudflare pywrangler deploy --dry-run
+        run: uv run pywrangler deploy --dry-run
