@@ -1,47 +1,60 @@
 # Crypto Arbitrage Monitor
 
-Private project for read-only monitoring and calculation of the five-step route:
+Private, cloud-oriented, read-only monitor for the five-step route:
 
-1. Money Storage: USDT -> ECR
-2. BlackBit: ECR -> USDT (displayed rate only; calculation is indicative)
-3. Winance: USDT -> ERUB, using **ERUB/USDT only**, pair ID **18**
-4. Sberkassa: ERUB -> RUB
-5. Sberkassa Exchange: RUB -> USDT
+1. Money Storage: USDT -> ECR, using only "Всем предлагают".
+2. BlackBit: ECR -> USDT, displayed last_rate only; indicative, not an execution check.
+3. Winance: USDT -> ERUB, ERUB/USDT only, pair ID 18.
+4. Sberkassa: ERUB -> RUB.
+5. Sberkassa Exchange: RUB -> USDT, current displayed conversion rate only.
 
-Starting reference capital: 1000 USDT. Winance polling interval: 300 seconds. Money Storage polling interval: 900 seconds (15 minutes).
+Starting reference capital: 1000 USDT. Target polling intervals: Winance 300 seconds; Money Storage 900 seconds, subject to an established permitted cloud access method. Maximum quote age: 900 seconds.
 
-## BlackBit quote method
+## Operating boundaries
 
-- Resolve the exact ECR/USDT pair from the public `/site/currency_pairs` response.
-- Request the UI order-book endpoint for that pair and read only `last_rate`.
-- Ignore order-book levels, volumes, and liquidity for route calculation. The quote is indicative only and is not an execution guarantee.
-- Reject missing, non-positive, non-finite, or malformed rates and unsuccessful API envelopes.
+- Informational monitoring and calculations only. No deal creation, acceptance, editing, cancellation, payments, transfers, deposits, or withdrawals.
+- Development and runtime are cloud-only. The phone, ADB, Termux, Polydev, and local browser are not required.
+- GitHub Actions is used for CI and controlled deployment tasks, not as a persistent authenticated browser session or long-running production scheduler.
+- No provider-support requests will be sent.
+- Never bypass CAPTCHA, MFA, device binding, HTTP access controls, or rate limits.
+- Never put credentials, browser sessions, cookies, OAuth codes, or authorization headers in the repository, workflow artifacts, Telegram messages, or logs.
 
-## Money Storage quote method
+## Quote rules
 
-- The authenticated browser capture verified the frontend request for the **"Всем предлагают"** tab, with a page size of 20. This is the only Money Storage tab used by the project; "Мне предлагают" is out of scope.
-- Normalize each matching raw API row (src=ECR, dst=USDT) to the displayed USDT -> ECR direction.
-- Use the arithmetic mean of the rate field across the first 20 available target-direction offers as the Money Storage quote.
-- If fewer than 20 target-direction offers are returned, average the available offers; an empty result is unavailable.
-- Do not select one offer, add offer amounts, combine liquidity, assume partial fills, or simulate a purchase.
-- The quote timestamp is the time the page was observed during polling. The source offer creation timestamps remain available as row metadata.
-- The displayed commission is deliberately ignored and is never deducted from the Money Storage route step.
+### Money Storage
+- Only the "Всем предлагают" tab is in scope. "Мне предлагают" is not used.
+- The observed frontend request was GET /public_deals/fetch?offset=0&limit=20&from=ECR&to=USDT.
+- Raw src=ECR,dst=USDT records map to displayed USDT -> ECR.
+- Use the arithmetic mean of the first 20 matching rate values, or fewer if fewer are returned.
+- Ignore the displayed commission completely.
+- The parser is implemented; unattended cloud access is not verified, so production polling remains disabled.
 
-This is an indicative market-rate average, not a promise that a trade can be executed at that rate. The monitor does not buy, accept, create, or modify offers.
+### BlackBit
+- Resolve the ECR/USDT pair from the public currency-pairs response.
+- Read only last_rate; ignore order-book levels and volumes.
+- Mark the quote indicative. It is not a liquidity or execution check.
 
-## Safety and calculation rules
+### Winance
+- Use ERUB/USDT pair ID 18 only.
+- Do not use ERUB/RUB or other pairs.
 
-- Monitoring and calculations only. No order placement, withdrawals, deposits, or transfers.
-- BlackBit output is labelled indicative and is not represented as executable or guaranteed profit.
-- Do not use Winance ERUB/RUB.
-- Do not silently reuse stale quotes. A missing or stale quote makes the full-route result unavailable.
-- Reject quote timestamps that lie in the future; naive timestamps are interpreted as UTC for consistent age checks.
-- Fees are configured per step; unknown fees must remain explicitly unknown rather than assumed to be zero.
-- Credentials and authenticated browser sessions must never be committed, sent to Telegram, or copied to cloud logs.
+### Sberkassa
+- ERUB -> RUB and RUB -> USDT are separate quote sources.
+- Neither endpoint nor response schema is verified. Both adapters remain disabled.
+- A previous screenshot value is not a current quote.
+
+## Calculation safety
+
+- Use Decimal arithmetic.
+- Require all five quotes to be fresh and correctly directed.
+- Require known fee metadata for every step except Money Storage, whose displayed commission is explicitly ignored.
+- Reject missing, stale, future-dated, malformed, wrong-direction, non-positive, or non-finite quotes.
+- Never substitute stale data.
+- BlackBit makes the overall result indicative, not guaranteed.
 
 ## Current implementation status
 
-This repository includes the calculation core, read-only BlackBit and Winance quote adapters, a common read-only provider protocol, a quote collector, and a pure Money Storage offer parser plus first-20 arithmetic-average quote builder. The Money Storage parser normalizes raw API src=ECR/dst=USDT records to displayed USDT -> ECR direction. An authenticated Chrome capture verified the frontend request and response schema for the "Всем предлагают" tab. This is the only supported tab; "Мне предлагают" is not used. The average builder uses the first 20 available target-direction offers and timestamps the resulting quote at observation time. The Money Storage poll interval is configured as 900 seconds. The parser and average builder do not perform network requests or authentication; official permission and a supported cloud-side access method are still required before live polling can be enabled. The collector requests all five configured source keys independently, validates each source's required currency direction and positive rate, records per-source failures, and marks the batch incomplete when any required provider is missing or fails. It never substitutes a previous quote. Telegram delivery, persistent history, and deployment are not yet implemented.
+The repository contains the calculation core, BlackBit and Winance read-only adapters, a common provider interface, a fail-closed quote collector, and the Money Storage parser/first-20 average builder. A cloud runtime, persistent quote history, Telegram notifications, and production deployment are not yet complete. Money Storage unattended cloud access and both Sberkassa quote sources remain blocked by missing verified access evidence. The full route must not be reported as available until all five sources and required fees are valid.
 
 ## Run tests
 
@@ -49,11 +62,4 @@ This repository includes the calculation core, read-only BlackBit and Winance qu
 
 ## Configuration
 
-Environment variables:
-- BLACKBIT_API_BASE_URL (default: https://blackbit.exchange/site)
-- WINANCE_POLL_SECONDS (default: 300)
-- WINANCE_API_URL (default: https://winance.exchange/site/currency_pairs)
-- QUOTE_MAX_AGE_SECONDS (default: 900)
-
-Money Storage polling interval: 900 seconds (15 minutes).
-The BlackBit adapter reads only the displayed ECR/USDT last_rate and marks it indicative. The Winance adapter is read-only and filters strictly for pair ID 18 / ERUB-USDT.
+See .env.example. Never commit real secrets.
