@@ -38,7 +38,7 @@ This is an indicative market-rate average, not a promise that a trade can be exe
 - Ignore individual offer creation times for freshness. Use the page's own visible update time only when it confirms a successful refresh of the displayed quote/list; opening the page alone is not proof of freshness.
 - For RUB -> USDT, inspect `https://sberkassa.site/exchange` separately and use that page's own confirmed update time. Never transfer the timestamp from the deals page to the exchange page.
 - If a page does not confirm a successful refresh, mark that route step unavailable and do not reuse an older snapshot. Individual offer creation timestamps never determine freshness.
-- Sberkassa authentication reuses the same cloud Chromium and Money Storage -> E-ID entry point. After the normal E-ID return to Money Storage, the browser navigates to Sberkassa in the same profile so its E-ID session can be reused. If Sberkassa requires a separate consent or login step, the user completes it manually. No cookies or tokens are copied.
+- Sberkassa authentication starts directly at `https://sberkassa.site/login` in its own cloud Chromium run. The user completes the E-ID redirect initiated by Sberkassa in that same tab; the probe waits for the E-ID provider to be visited and for the browser to return to Sberkassa. Money Storage is not opened in this mode. Any additional consent or login is completed manually. No cookies or tokens are copied.
 - The live request schema, rates, and permitted polling method remain unverified.
 
 ## Safety and calculation rules
