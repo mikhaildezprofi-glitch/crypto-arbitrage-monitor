@@ -67,22 +67,73 @@ jobs:
 
           sudo tee /usr/share/novnc/token-vnc.html >/dev/null <<'HTML'
           <!doctype html>
-          <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+          <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
           <title>Private E-ID browser</title>
-          <style>html,body,#screen{width:100%;height:100%;margin:0;background:#111;overflow:hidden}#status{position:fixed;top:8px;left:8px;color:white;font:14px sans-serif;z-index:2}</style></head>
-          <body><div id="status">Connecting to remote browser…</div><div id="screen"></div>
+          <style>
+          html,body,#screen{width:100%;height:100%;margin:0;background:#111;overflow:hidden}
+          #status{position:fixed;top:8px;left:8px;color:white;background:#222c;padding:6px 9px;border-radius:6px;font:14px sans-serif;z-index:3}
+          #tools{position:fixed;right:10px;top:8px;z-index:4}
+          #keyboardToggle{padding:10px 14px;border:0;border-radius:8px;background:#2463eb;color:white;font-size:15px}
+          #mobileInput{display:none;position:fixed;left:8px;right:8px;bottom:8px;width:calc(100% - 32px);height:44px;box-sizing:border-box;padding:8px 12px;border:2px solid #2463eb;border-radius:8px;background:white;color:#111;font-size:18px;z-index:5}
+          #mobileInput.visible{display:block}
+          </style></head>
+          <body><div id="status">Connecting to remote browser…</div><div id="tools"><button id="keyboardToggle" type="button">⌨ Клавиатура</button></div><div id="screen"></div>
+          <input id="mobileInput" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Нажмите здесь и вводите текст">
           <script type="module">
           import RFB from '/ACCESS_TOKEN_PLACEHOLDER/core/rfb.js';
           const status = document.getElementById('status');
+          const keyboardToggle = document.getElementById('keyboardToggle');
+          const mobileInput = document.getElementById('mobileInput');
           const rfb = new RFB(document.getElementById('screen'), 'wss://' + location.host + '/ACCESS_TOKEN_PLACEHOLDER/websockify');
           rfb.scaleViewport = true;
           rfb.resizeSession = true;
           rfb.addEventListener('connect', () => { status.textContent = 'Connected'; });
           rfb.addEventListener('disconnect', e => { status.textContent = 'Disconnected' + (e.detail.clean ? '' : ' (connection error)'); });
           rfb.addEventListener('credentialsrequired', () => { rfb.sendCredentials({password: 'VNC_PASSWORD_PLACEHOLDER'}); });
+
+          // Android/iOS virtual keyboards do not reliably open for a canvas.
+          // This real input opens the device keyboard; its keystrokes are relayed
+          // to noVNC's canvas as keyboard events.
+          function canvas() { return document.querySelector('#screen canvas'); }
+          function sendKey(key, code, keyCode) {
+            const target = canvas();
+            if (!target) return;
+            for (const type of ['keydown', 'keyup']) {
+              target.dispatchEvent(new KeyboardEvent(type, {
+                key, code, keyCode, which: keyCode, bubbles: true, cancelable: true
+              }));
+            }
+          }
+          mobileInput.addEventListener('input', () => {
+            const value = mobileInput.value;
+            for (const char of value) {
+              const codePoint = char.codePointAt(0);
+              sendKey(char, codePoint > 0xffff ? 'Unidentified' : 'Key' + char.toUpperCase(), codePoint);
+            }
+            mobileInput.value = '';
+          });
+          mobileInput.addEventListener('keydown', event => {
+            const map = {
+              Enter: ['Enter', 13], Backspace: ['Backspace', 8], Tab: ['Tab', 9],
+              Escape: ['Escape', 27], ' ': [' ', 32],
+              ArrowUp: ['ArrowUp', 38], ArrowDown: ['ArrowDown', 40],
+              ArrowLeft: ['ArrowLeft', 37], ArrowRight: ['ArrowRight', 39]
+            };
+            if (map[event.key] && event.key !== ' ') {
+              event.preventDefault();
+              sendKey(event.key, event.key, map[event.key][1]);
+            }
+          });
+          keyboardToggle.addEventListener('click', () => {
+            mobileInput.classList.add('visible');
+            mobileInput.focus();
+          });
+          mobileInput.addEventListener('blur', () => {
+            // Keep the input available; the user can reopen the keyboard button.
+          });
           </script></body></html>
           HTML
-          sudo sed -i "s/ACCESS_TOKEN_PLACEHOLDER/$ACCESS_TOKEN/g; s/VNC_PASSWORD_PLACEHOLDER/$VNC_PASSWORD/g" /usr/share/novnc/token-vnc.html
+                    sudo sed -i "s/ACCESS_TOKEN_PLACEHOLDER/$ACCESS_TOKEN/g; s/VNC_PASSWORD_PLACEHOLDER/$VNC_PASSWORD/g" /usr/share/novnc/token-vnc.html
           sudo rm -f /etc/nginx/sites-enabled/default
           sudo ln -s /etc/nginx/sites-available/eid-browser /etc/nginx/sites-enabled/eid-browser
           sudo nginx -t
