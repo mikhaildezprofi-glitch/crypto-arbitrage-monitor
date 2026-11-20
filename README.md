@@ -32,11 +32,14 @@ This is an indicative market-rate average, not a promise that a trade can be exe
 ## Sberkassa quote method
 
 - For ERUB -> RUB, use only `https://sberkassa.site/deals#tab-3`, the **«Всем предлагают»** tab. Do not substitute «Мне предлагают» or «Я предлагаю».
-- Ignore individual offer creation times for freshness. Use the page's own visible update time only when it confirms a successful refresh of the offers; opening the page alone is not proof of freshness.
+- For any Sberkassa page that exposes a list of offers for the required direction, calculate the simple arithmetic mean of the first 20 matching offers in displayed order. If fewer than 20 valid offers are available, average all available offers; an empty list or malformed/non-positive rate makes the step unavailable.
+- Do not use commissions, offer amounts, volumes, reserves, min/max limits, or liquidity in either Sberkassa rate calculation. Do not select one offer or simulate partial fills. These values are not required and must not affect the average.
+- For `/exchange`, first establish whether the page exposes a list of independent offers. If it does, use the same first-20 arithmetic mean. If it exposes only one published conversion rate, use that single displayed rate without inventing an average.
+- Ignore individual offer creation times for freshness. Use the page's own visible update time only when it confirms a successful refresh of the displayed quote/list; opening the page alone is not proof of freshness.
 - For RUB -> USDT, inspect `https://sberkassa.site/exchange` separately and use that page's own confirmed update time. Never transfer the timestamp from the deals page to the exchange page.
 - If a page does not confirm a successful refresh, mark that route step unavailable and do not reuse an older snapshot. Individual offer creation timestamps never determine freshness.
 - Sberkassa authentication reuses the same cloud Chromium and Money Storage -> E-ID entry point. After the normal E-ID return to Money Storage, the browser navigates to Sberkassa in the same profile so its E-ID session can be reused. If Sberkassa requires a separate consent or login step, the user completes it manually. No cookies or tokens are copied.
-- The live request schema, rates, fees, limits, and permitted polling method remain unverified.
+- The live request schema, rates, and permitted polling method remain unverified.
 
 ## Safety and calculation rules
 
