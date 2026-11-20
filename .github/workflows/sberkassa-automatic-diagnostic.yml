@@ -137,6 +137,7 @@ jobs:
             tail -n 120 /tmp/sberkassa-probe.log || true
             exit 1
           fi
+          wait "$PROBE_PID"
           grep -E '^(SESSION_REUSE|EID_HANDOFF|SBERKASSA_|PAGE_UPDATE|HTTP_DIAG|REQUEST|QUOTE_FIELDS|JSON_SCHEMA)' /tmp/sberkassa-probe.log | tail -n 200 || true
 
       - name: Encrypt refreshed authenticated profile
