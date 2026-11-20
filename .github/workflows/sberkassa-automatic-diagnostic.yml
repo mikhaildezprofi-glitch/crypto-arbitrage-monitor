@@ -46,6 +46,7 @@ jobs:
           set -euo pipefail
           python3 -m pip install --retries 5 --timeout 45 --break-system-packages playwright websocket-client
           python3 -m playwright install --with-deps chromium
+          python3 -m py_compile scripts/sberkassa_chromium_probe.py
 
       - name: Restore authenticated profile
         shell: bash
