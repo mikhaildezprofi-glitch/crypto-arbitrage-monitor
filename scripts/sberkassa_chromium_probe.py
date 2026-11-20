@@ -412,7 +412,7 @@ def main() -> int:
                     ],
                 }
                 Path("sberkassa-current-inspection.json").write_text(
-                    json.dumps(artifact, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8"
+                    json.dumps(artifact, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
                 )
                 print("SBERKASSA_ARTIFACT_WRITTEN=sberkassa-current-inspection.json", flush=True)
                 with open(Path(__import__("os").environ["GITHUB_STEP_SUMMARY"]), "a", encoding="utf-8") as summary:
