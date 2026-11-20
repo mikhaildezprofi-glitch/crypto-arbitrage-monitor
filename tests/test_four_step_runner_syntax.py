@@ -25,6 +25,8 @@ class FourStepRunnerSyntaxTests(unittest.TestCase):
         self.assertIn("target: sberkassa", workflow)
         self.assertIn("secrets: inherit", workflow)
         self.assertIn("needs: [money-storage, sberkassa]", workflow)
+        self.assertIn("    if: always()", workflow)
+        self.assertIn("        continue-on-error: true", workflow)
         self.assertIn("MONEY_STORAGE_SNAPSHOT:", workflow)
         self.assertIn("SBERKASSA_SNAPSHOT:", workflow)
         self.assertIn("workflow_call:", reusable)
