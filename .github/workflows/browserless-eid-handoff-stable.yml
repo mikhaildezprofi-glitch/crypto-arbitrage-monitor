@@ -103,6 +103,27 @@ jobs:
           xdpyinfo -display :99 >/dev/null
           curl -fsS http://127.0.0.1:6080/vnc.html -o /dev/null
 
+          # Confirm x11vnc is not merely running as a process: read its RFB banner.
+          python3 - <<'PY'
+          import socket, time
+          last_error = None
+          for attempt in range(20):
+              try:
+                  with socket.create_connection(("127.0.0.1", 5900), timeout=3) as sock:
+                      sock.settimeout(3)
+                      banner = sock.recv(12)
+                  if banner.startswith(b"RFB "):
+                      print("LOCAL_VNC_RFB_HEALTHCHECK=OK")
+                      break
+                  raise RuntimeError("Unexpected VNC banner: %r" % (banner,))
+              except Exception as exc:
+                  last_error = exc
+                  time.sleep(1)
+          else:
+              print("LOCAL_VNC_RFB_HEALTHCHECK=FAILED reason=%s" % str(last_error)[:180])
+              raise SystemExit(1)
+          PY
+
           cat >/tmp/launch_eid_browser.py <<'PY'
           import os, sys, time
           from pathlib import Path
@@ -261,10 +282,8 @@ jobs:
 
           echo "REMOTE_BROWSER_URL=$TUNNEL_URL/vnc.html?autoconnect=true&path=websockify&resize=scale&quality=6&compression=2"
           echo "REMOTE_BROWSER_HTTP_LOGIN=viewer"
-          echo "REMOTE_BROWSER_HTTP_PASSWORD=$HTTP_PASSWORD"
-          echo "REMOTE_BROWSER_VNC_PASSWORD=$VNC_PASSWORD"
-          echo "These temporary credentials are visible only to people with access to this private repository's Actions logs."
-          echo "Complete E-ID only in this remote browser. Do not share the credentials."
+          echo "REMOTE_BROWSER_CREDENTIALS=stored only in this private Actions run; not printed"
+          echo "Complete E-ID only in this remote browser. Do not share credentials."
 
           for i in $(seq 1 900); do
             STATUS="$(cat /tmp/eid-auth-status 2>/dev/null || echo WAITING_FOR_LOGIN)"
@@ -299,6 +318,9 @@ jobs:
               if [ "$CODE" != "200" ] || [ "$WS_STATUS" != "101" ]; then
                 tail -n 30 /tmp/cloudflared.log || true
                 cat /tmp/eid-ws-headers || true
+                ss -ltnp '( sport = :5900 or sport = :6080 )' || true
+                tail -n 40 /tmp/websockify.log || true
+                tail -n 40 /tmp/x11vnc.log || true
               fi
             fi
             sleep 2
