@@ -298,10 +298,10 @@ jobs:
           if [ "$TARGET" = "sberkassa" ]; then
             # Start at the exact Sberkassa login page requested by the user.
             # Its own normal E-ID redirect is completed manually in this tab.
-            CHROMIUM_START_URL="https://sberkassa.site/login"
+            CHROMIUM_START_URL="https://sberkassa.site/deals#tab-3"
             BRIDGE_SCRIPT="scripts/sberkassa_chromium_probe.py"
           else
-            CHROMIUM_START_URL="https://storage.money/account"
+            CHROMIUM_START_URL="https://storage.money/deals#tab-3"
             BRIDGE_SCRIPT="scripts/money_storage_chromium_bridge.py"
           fi
           echo "BROWSER_TARGET=$TARGET"
@@ -495,7 +495,8 @@ jobs:
           exit 1
 
       - name: Encrypt Chromium profile for private cache
-        if: success()
+        id: encrypt-profile
+        if: always() && hashFiles('session-authenticated.txt') != ''
         shell: bash
         run: |
           set -euo pipefail
@@ -511,7 +512,7 @@ jobs:
           echo "CHROMIUM_PROFILE_CACHE=ENCRYPTED"
 
       - name: Save encrypted Chromium profile cache
-        if: success()
+        if: steps.encrypt-profile.outcome == 'success'
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/chromium-profile-${{ inputs.target }}.gpg
