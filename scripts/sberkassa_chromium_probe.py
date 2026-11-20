@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import re
 from datetime import datetime, timezone
 import sys
@@ -337,7 +338,8 @@ def main() -> int:
         # its quote data. The user completes any identity challenge manually.
         print("SESSION_REUSE_CHECK=START", flush=True)
         print("EID_HANDOFF=WAITING_ONLY_IF_SESSION_EXPIRED", flush=True)
-        auth_deadline = time.monotonic() + DEADLINE_SECONDS
+        auth_timeout = 120 if os.environ.get("SBERKASSA_NONINTERACTIVE") == "1" else DEADLINE_SECONDS
+        auth_deadline = time.monotonic() + auth_timeout
         eid_provider_seen = False
         callback_navigation_started = False
         session_ready = False
@@ -588,7 +590,7 @@ def main() -> int:
 
             if seen_deals and seen_exchange and now - last_target_activity >= 12:
                 artifact = {
-                    "schema_version": 2,
+                    "schema_version": 3,
                     "captured_at_utc": datetime.now(timezone.utc).isoformat(),
                     "source": "sberkassa.site",
                     "quote_scope": "ERUB->RUB on /deals#tab-3 and RUB->USDT on /exchange",
