@@ -36,6 +36,17 @@ Do not assume these are the same market, endpoint, fee schedule, or direction. N
 - Winance ERUB/USDT is a separate route step and does not provide the Sberkassa ERUB/RUB or Sberkassa Exchange RUB/USDT quote.
 - No endpoint names, response schemas, rates, commissions, limits, or volumes are inferred from frontend filenames.
 
+## Shared E-ID authentication workflow
+
+Sberkassa uses the same E-ID identity-provider flow as Money Storage. The cloud inspection workflow therefore reuses the existing Money Storage -> E-ID entry point and the same standalone Chromium profile:
+
+1. Open `https://storage.money/account` to establish the normal E-ID authorization flow.
+2. The account owner completes E-ID and any ordinary verification manually in the visible noVNC browser.
+3. Wait for the normal return to `https://storage.money/account`.
+4. Navigate to `https://sberkassa.site/login` in that same Chromium profile. The browser may reuse the E-ID identity-provider session; if Sberkassa asks for additional consent or authentication, the account owner handles it manually.
+
+This reuses the proven browser infrastructure and avoids a second authentication implementation. It does not assume that a Money Storage application session itself grants access to Sberkassa. No cookies, tokens, authorization headers, or CSRF values are exported or transferred. The browser performs navigation only; it does not submit login forms or bypass verification.
+
 ## Current implementation decision
 
 No Sberkassa or Sberkassa Exchange provider adapter is implemented. Both route steps remain unavailable until their own read-only quote sources are verified.
