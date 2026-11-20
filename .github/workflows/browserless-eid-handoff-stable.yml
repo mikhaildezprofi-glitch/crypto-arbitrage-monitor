@@ -286,8 +286,8 @@ jobs:
           fi
           echo "STANDALONE_CHROMIUM_HEALTHCHECK=OK"
 
-          # The bridge only observes the visible tab and performs the approved
-          # same-origin read after the user has completed E-ID in that tab.
+          # The selected bridge either reads Money Storage's approved offers
+          # or performs a sanitized, read-only Sberkassa page inspection.
           python3 "$BRIDGE_SCRIPT" >/tmp/eid-browser.log 2>&1 &
           BRIDGE_PID=$!
 
@@ -387,7 +387,7 @@ jobs:
             fi
             if [ "$STATUS" = "OFFERS_READ_FAILED" ] || [ "$STATUS" = "AUTH_TIMEOUT" ] || [ "$STATUS" = "SBERKASSA_CAPTURE_FAILED" ] || [ "$STATUS" = "SBERKASSA_CAPTURE_TIMEOUT" ]; then
               echo "BROWSER_DIAGNOSTICS:"
-              grep -E 'OFFERS_READ_|AUTH_|NAV=|PAGE_ERROR=' /tmp/eid-browser.log | tail -n 80 || true
+              grep -E 'OFFERS_READ_|AUTH_|SBERKASSA_|NAV=|REQUEST |QUOTE_FIELDS |PAGE_UPDATE_MARKERS |HTTP_DIAG ' /tmp/eid-browser.log | tail -n 120 || true
               exit 1
             fi
             if ! kill -0 "$TUNNEL_PID" 2>/dev/null; then
