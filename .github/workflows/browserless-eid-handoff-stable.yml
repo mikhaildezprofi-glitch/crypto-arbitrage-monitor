@@ -354,7 +354,13 @@ jobs:
           TUNNEL_PID=$!
 
           cleanup_all() {
-            kill "$TUNNEL_PID" "$BROWSER_PID" "${BRIDGE_PID:-}" 2>/dev/null || true
+            # Stop Chromium first and wait for it to flush profile databases
+            # before the following workflow step encrypts the profile.
+            kill -TERM "$BROWSER_PID" 2>/dev/null || true
+            wait "$BROWSER_PID" 2>/dev/null || true
+            kill -TERM "${BRIDGE_PID:-}" "$TUNNEL_PID" 2>/dev/null || true
+            wait "${BRIDGE_PID:-}" 2>/dev/null || true
+            wait "$TUNNEL_PID" 2>/dev/null || true
             cleanup
           }
           trap cleanup_all EXIT
