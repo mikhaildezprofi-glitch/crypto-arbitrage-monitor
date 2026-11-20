@@ -4,7 +4,7 @@
 
 Live cloud polling is **blocked** until Money Storage provides a supported server-side read-access method.
 
-The repository contains a pure parser, quote builder, and a configurable HTTPS read-only provider (`MoneyStorageQuoteProvider`). The provider requests only `offset=0&limit=20`, requires explicit `from`/`to` filters, validates the `result=ok` response envelope, and fails closed on HTTP/auth/rate-limit errors. It does not support browser cookies, session tokens, or credentials. It has not yet been demonstrated to retrieve live offers from the cloud. The frontend JavaScript exposes the public-deals route:
+The repository contains a pure parser and quote builder plus a disabled direct-HTTPS adapter (`MoneyStorageQuoteProvider`). The adapter deliberately refuses to publish a quote because a direct request cannot verify the page's visible last-updated marker. Only the manually authenticated page bridge can supply the required page timestamp. The frontend JavaScript exposes the observed public-deals route:
 
 - `GET /public_deals/fetch`
 - Query fields used by the frontend: `offset`, `limit`, `from`, `to`
@@ -17,7 +17,7 @@ Prior direct unauthenticated tests of this route returned HTTP 401. A subsequent
 Obtain from Money Storage support or official documentation:
 
 1. Confirmation that automated server-side read access to public offers is supported.
-2. The official API base URL and exact query parameter semantics, including the currency filters corresponding to the displayed "Мне предлагают" USDT -> ECR direction.
+2. The official API base URL and exact query parameter semantics for the approved "Всем предлагают" tab and displayed USDT -> ECR direction.
 3. The supported authentication method for a server workload, if authentication is required.
 4. Rate limits and polling guidance, including whether a 15-minute interval is permitted.
 
@@ -31,7 +31,7 @@ Do not use browser cookies, session tokens, OAuth authorization codes, browser s
 - If fewer than 20 matching offers are returned, average the available matching offers. If none are returned, mark the source unavailable.
 - Do not sum offer amounts, select a best offer, infer partial fills, or simulate an order.
 - The displayed commission is paid by the seller when accepting an offer in this direction; retain it as source metadata but do not deduct it from this route step.
-- Timestamp the resulting quote at successful observation time, not at offer creation time.
+- Timestamp the resulting quote from the page's own visible last-updated marker, not from the scrape time or an individual offer's creation time. Require a parseable page marker no older than the 900-second Money Storage interval; missing, invalid, future, or stale page timestamps make the source unavailable.
 - Reject non-success HTTP responses, malformed payloads, wrong currency direction, non-positive/non-finite rates, and empty results.
 - Never substitute a previous quote after a failed poll.
 
@@ -186,7 +186,7 @@ The repository adapter was reviewed without changes. It currently makes a single
 
 ### Next actionable provider request
 
-Ask Money Storage support to confirm in writing: (1) whether `GET /public_deals/fetch` is approved for automated server-side read-only polling, (2) exact `from`/`to` values for the displayed "Мне предлагают" USDT -> ECR direction, (3) whether an API key or other machine credential is required, (4) allowed request frequency and rate-limit behavior, and (5) whether the first page is stable and sorted in the same order as the UI. Do not send account passwords, browser cookies, session tokens, or OAuth authorization codes in that request.
+Ask Money Storage support to confirm in writing: (1) whether `GET /public_deals/fetch` is approved for automated server-side read-only polling, (2) exact `from=ECR` / `to=USDT` values for the "Всем предлагают" tab, (3) whether an API key or other machine credential is required, (4) allowed request frequency and rate-limit behavior, and (5) whether the first page is stable and sorted in the same order as the UI. Do not send account passwords, browser cookies, session tokens, or OAuth authorization codes in that request.
 
 
 ## Expanded public documentation search (2026-11-18)
@@ -281,7 +281,7 @@ The captured rows all had raw `src_currency=ECR` and `dst_currency=USDT`; all 20
 
 The page's selected filters were `select_from=ECR` and `select_to=USDT`. The visible public-offer cards rendered the accepting user's direction as **Give USDT / Receive ECR**. The loaded frontend script maps public (non-own) offer fields by displaying raw `dst_amount/dst_currency` as the amount given by the accepting user, and raw `src_amount/src_currency` as the amount received. Thus the raw API pair `src=ECR,dst=USDT` corresponds to the displayed **USDT -> ECR** direction used by the existing parser.
 
-The current page's tab labels were observed as `Я предлагаю` and `Всем предлагают`; the captured request was made on the latter view. This is **not yet proven to be semantically identical** to the project's required «Мне предлагают» view. Do not treat the two labels as interchangeable without checking the intended tab and its offer population.
+The current page's tab labels were observed as `Я предлагаю` and `Всем предлагают`; the captured request was made on the latter view. The project explicitly selects **«Всем предлагают»**. Do not substitute `Я предлагаю` or the similarly worded «Мне предлагают» view.
 
 ### Frontend behavior evidence
 
@@ -304,6 +304,6 @@ It does **not** prove that the route is officially supported for unattended serv
 
 ## Follow-up implementation guard (2026-11-18)
 
-The authenticated capture verifies the frontend request and response shape, but the observed tab label was `Всем предлагают`, while the project requirement names `Мне предлагают`. The API parser's raw currency-direction mapping is confirmed; equivalence of these two UI views is not. Therefore the parser and provider test do not by themselves establish that the correct business-defined offer set is being averaged.
+The authenticated standalone-Chromium run has now read the `Всем предлагают` tab in the same manually authenticated session and published a normalized artifact containing 20 offers. Its arithmetic mean was independently checked against the 20 row rates. This confirms the selected UI source and current response shape for this capture.
 
-Before enabling the Money Storage source in the full route, verify the exact intended tab/view and confirm that its first 20 offers are the rows returned by the captured request. Keep cloud polling disabled until official server-side access permission and rate limits are confirmed. The `.env.example` filter values describe the captured frontend request only; they are not authorization or proof of production cloud access.
+The selected tab and first-20 row set are now confirmed for a one-shot manually authenticated cloud-browser read. Do not enable unattended scheduled server-side polling until Money Storage confirms that access method, request frequency, and rate limits are permitted. The `.env.example` filter values describe the captured frontend request only; they are not authorization or proof of production cloud access.

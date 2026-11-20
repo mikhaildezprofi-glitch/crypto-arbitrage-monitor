@@ -41,7 +41,7 @@ class CalculatorTests(unittest.TestCase):
             Decimal("0"), False
         )
         with self.assertRaises(ValueError):
-            calculate_route(Decimal("1000"), "USDT", (step,))
+            calculate_route(Decimal("1000"), "USDT", (step,), max_quote_age_seconds=900)
 
     def test_future_quote_timestamp_blocks_full_route(self):
         future = datetime.now(timezone.utc) + timedelta(minutes=5)
@@ -51,7 +51,7 @@ class CalculatorTests(unittest.TestCase):
             Decimal("0"), False
         )
         with self.assertRaisesRegex(ValueError, "stale"):
-            calculate_route(Decimal("1000"), "USDT", (step,))
+            calculate_route(Decimal("1000"), "USDT", (step,), max_quote_age_seconds=900)
 
     def test_naive_and_aware_timestamps_are_compared_as_utc(self):
         now = datetime(2026, 11, 16, 12, 0, tzinfo=timezone.utc)
@@ -110,6 +110,14 @@ class CalculatorTests(unittest.TestCase):
                 {"money_storage": self.quote("USDT", "ECR", "1")},
                 {"money_storage": Decimal("0")},
             )
+
+    def test_quote_age_limit_must_be_explicit(self):
+        step = RouteStep(
+            "Fresh quote", "USDT", "ERUB", self.quote("ERUB", "USDT", "0.04"),
+            Decimal("0"), False
+        )
+        with self.assertRaisesRegex(ValueError, "must be explicitly configured"):
+            calculate_route(Decimal("1000"), "USDT", (step,))
 
     def test_stale_quote_blocks_full_route(self):
         old = datetime.now(timezone.utc) - timedelta(hours=1)

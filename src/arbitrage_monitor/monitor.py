@@ -15,14 +15,16 @@ logger = logging.getLogger("arbitrage_monitor.winance")
 def run_forever(
     on_quote: Callable[[dict], None] | None = None,
     on_error: Callable[[str], None] | None = None,
-    poll_seconds: int = POLL_SECONDS,
+    poll_seconds: int | None = POLL_SECONDS,
 ) -> None:
     """Fetch immediately, then poll every configured interval.
 
     Failed requests emit an error and do not reuse a previous quote.
     """
-    if poll_seconds < 1:
-        raise ValueError("poll_seconds must be at least 1.")
+    if poll_seconds is None:
+        raise ValueError("Choose WINANCE_POLL_SECONDS explicitly (900–3600 seconds) before starting polling.")
+    if not 900 <= poll_seconds <= 3600:
+        raise ValueError("poll_seconds must be between 900 and 3600 seconds.")
     while True:
         try:
             quote = fetch_quote()

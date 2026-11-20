@@ -47,11 +47,10 @@ def _decimal(value: Any, field: str, *, optional: bool = False) -> Decimal | Non
 
 
 def parse_public_offer(row: Mapping[str, Any]) -> MoneyStorageOffer:
-    """Normalize raw API fields to the displayed 'Мне предлагают' direction.
+    """Normalize raw API fields from the approved 'Всем предлагают' tab to the project's USDT -> ECR direction.
 
     For displayed USDT -> ECR offers, raw API fields are src=ECR and dst=USDT.
-    The offer creator/seller pays the displayed commission when we accept,
-    so this commission is retained as source information, not charged here.
+    The displayed commission is retained as source information. Per project rules, it is not applied to the calculated Money Storage leg.
     """
     if not isinstance(row, Mapping):
         raise TypeError("Money Storage offer must be a mapping.")
@@ -135,13 +134,13 @@ def parse_public_offer_pages(
 def average_first_20_offer_rate(
     offers: tuple[MoneyStorageOffer, ...] | list[MoneyStorageOffer],
     *,
-    observed_at: datetime | None = None,
+    observed_at: datetime,
 ) -> Quote:
     """Build the Money Storage quote as the arithmetic mean of the first 20 offers.
 
     No offer amounts are summed, no individual offer is selected, and no
-    purchase or execution is implied. The quote timestamp is the observation
-    time of this polling cycle, not the creation time of an individual offer.
+    purchase or execution is implied. The required quote timestamp is the
+    page's confirmed update time, never the scrape time or offer creation time.
     """
     selected = tuple(offers[:MONEY_STORAGE_PAGE_SIZE])
     if not selected:
@@ -152,7 +151,9 @@ def average_first_20_offer_rate(
             raise ValueError("Money Storage average contains an invalid offer.")
 
     average_rate = sum((offer.rate for offer in selected), Decimal("0")) / Decimal(len(selected))
-    timestamp = observed_at or datetime.now(timezone.utc)
+    timestamp = observed_at
+    if timestamp is None:
+        raise ValueError("Money Storage quote requires the page's confirmed update timestamp.")
     if timestamp.tzinfo is None:
         timestamp = timestamp.replace(tzinfo=timezone.utc)
     else:
@@ -169,11 +170,11 @@ def average_first_20_offer_rate(
 
 
 class MoneyStorageQuoteProvider:
-    """Read the first public Money Storage page over plain HTTPS.
+    """Disabled direct HTTP adapter; page-based freshness requires the browser bridge.
 
     This adapter intentionally has no browser-session or cookie support. It
-    uses only explicitly configured public query filters and fails closed on
-    authentication, rate-limit, HTTP, and response-envelope errors.
+    refuses to publish a quote because a plain HTTPS request cannot confirm
+    the visible page update timestamp required by the project.
     """
 
     def __init__(
@@ -199,41 +200,8 @@ class MoneyStorageQuoteProvider:
         self.timeout_seconds = timeout_seconds
 
     def fetch_quote(self) -> Quote:
-        """Fetch and average the first page; never retries or reuses old data."""
-        import json
-        from urllib.error import HTTPError, URLError
-        from urllib.parse import urlencode
-        from urllib.request import Request, urlopen
-
-        query = urlencode({
-            "offset": 0,
-            "limit": MONEY_STORAGE_PAGE_SIZE,
-            "from": self.from_currency,
-            "to": self.to_currency,
-        })
-        request = Request(
-            f"{self.endpoint}?{query}",
-            headers={"Accept": "application/json", "User-Agent": "crypto-arbitrage-monitor/0.1"},
-            method="GET",
+        """Fail closed: plain HTTPS cannot prove the authenticated page's update time."""
+        raise RuntimeError(
+            "Direct Money Storage HTTP polling cannot verify the page update timestamp; "
+            "use the manually authenticated page bridge."
         )
-        try:
-            with urlopen(request, timeout=self.timeout_seconds) as response:
-                status = getattr(response, "status", 200)
-                if status != 200:
-                    raise RuntimeError(f"Money Storage HTTP status {status}.")
-                payload = json.loads(response.read().decode("utf-8"))
-        except HTTPError as exc:
-            if exc.code == 401:
-                raise RuntimeError("Money Storage requires authentication; no quote was published.") from exc
-            if exc.code == 429:
-                raise RuntimeError("Money Storage rate limit returned HTTP 429; no retry was attempted.") from exc
-            raise RuntimeError(f"Money Storage HTTP error {exc.code}; no quote was published.") from exc
-        except (URLError, TimeoutError, OSError) as exc:
-            raise RuntimeError(f"Money Storage network request failed: {type(exc).__name__}.") from exc
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise ValueError("Money Storage returned invalid JSON.") from exc
-
-        if not isinstance(payload, Mapping) or payload.get("result") != "ok":
-            raise ValueError("Money Storage response did not confirm result=ok.")
-        offers = parse_public_offers(payload)
-        return average_first_20_offer_rate(offers)

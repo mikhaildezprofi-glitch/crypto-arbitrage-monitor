@@ -36,6 +36,17 @@ Do not assume these are the same market, endpoint, fee schedule, or direction. N
 - Winance ERUB/USDT is a separate route step and does not provide the Sberkassa ERUB/RUB or Sberkassa Exchange RUB/USDT quote.
 - No endpoint names, response schemas, rates, commissions, limits, or volumes are inferred from frontend filenames.
 
+## Shared E-ID authentication workflow
+
+Sberkassa uses the same E-ID identity-provider flow as Money Storage. The cloud inspection workflow therefore reuses the existing Money Storage -> E-ID entry point and the same standalone Chromium profile:
+
+1. Open `https://storage.money/account` to establish the normal E-ID authorization flow.
+2. The account owner completes E-ID and any ordinary verification manually in the visible noVNC browser.
+3. Wait for the normal return to `https://storage.money/account`.
+4. Navigate to `https://sberkassa.site/login` in that same Chromium profile. The browser may reuse the E-ID identity-provider session; if Sberkassa asks for additional consent or authentication, the account owner handles it manually.
+
+This reuses the proven browser infrastructure and avoids a second authentication implementation. It does not assume that a Money Storage application session itself grants access to Sberkassa. No cookies, tokens, authorization headers, or CSRF values are exported or transferred. The browser performs navigation only; it does not submit login forms or bypass verification.
+
 ## Current implementation decision
 
 No Sberkassa or Sberkassa Exchange provider adapter is implemented. Both route steps remain unavailable until their own read-only quote sources are verified.
@@ -103,3 +114,18 @@ An attempted Chrome DevTools Protocol connection through the existing local forw
 ### Updated current result
 
 The public frontend structure is now partially confirmed, but no Sberkassa quote endpoint, quote schema, rate, commission, limit, volume, or freshness rule is confirmed. Both Sberkassa route steps remain unavailable. Next evidence must come from a successful, authorized, sanitized Network capture in the exact authenticated UI pages for ERUB -> RUB and RUB -> USDT, or official provider documentation.
+
+
+## Project-selected page and freshness rule (2026-11-20)
+
+The account owner has confirmed the intended Sberkassa source and quote-freshness semantics:
+
+- For the ERUB -> RUB route step, use only `https://sberkassa.site/deals#tab-3`, the **«Всем предлагают»** tab.
+- Do not substitute «Мне предлагают» or «Я предлагаю».
+- Ignore each offer's individual creation timestamp when deciding whether the current quote snapshot is fresh. Offers may have different creation times.
+- Freshness must be established by the page's own visible update/refresh timestamp, and only when that timestamp corresponds to a successful refresh of the displayed offers. Merely opening the tab or seeing a newly rendered page is not proof that the underlying offers were refreshed.
+- Record the page's confirmed update time as the quote's observation time. If the page does not show a trustworthy update time, or the refresh fails, mark this source unavailable; never reuse an older snapshot as fresh.
+
+The separate ERUB -> RUB page timestamp must not be applied to the second route step. For **Sberkassa Exchange RUB -> USDT**, inspect `https://sberkassa.site/exchange` independently and use that page's own confirmed update time. Its quote semantics, fees, limits, and refresh behavior still require verification.
+
+This is a project source-selection and acceptance rule, not evidence that the live Sberkassa page or its network request has already been captured. The exact request, response schema, current rate, page timestamp, and permitted polling method remain unverified. Do not implement or enable either provider until those facts are captured in the normal authenticated browser session or confirmed by official documentation. Do not bypass CAPTCHA, MFA, or device binding, and do not export cookies or session tokens.
