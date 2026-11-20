@@ -270,10 +270,7 @@ class CDP:
                     captured_fields = captured["quote_fields"]
                     remaining = max(0, 120 - len(captured_fields))
                     captured_fields.extend([[key, value] for key, value in fields[:remaining]])
-                    if page_key and any(
-                        key in payload if isinstance(payload, dict) else False
-                        for key in ("data", "result", "offers", "items")
-                    ):
+                    if page_key:
                         captured["offer_schema_samples"] = extract_offer_schema_samples(payload)
                 counts = Counter(name for name, _ in fields)
                 print(
@@ -369,6 +366,7 @@ def main() -> int:
         last_marker_signature = None
         page_timestamps: dict[str, str | None] = {}
         page_markers: dict[str, list[str]] = {}
+        page_quote_lines: dict[str, list[str]] = {}
         deadline = time.monotonic() + DEADLINE_SECONDS
 
         while time.monotonic() < deadline:
@@ -383,6 +381,11 @@ def main() -> int:
                         .map(x => x.trim())
                         .filter(x => x && /(обновл|updated|refresh|время обнов|последн.*курс|last update)/i.test(x))
                         .slice(0, 8),
+                      quoteLines: (document.body ? document.body.innerText : "")
+                        .split(/\\n/)
+                        .map(x => x.trim())
+                        .filter(x => x && x.length <= 200 && /(RUB|руб|₽|USDT|курс|rate|обмен)/i.test(x))
+                        .slice(0, 30),
                       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
                       localNow: (() => {
                         const now = new Date();
@@ -420,6 +423,7 @@ def main() -> int:
                 page_name = "deals_everyone_offers" if is_deals else "exchange_rub_usdt"
                 markers = state.get("updateLines", [])
                 page_markers[page_name] = markers
+                page_quote_lines[page_name] = state.get("quoteLines", [])
                 cdp.current_path = parsed.path
                 signature = (page_name, tuple(markers))
                 if signature != last_marker_signature or page_name != last_page_key:
@@ -473,12 +477,14 @@ def main() -> int:
                             "url_path": "/deals#tab-3",
                             "page_updated_at": page_timestamps.get("deals_everyone_offers"),
                             "update_marker_lines": page_markers.get("deals_everyone_offers", []),
+                            "visible_quote_lines": page_quote_lines.get("deals_everyone_offers", []),
                             **cdp.capture["deals_everyone_offers"],
                         },
                         "exchange_rub_usdt": {
                             "url_path": "/exchange",
                             "page_updated_at": page_timestamps.get("exchange_rub_usdt"),
                             "update_marker_lines": page_markers.get("exchange_rub_usdt", []),
+                            "visible_quote_lines": page_quote_lines.get("exchange_rub_usdt", []),
                             **cdp.capture["exchange_rub_usdt"],
                         },
                     },
