@@ -37,8 +37,11 @@ VALUE_KEYS = re.compile(
 TIME_LINE = re.compile(r"(обновл|updated|refresh|время обнов|последн.*курс|last update)", re.I)
 SAFE_OFFER_KEYS = re.compile(
     r"^(from|to|from_currency|to_currency|give_currency|receive_currency|"
-    r"currency_from|currency_to|base_currency|quote_currency|pair|direction|"
-    r"side|type|rate|back_rate)$",
+    r"currency_from|currency_to|base_currency|quote_currency|source_currency|"
+    r"target_currency|currency_id|from_id|to_id|give_id|receive_id|"
+    r"currency1|currency2|currency1_id|currency2_id|currency_give|currency_receive|"
+    r"exchange_direction|direction|pair|pair_id|side|side_id|type|type_id|"
+    r"is_buy|is_sell|rate|back_rate)$",
     re.I,
 )
 
