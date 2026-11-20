@@ -454,3 +454,12 @@ jobs:
           path: money-storage-current-offers.json
           if-no-files-found: error
           retention-days: 1
+
+      - name: Publish Sberkassa sanitized inspection
+        if: always() && hashFiles('sberkassa-current-inspection.json') != ''
+        uses: actions/upload-artifact@v5
+        with:
+          name: sberkassa-current-inspection
+          path: sberkassa-current-inspection.json
+          if-no-files-found: error
+          retention-days: 1

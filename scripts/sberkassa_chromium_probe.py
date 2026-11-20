@@ -12,6 +12,7 @@ from __future__ import annotations
 import base64
 import json
 import re
+from datetime import datetime, timezone
 import sys
 import time
 import urllib.request
@@ -92,8 +93,12 @@ class CDP:
             ws_url, timeout=2, suppress_origin=True, enable_multithread=True
         )
         self.next_id = 0
-        self.pending_bodies: list[tuple[str, str]] = []
+        self.pending_bodies: list[tuple[str, str, str]] = []
         self.current_path = ""
+        self.capture = {
+            "deals_everyone_offers": {"request_count": 0, "response_statuses": [], "json_response_count": 0, "quote_fields": []},
+            "exchange_rub_usdt": {"request_count": 0, "response_statuses": [], "json_response_count": 0, "quote_fields": []},
+        }
 
     def close(self) -> None:
         self.ws.close()
@@ -112,6 +117,9 @@ class CDP:
             parsed = urlparse(request.get("url", ""))
             if parsed.hostname != "sberkassa.site":
                 return
+            page_key = {"/deals": "deals_everyone_offers", "/exchange": "exchange_rub_usdt"}.get(self.current_path)
+            if page_key:
+                self.capture[page_key]["request_count"] += 1
             query_keys = sorted(parse_qs(parsed.query, keep_blank_values=True).keys())
             print(
                 "REQUEST host=sberkassa.site path=%s method=%s type=%s query_keys=%s"
@@ -131,6 +139,11 @@ class CDP:
                 return
             mime = (response.get("mimeType") or "unknown").split(";")[0]
             status = int(response.get("status", 0))
+            page_key = {"/deals": "deals_everyone_offers", "/exchange": "exchange_rub_usdt"}.get(self.current_path) if host == "sberkassa.site" else None
+            if page_key:
+                statuses = self.capture[page_key]["response_statuses"]
+                if len(statuses) < 40:
+                    statuses.append(status)
             print(
                 "HTTP_DIAG host=%s path=%s status=%s type=%s content_type=%s"
                 % (host, parsed.path, status, params.get("type", "unknown"), mime),
@@ -142,7 +155,7 @@ class CDP:
                 and params.get("type") in ("XHR", "Fetch")
                 and "json" in mime
             ):
-                self.pending_bodies.append((params.get("requestId", ""), parsed.path))
+                self.pending_bodies.append((params.get("requestId", ""), parsed.path, page_key))
 
     def command(self, method: str, params: dict | None = None, timeout: float = 8) -> dict:
         self.next_id += 1
@@ -165,7 +178,7 @@ class CDP:
 
     def drain_json_bodies(self) -> None:
         pending, self.pending_bodies = self.pending_bodies, []
-        for request_id, path in pending[:20]:
+        for request_id, path, page_key in pending[:20]:
             if not request_id:
                 continue
             try:
@@ -180,6 +193,12 @@ class CDP:
                     continue
                 payload = json.loads(raw.decode("utf-8"))
                 fields = extract_quote_fields(payload)
+                if page_key:
+                    captured = self.capture[page_key]
+                    captured["json_response_count"] += 1
+                    captured_fields = captured["quote_fields"]
+                    remaining = max(0, 120 - len(captured_fields))
+                    captured_fields.extend([[key, value] for key, value in fields[:remaining]])
                 counts = Counter(name for name, _ in fields)
                 print(
                     "QUOTE_FIELDS path=%s fields=%s samples=%s"
@@ -248,7 +267,6 @@ def main() -> int:
                 eid_provider_seen
                 and auth_url.scheme == "https"
                 and (auth_host == "sberkassa.site" or auth_host.endswith(".sberkassa.site"))
-                and auth_url.path.rstrip("/") == "/login"
             ):
                 sberkassa_callback_seen = True
                 break
@@ -264,6 +282,7 @@ def main() -> int:
             return 1
 
         print("EID_HANDOFF=SBERKASSA_CALLBACK_CONFIRMED", flush=True)
+        print("SBERKASSA_CALLBACK_PATH=%s" % auth_url.path, flush=True)
         print("SBERKASSA_LOGIN=READY_IN_ORIGINAL_TAB", flush=True)
 
         seen_deals = False
@@ -273,6 +292,7 @@ def main() -> int:
         last_page_key = ""
         last_marker_signature = None
         page_timestamps: dict[str, str | None] = {}
+        page_markers: dict[str, list[str]] = {}
         deadline = time.monotonic() + DEADLINE_SECONDS
 
         while time.monotonic() < deadline:
@@ -323,6 +343,8 @@ def main() -> int:
             if is_deals or is_exchange:
                 page_name = "deals_everyone_offers" if is_deals else "exchange_rub_usdt"
                 markers = state.get("updateLines", [])
+                page_markers[page_name] = markers
+                cdp.current_path = parsed.path
                 signature = (page_name, tuple(markers))
                 if signature != last_marker_signature or page_name != last_page_key:
                     print(
@@ -364,6 +386,35 @@ def main() -> int:
                 )
 
             if seen_deals and seen_exchange and now - last_target_activity >= 12:
+                artifact = {
+                    "schema_version": 1,
+                    "captured_at_utc": datetime.now(timezone.utc).isoformat(),
+                    "source": "sberkassa.site",
+                    "read_only": True,
+                    "pages": {
+                        "deals_everyone_offers": {
+                            "url_path": "/deals#tab-3",
+                            "page_updated_at": page_timestamps.get("deals_everyone_offers"),
+                            "update_marker_lines": page_markers.get("deals_everyone_offers", []),
+                            **cdp.capture["deals_everyone_offers"],
+                        },
+                        "exchange_rub_usdt": {
+                            "url_path": "/exchange",
+                            "page_updated_at": page_timestamps.get("exchange_rub_usdt"),
+                            "update_marker_lines": page_markers.get("exchange_rub_usdt", []),
+                            **cdp.capture["exchange_rub_usdt"],
+                        },
+                    },
+                    "limitations": [
+                        "Sanitized quote-related scalar fields only; no raw response bodies or authentication material",
+                        "No commission, amount, volume, reserve, liquidity, or execution data used",
+                        "Page update markers are not yet correlated with a successful refresh",
+                    ],
+                }
+                Path("sberkassa-current-inspection.json").write_text(
+                    json.dumps(artifact, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+                )
+                print("SBERKASSA_ARTIFACT_WRITTEN=sberkassa-current-inspection.json", flush=True)
                 with open(Path(__import__("os").environ["GITHUB_STEP_SUMMARY"]), "a", encoding="utf-8") as summary:
                     summary.write("\n## Sberkassa read-only page inspection\n")
                     summary.write("- Both requested pages were visited in the manually authenticated standalone Chromium session.\n")

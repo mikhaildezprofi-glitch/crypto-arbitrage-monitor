@@ -11,11 +11,12 @@ class SberkassaProbeSyntaxTests(unittest.TestCase):
         self.assertIn("SBERKASSA_CALLBACK_CONFIRMED", source)
         self.assertIn('auth_host == "e-id.cards"', source)
         self.assertIn('auth_host == "sberkassa.site"', source)
+        self.assertNotIn('auth_url.path.rstrip("/") == "/login"', source)
+        self.assertIn("sberkassa-current-inspection.json", source)
         self.assertIn("eid_provider_seen", source)
         # Page changes are deliberately human-operated; the probe only observes.
         self.assertIn('"Runtime.evaluate"', source)
         self.assertNotIn('"Page.navigate"', source)
-        self.assertIn("https://sberkassa.site/login", source)
         self.assertIn('r"(rate|price|updated|timestamp|date|time)"', source)
         self.assertNotIn("volume|reserve|commission", source)
 
@@ -32,6 +33,8 @@ class SberkassaProbeSyntaxTests(unittest.TestCase):
         self.assertIn('CHROMIUM_START_URL="https://sberkassa.site/login"', workflow)
         self.assertIn('BRIDGE_SCRIPT="scripts/sberkassa_chromium_probe.py"', workflow)
         self.assertIn('CHROMIUM_START_URL="https://storage.money/account"', workflow)
+        self.assertIn('name: sberkassa-current-inspection', workflow)
+        self.assertIn('path: sberkassa-current-inspection.json', workflow)
 
 
 if __name__ == "__main__":
