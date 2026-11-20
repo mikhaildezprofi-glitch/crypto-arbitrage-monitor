@@ -30,7 +30,7 @@ STATUS_FILE = Path("/tmp/eid-auth-status")
 DEADLINE_SECONDS = 1800
 MAX_BODY_BYTES = 1_000_000
 VALUE_KEYS = re.compile(
-    r"(rate|price|min|max|volume|reserve|commission|updated|timestamp|created|date|time)",
+    r"(rate|price|min|max|volume|reserve|commission|updated|timestamp|date|time)",
     re.I,
 )
 TIME_LINE = re.compile(r"(обновл|updated|refresh|время обнов|последн.*курс|last update)", re.I)
