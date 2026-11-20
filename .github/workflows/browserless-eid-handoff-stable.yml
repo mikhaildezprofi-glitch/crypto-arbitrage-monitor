@@ -65,8 +65,8 @@ jobs:
           mkdir -p /tmp/eid-chromium-profile
           if [ -f "$PROFILE_ARCHIVE" ]; then
             exec 3<<<"$CHROMIUM_PROFILE_PASSPHRASE"
-            gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \\
-              --output "${RUNNER_TEMP}/chromium-profile-${{ inputs.target }}.tar.gz" \\
+            gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \
+              --output "${RUNNER_TEMP}/chromium-profile-${{ inputs.target }}.tar.gz" \
               --decrypt "$PROFILE_ARCHIVE"
             exec 3<&-
             if tar -tzf "${RUNNER_TEMP}/chromium-profile-${{ inputs.target }}.tar.gz" | grep -Eq '(^/|(^|/)\\.\\.(/|$))'; then
