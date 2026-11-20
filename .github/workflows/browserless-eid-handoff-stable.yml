@@ -306,6 +306,22 @@ jobs:
           fi
           echo "BROWSER_TARGET=$TARGET"
 
+          # The encrypted profile is restored onto a fresh GitHub-hosted runner.
+          # Chromium's Singleton* symlinks can survive an earlier shutdown and
+          # contain the previous runner hostname/PID. They are not auth state.
+          # Never remove them while a browser using this profile is alive.
+          if pgrep -af '[c]hrome.*--user-data-dir=/tmp/eid-chromium-profile'; then
+            echo "CHROMIUM_PROFILE_IN_USE_ON_CURRENT_RUNNER"
+            exit 1
+          fi
+          for lock_name in SingletonLock SingletonCookie SingletonSocket; do
+            lock_path="/tmp/eid-chromium-profile/$lock_name"
+            if [ -L "$lock_path" ] || [ -e "$lock_path" ]; then
+              rm -f -- "$lock_path"
+              echo "CHROMIUM_STALE_PROFILE_LOCK_REMOVED=$lock_name"
+            fi
+          done
+
           DISPLAY=:99 "$CHROMIUM_BIN" \
             --no-sandbox \
             --disable-dev-shm-usage \
@@ -504,6 +520,11 @@ jobs:
           set -euo pipefail
           PROFILE_ARCHIVE="${RUNNER_TEMP}/chromium-profile-${{ inputs.target }}.tar.gz"
           ENCRYPTED_PROFILE="${RUNNER_TEMP}/chromium-profile-${{ inputs.target }}.gpg"
+          # Do not carry machine-specific Chromium singleton locks into the
+          # next runner's encrypted profile cache.
+          rm -f -- /tmp/eid-chromium-profile/SingletonLock \
+            /tmp/eid-chromium-profile/SingletonCookie \
+            /tmp/eid-chromium-profile/SingletonSocket
           tar -czf "$PROFILE_ARCHIVE" -C /tmp/eid-chromium-profile .
           exec 3<<<"$CHROMIUM_PROFILE_PASSPHRASE"
           gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \
