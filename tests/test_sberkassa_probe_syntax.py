@@ -14,10 +14,23 @@ class SberkassaProbeSyntaxTests(unittest.TestCase):
         self.assertNotIn('auth_url.path.rstrip("/") == "/login"', source)
         self.assertIn("sberkassa-current-inspection.json", source)
         self.assertIn("eid_provider_seen", source)
-        # Page changes are deliberately human-operated; the probe only observes.
+        # Read-only navigation is used only between the two approved quote pages.
         self.assertIn('"Runtime.evaluate"', source)
-        self.assertNotIn('"Page.navigate"', source)
+        self.assertIn('"Page.navigate"', source)
+        self.assertIn('SBERKASSA_SESSION=RESTORED_PROFILE_REUSED', source)
+        self.assertIn('SBERKASSA_AUTO_NAVIGATE=exchange', source)
+        self.assertIn('session-authenticated.txt', source)
         self.assertIn('r"(rate|price|updated|timestamp|date|time)"', source)
+        self.assertIn("currency_id|from_id|to_id", source)
+        self.assertIn('"/exchange": "exchange_rub_usdt"', source)
+        self.assertIn("if seen_deals and seen_exchange", source)
+        self.assertIn("quoteLines:", source)
+        self.assertIn('"visible_quote_lines"', source)
+        self.assertIn("quoteDom:", source)
+        self.assertIn('"visible_quote_dom"', source)
+        self.assertIn("rate_inputs", source)
+        self.assertIn("selectedOptions", source)
+        self.assertIn("exchange_rate|buy_rate|sell_rate", source)
         self.assertNotIn("volume|reserve|commission", source)
 
     def test_sberkassa_uses_money_storage_style_first_twenty_average(self):
@@ -30,9 +43,11 @@ class SberkassaProbeSyntaxTests(unittest.TestCase):
     def test_sberkassa_workflow_starts_from_its_own_login_page(self):
         project_root = Path(__file__).resolve().parents[1]
         workflow = (project_root / ".github" / "workflows" / "browserless-eid-handoff-stable.yml").read_text(encoding="utf-8")
-        self.assertIn('CHROMIUM_START_URL="https://sberkassa.site/login"', workflow)
+        self.assertIn('CHROMIUM_START_URL="https://sberkassa.site/deals#tab-3"', workflow)
+        self.assertIn("hashFiles('session-authenticated.txt')", workflow)
+        self.assertIn("steps.encrypt-profile.outcome == 'success'", workflow)
         self.assertIn('BRIDGE_SCRIPT="scripts/sberkassa_chromium_probe.py"', workflow)
-        self.assertIn('CHROMIUM_START_URL="https://storage.money/account"', workflow)
+        self.assertIn('CHROMIUM_START_URL="https://storage.money/deals#tab-3"', workflow)
         self.assertIn('name: sberkassa-current-inspection', workflow)
         self.assertIn('path: sberkassa-current-inspection.json', workflow)
 
