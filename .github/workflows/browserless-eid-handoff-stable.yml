@@ -23,8 +23,27 @@ jobs:
   cloud-browser:
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    env:
+      CHROMIUM_PROFILE_PASSPHRASE: ${{ secrets.CHROMIUM_PROFILE_PASSPHRASE }}
     steps:
       - uses: actions/checkout@v5
+
+      - name: Require Chromium profile encryption secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$CHROMIUM_PROFILE_PASSPHRASE" ]; then
+            echo "Missing repository secret CHROMIUM_PROFILE_PASSPHRASE. Add a random passphrase of at least 32 characters in Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
+      - name: Restore encrypted Chromium profile cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/chromium-profile-${{ inputs.target }}.gpg
+          key: ${{ runner.os }}-chromium-profile-${{ inputs.target }}-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-chromium-profile-${{ inputs.target }}-${{ github.ref_name }}-
 
       - name: Install browser and tunnel dependencies
         shell: bash
@@ -37,6 +56,29 @@ jobs:
           # Download the Chromium binary, then launch it directly as a normal GUI process.
           # Playwright is not used to create, control, or automate the browser session.
           python3 -m playwright install chromium
+
+      - name: Decrypt restored Chromium profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROFILE_ARCHIVE="${RUNNER_TEMP}/chromium-profile-${{ inputs.target }}.gpg"
+          mkdir -p /tmp/eid-chromium-profile
+          if [ -f "$PROFILE_ARCHIVE" ]; then
+            exec 3<<<"$CHROMIUM_PROFILE_PASSPHRASE"
+            gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \\
+              --output "${RUNNER_TEMP}/chromium-profile-${{ inputs.target }}.tar.gz" \\
+              --decrypt "$PROFILE_ARCHIVE"
+            exec 3<&-
+            if tar -tzf "${RUNNER_TEMP}/chromium-profile-${{ inputs.target }}.tar.gz" | grep -Eq '(^/|(^|/)\\.\\.(/|$))'; then
+              echo "Unsafe path found in encrypted profile archive"
+              exit 1
+            fi
+            tar -xzf "${RUNNER_TEMP}/chromium-profile-${{ inputs.target }}.tar.gz" -C /tmp/eid-chromium-profile
+            rm -f "${RUNNER_TEMP}/chromium-profile-${{ inputs.target }}.tar.gz"
+            echo "CHROMIUM_PROFILE_CACHE=RESTORED_AND_DECRYPTED"
+          else
+            echo "CHROMIUM_PROFILE_CACHE=EMPTY_FIRST_AUTHENTICATION_REQUIRED"
+          fi
 
       # All long-lived processes stay inside this step. The runner tears down
       # background processes when a step ends, which caused the earlier 1033.
@@ -445,6 +487,29 @@ jobs:
           echo "EID_SESSION_TIMEOUT"
           tail -n 80 /tmp/eid-browser.log || true
           exit 1
+
+      - name: Encrypt Chromium profile for private cache
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROFILE_ARCHIVE="${RUNNER_TEMP}/chromium-profile-${{ inputs.target }}.tar.gz"
+          ENCRYPTED_PROFILE="${RUNNER_TEMP}/chromium-profile-${{ inputs.target }}.gpg"
+          tar -czf "$PROFILE_ARCHIVE" -C /tmp/eid-chromium-profile .
+          exec 3<<<"$CHROMIUM_PROFILE_PASSPHRASE"
+          gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \
+            --symmetric --cipher-algo AES256 --output "$ENCRYPTED_PROFILE" "$PROFILE_ARCHIVE"
+          exec 3<&-
+          rm -f "$PROFILE_ARCHIVE"
+          chmod 600 "$ENCRYPTED_PROFILE"
+          echo "CHROMIUM_PROFILE_CACHE=ENCRYPTED"
+
+      - name: Save encrypted Chromium profile cache
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/chromium-profile-${{ inputs.target }}.gpg
+          key: ${{ runner.os }}-chromium-profile-${{ inputs.target }}-${{ github.ref_name }}-${{ github.run_id }}
 
       - name: Publish normalized current offers
         if: always() && hashFiles('money-storage-current-offers.json') != ''
