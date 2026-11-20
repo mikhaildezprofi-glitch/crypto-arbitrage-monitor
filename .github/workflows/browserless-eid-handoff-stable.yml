@@ -32,28 +32,14 @@ jobs:
       - name: Keep browser and Cloudflare tunnel alive during E-ID handoff
         shell: bash
         timeout-minutes: 35
-        env:
-          EID_BROWSER_HTTP_PASSWORD: ${{ secrets.EID_BROWSER_HTTP_PASSWORD }}
-          EID_BROWSER_VNC_PASSWORD: ${{ secrets.EID_BROWSER_VNC_PASSWORD }}
         run: |
           set -euo pipefail
           umask 077
 
-          HTTP_PASSWORD="${EID_BROWSER_HTTP_PASSWORD:-}"
-          VNC_PASSWORD="${EID_BROWSER_VNC_PASSWORD:-}"
-          if [ "${#HTTP_PASSWORD}" -lt 20 ]; then
-            echo "EID_BROWSER_HTTP_PASSWORD_MISSING_OR_TOO_SHORT"
-            exit 1
-          fi
-          if [[ ! "$VNC_PASSWORD" =~ ^[A-Za-z0-9]{8}$ ]]; then
-            echo "EID_BROWSER_VNC_PASSWORD_MUST_BE_8_ASCII_ALNUM"
-            exit 1
-          fi
-          printf '%s\n' "$HTTP_PASSWORD" | sudo htpasswd -B -i -c /etc/nginx/eid.htpasswd viewer
+          ACCESS_TOKEN="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+          VNC_PASSWORD="$(python3 -c 'import secrets,string; print("".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(8)))')"
           printf '%s\n' "$VNC_PASSWORD" > /tmp/eid-vnc-password
           chmod 600 /tmp/eid-vnc-password
-          sudo chown root:www-data /etc/nginx/eid.htpasswd
-          sudo chmod 640 /etc/nginx/eid.htpasswd
 
           sudo tee /etc/nginx/sites-available/eid-browser >/dev/null <<'NGINX'
           map $http_upgrade $connection_upgrade {
@@ -63,12 +49,8 @@ jobs:
           server {
             listen 8080;
             server_name _;
-
-            # Browser WebSocket APIs cannot attach the HTTP Basic credentials
-            # used for the page itself. Keep the RFB endpoint public at the
-            # transport layer; x11vnc still enforces its fresh VNC password.
-            location = /websockify {
-              auth_basic off;
+            location ^~ /ACCESS_TOKEN_PLACEHOLDER/ {
+              rewrite ^/ACCESS_TOKEN_PLACEHOLDER/(.*)$ /$1 break;
               proxy_pass http://127.0.0.1:6080;
               proxy_http_version 1.1;
               proxy_set_header Upgrade $http_upgrade;
@@ -78,18 +60,29 @@ jobs:
               proxy_send_timeout 3600s;
               proxy_buffering off;
             }
-
-            location / {
-              auth_basic "Private E-ID browser";
-              auth_basic_user_file /etc/nginx/eid.htpasswd;
-              proxy_pass http://127.0.0.1:6080;
-              proxy_http_version 1.1;
-              proxy_set_header Upgrade $http_upgrade;
-              proxy_set_header Connection $connection_upgrade;
-              proxy_set_header Host $host;
-            }
+            location / { return 404; }
           }
           NGINX
+          sudo sed -i "s/ACCESS_TOKEN_PLACEHOLDER/$ACCESS_TOKEN/g" /etc/nginx/sites-available/eid-browser
+
+          sudo tee /usr/share/novnc/token-vnc.html >/dev/null <<'HTML'
+          <!doctype html>
+          <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+          <title>Private E-ID browser</title>
+          <style>html,body,#screen{width:100%;height:100%;margin:0;background:#111;overflow:hidden}#status{position:fixed;top:8px;left:8px;color:white;font:14px sans-serif;z-index:2}</style></head>
+          <body><div id="status">Connecting to remote browser…</div><div id="screen"></div>
+          <script type="module">
+          import RFB from '/ACCESS_TOKEN_PLACEHOLDER/core/rfb.js';
+          const status = document.getElementById('status');
+          const rfb = new RFB(document.getElementById('screen'), 'wss://' + location.host + '/ACCESS_TOKEN_PLACEHOLDER/websockify');
+          rfb.scaleViewport = true;
+          rfb.resizeSession = true;
+          rfb.addEventListener('connect', () => { status.textContent = 'Connected'; });
+          rfb.addEventListener('disconnect', e => { status.textContent = 'Disconnected' + (e.detail.clean ? '' : ' (connection error)'); });
+          rfb.addEventListener('credentialsrequired', () => { rfb.sendCredentials({password: 'VNC_PASSWORD_PLACEHOLDER'}); });
+          </script></body></html>
+          HTML
+          sudo sed -i "s/ACCESS_TOKEN_PLACEHOLDER/$ACCESS_TOKEN/g; s/VNC_PASSWORD_PLACEHOLDER/$VNC_PASSWORD/g" /usr/share/novnc/token-vnc.html
           sudo rm -f /etc/nginx/sites-enabled/default
           sudo ln -s /etc/nginx/sites-available/eid-browser /etc/nginx/sites-enabled/eid-browser
           sudo nginx -t
@@ -158,15 +151,12 @@ jobs:
           done
           curl -fsS http://127.0.0.1:6080/vnc.html -o /dev/null
 
-          # Verify HTTP Basic Auth only after the websockify upstream is ready.
-          # A 502 before this point would only mean the upstream is not listening yet.
-          LOCAL_AUTH_CODE="$(curl -sS --connect-timeout 3 --max-time 8 -u "viewer:$HTTP_PASSWORD" -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/vnc.html || true)"
-          if [ "$LOCAL_AUTH_CODE" != "200" ]; then
-            echo "LOCAL_HTTP_BASIC_AUTH_HEALTHCHECK=FAILED status=$LOCAL_AUTH_CODE"
-            echo "Check Nginx auth configuration and EID_BROWSER_HTTP_PASSWORD secret."
+          LOCAL_PAGE_CODE="$(curl -sS --connect-timeout 3 --max-time 8 -o /dev/null -w '%{http_code}' "http://127.0.0.1:8080/$ACCESS_TOKEN/token-vnc.html" || true)"
+          if [ "$LOCAL_PAGE_CODE" != "200" ]; then
+            echo "LOCAL_TOKEN_PAGE_HEALTHCHECK=FAILED status=$LOCAL_PAGE_CODE"
             exit 1
           fi
-          echo "LOCAL_HTTP_BASIC_AUTH_HEALTHCHECK=OK"
+          echo "LOCAL_TOKEN_PAGE_HEALTHCHECK=OK"
 
           # Confirm x11vnc is not merely running as a process: read its RFB banner.
           python3 - <<'PY'
@@ -300,7 +290,7 @@ jobs:
 
           PUBLIC_OK=""
           for i in $(seq 1 90); do
-            CODE="$(curl -sS --connect-timeout 8 --max-time 15 -u "viewer:$HTTP_PASSWORD" -o /dev/null -w '%{http_code}' "$TUNNEL_URL/vnc.html" || true)"
+            CODE="$(curl -sS --connect-timeout 8 --max-time 15 -o /dev/null -w '%{http_code}' "$TUNNEL_URL/$ACCESS_TOKEN/token-vnc.html" || true)"
             if [ "$CODE" = "200" ]; then PUBLIC_OK=yes; break; fi
             if ! kill -0 "$TUNNEL_PID" 2>/dev/null; then
               echo "CLOUDFLARED_EXITED_DURING_HEALTHCHECK"
@@ -328,7 +318,7 @@ jobs:
               -H "Upgrade: websocket" \
               -H "Sec-WebSocket-Version: 13" \
               -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
-              "$TUNNEL_URL/websockify" || true
+              "$TUNNEL_URL/$ACCESS_TOKEN/websockify" || true
             if grep -qE '^HTTP/[0-9.]+ 101' /tmp/eid-ws-headers; then
               WS_OK=yes
               break
@@ -345,10 +335,10 @@ jobs:
           fi
           echo "PUBLIC_WEBSOCKET_HEALTHCHECK=HTTP_101"
 
-          echo "REMOTE_BROWSER_URL=$TUNNEL_URL/vnc.html?autoconnect=true&path=websockify&resize=scale&quality=6&compression=2"
-          echo "REMOTE_BROWSER_HTTP_LOGIN=viewer"
-          echo "REMOTE_BROWSER_CREDENTIALS=stored only in this private Actions run; not printed"
-          echo "Complete E-ID only in this remote browser. Do not share credentials."
+          echo "REMOTE_BROWSER_URL=$TUNNEL_URL/$ACCESS_TOKEN/token-vnc.html"
+          echo "REMOTE_BROWSER_AUTH=automatic via temporary per-run access token"
+          echo "VNC_AUTH=automatic; credentials are not printed"
+          echo "Complete E-ID only in this remote browser. Treat the URL as a temporary secret."
 
           for i in $(seq 1 900); do
             STATUS="$(cat /tmp/eid-auth-status 2>/dev/null || echo WAITING_FOR_LOGIN)"
@@ -372,12 +362,12 @@ jobs:
               exit 1
             fi
             if [ $((i % 15)) -eq 0 ]; then
-              CODE="$(curl -sS --connect-timeout 8 --max-time 15 -u "viewer:$HTTP_PASSWORD" -o /dev/null -w '%{http_code}' "$TUNNEL_URL/vnc.html" || true)"
+              CODE="$(curl -sS --connect-timeout 8 --max-time 15 -o /dev/null -w '%{http_code}' "$TUNNEL_URL/$ACCESS_TOKEN/token-vnc.html" || true)"
               WS_CODE="$(curl --http1.1 -sS -D /tmp/eid-ws-headers -o /dev/null --max-time 4 \
                 -H "Connection: Upgrade" -H "Upgrade: websocket" \
                 -H "Sec-WebSocket-Version: 13" \
                 -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
-                "$TUNNEL_URL/websockify" >/dev/null 2>&1 || true)"
+                "$TUNNEL_URL/$ACCESS_TOKEN/websockify" >/dev/null 2>&1 || true)"
               if grep -qE '^HTTP/[0-9.]+ 101' /tmp/eid-ws-headers; then WS_STATUS=101; else WS_STATUS=FAILED; fi
               echo "PUBLIC_TUNNEL_HEALTHCHECK interval=30s http=$CODE websocket=$WS_STATUS"
               if [ "$CODE" != "200" ] || [ "$WS_STATUS" != "101" ]; then
