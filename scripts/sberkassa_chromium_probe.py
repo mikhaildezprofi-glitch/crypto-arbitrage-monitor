@@ -35,6 +35,54 @@ VALUE_KEYS = re.compile(
     re.I,
 )
 TIME_LINE = re.compile(r"(обновл|updated|refresh|время обнов|последн.*курс|last update)", re.I)
+SAFE_OFFER_KEYS = re.compile(
+    r"^(from|to|from_currency|to_currency|give_currency|receive_currency|"
+    r"currency_from|currency_to|base_currency|quote_currency|source_currency|"
+    r"target_currency|currency_id|from_id|to_id|give_id|receive_id|"
+    r"currency1|currency2|currency1_id|currency2_id|currency_give|currency_receive|"
+    r"exchange_direction|direction|pair|pair_id|side|side_id|type|type_id|"
+    r"is_buy|is_sell|rate|back_rate|exchange_rate|buy_rate|sell_rate|rate_value)$",
+    re.I,
+)
+
+
+def extract_offer_schema_samples(payload: object, limit: int = 30) -> list[dict[str, str]]:
+    """Keep only currency/direction identifiers and reciprocal rate fields."""
+    samples: list[dict[str, str]] = []
+
+    def walk(node: object, depth: int = 0) -> None:
+        if depth > 10 or len(samples) >= limit:
+            return
+        if isinstance(node, dict):
+            if any(re.search(r"(rate|price)", str(key), re.I) for key in node):
+                sample: dict[str, str] = {}
+                for key, value in node.items():
+                    if not SAFE_OFFER_KEYS.fullmatch(str(key)):
+                        continue
+                    if isinstance(value, (str, int, float)) and not isinstance(value, bool):
+                        text = str(value).strip()
+                        if text and len(text) <= 64:
+                            sample[str(key)[:64]] = text
+                    elif isinstance(value, dict):
+                        for child_key, child_value in value.items():
+                            if re.fullmatch(r"(id|code|symbol|name|currency)", str(child_key), re.I):
+                                if isinstance(child_value, (str, int, float)) and not isinstance(child_value, bool):
+                                    text = str(child_value).strip()
+                                    if text and len(text) <= 64:
+                                        sample[f"{key}.{child_key}"[:64]] = text
+                if sample:
+                    samples.append(sample)
+            for child in node.values():
+                if isinstance(child, (dict, list)):
+                    walk(child, depth + 1)
+        elif isinstance(node, list):
+            for child in node:
+                walk(child, depth + 1)
+
+    walk(payload)
+    return samples
+
+
 
 
 def safe_location(value: str) -> str:
@@ -96,8 +144,20 @@ class CDP:
         self.pending_bodies: list[tuple[str, str, str]] = []
         self.current_path = ""
         self.capture = {
-            "deals_everyone_offers": {"request_count": 0, "response_statuses": [], "json_response_count": 0, "quote_fields": []},
-            "exchange_rub_usdt": {"request_count": 0, "response_statuses": [], "json_response_count": 0, "quote_fields": []},
+            "deals_everyone_offers": {
+                "request_count": 0,
+                "response_statuses": [],
+                "json_response_count": 0,
+                "quote_fields": [],
+                "offer_schema_samples": [],
+            },
+            "exchange_rub_usdt": {
+                "request_count": 0,
+                "response_statuses": [],
+                "json_response_count": 0,
+                "quote_fields": [],
+                "offer_schema_samples": [],
+            },
         }
 
     def close(self) -> None:
@@ -117,17 +177,25 @@ class CDP:
             parsed = urlparse(request.get("url", ""))
             if parsed.hostname != "sberkassa.site":
                 return
-            page_key = {"/deals": "deals_everyone_offers", "/exchange": "exchange_rub_usdt"}.get(self.current_path)
+            page_key = {
+                "/deals": "deals_everyone_offers",
+                "/exchange": "exchange_rub_usdt",
+            }.get(self.current_path)
             if page_key:
                 self.capture[page_key]["request_count"] += 1
-            query_keys = sorted(parse_qs(parsed.query, keep_blank_values=True).keys())
+            query = parse_qs(parsed.query, keep_blank_values=True)
+            safe_query = {
+                key: query[key][:3]
+                for key in ("from", "to", "offset", "limit")
+                if key in query
+            }
             print(
-                "REQUEST host=sberkassa.site path=%s method=%s type=%s query_keys=%s"
+                "REQUEST host=sberkassa.site path=%s method=%s type=%s safe_query=%s"
                 % (
                     parsed.path,
                     request.get("method", "GET"),
                     params.get("type", "unknown"),
-                    ",".join(query_keys[:20]) or "none",
+                    json.dumps(safe_query, ensure_ascii=False, separators=(",", ":")),
                 ),
                 flush=True,
             )
@@ -139,7 +207,10 @@ class CDP:
                 return
             mime = (response.get("mimeType") or "unknown").split(";")[0]
             status = int(response.get("status", 0))
-            page_key = {"/deals": "deals_everyone_offers", "/exchange": "exchange_rub_usdt"}.get(self.current_path) if host == "sberkassa.site" else None
+            page_key = {
+                "/deals": "deals_everyone_offers",
+                "/exchange": "exchange_rub_usdt",
+            }.get(self.current_path) if host == "sberkassa.site" else None
             if page_key:
                 statuses = self.capture[page_key]["response_statuses"]
                 if len(statuses) < 40:
@@ -199,6 +270,8 @@ class CDP:
                     captured_fields = captured["quote_fields"]
                     remaining = max(0, 120 - len(captured_fields))
                     captured_fields.extend([[key, value] for key, value in fields[:remaining]])
+                    if page_key:
+                        captured["offer_schema_samples"] = extract_offer_schema_samples(payload)
                 counts = Counter(name for name, _ in fields)
                 print(
                     "QUOTE_FIELDS path=%s fields=%s samples=%s"
@@ -240,19 +313,24 @@ def main() -> int:
         cdp.command("Network.enable")
         print("SBERKASSA_PROBE_READY=YES", flush=True)
 
-        # Start on Sberkassa's own login page. The user completes its normal
-        # E-ID redirect manually; wait for the browser to return to Sberkassa
-        # after the identity provider was actually visited. Do not route via
-        # Money Storage or submit any login form automatically.
-        print("EID_HANDOFF=WAITING_FOR_SBERKASSA_CALLBACK", flush=True)
+        # Test the restored browser profile first on the protected quote page.
+        # A normal E-ID handoff is requested only if the page does not deliver
+        # its quote data. The user completes any identity challenge manually.
+        print("SESSION_REUSE_CHECK=START", flush=True)
+        print("EID_HANDOFF=WAITING_ONLY_IF_SESSION_EXPIRED", flush=True)
         auth_deadline = time.monotonic() + DEADLINE_SECONDS
         eid_provider_seen = False
-        sberkassa_callback_seen = False
+        callback_navigation_started = False
+        session_ready = False
         while time.monotonic() < auth_deadline:
             auth_state = cdp.command(
                 "Runtime.evaluate",
                 {
-                    "expression": "({url: location.href, ready: document.readyState})",
+                    "expression": """(() => ({
+                      url: location.href,
+                      ready: document.readyState,
+                      body: document.body ? document.body.innerText.slice(0, 12000) : ""
+                    }))()""",
                     "returnByValue": True,
                 },
             ).get("result", {}).get("value", {})
@@ -261,29 +339,56 @@ def main() -> int:
             if auth_url.scheme == "https" and (
                 auth_host == "e-id.cards" or auth_host.endswith(".e-id.cards")
             ):
+                if not eid_provider_seen:
+                    print("EID_HANDOFF=IDENTITY_PROVIDER_SEEN", flush=True)
                 eid_provider_seen = True
-                print("EID_HANDOFF=IDENTITY_PROVIDER_SEEN", flush=True)
+
+            cdp.drain_json_bodies()
+            is_deals_landing = (
+                auth_url.scheme == "https"
+                and auth_host == "sberkassa.site"
+                and auth_url.path.rstrip("/") == "/deals"
+                and auth_url.fragment == "tab-3"
+            )
+            deals_body = str(auth_state.get("body", "")).lower()
+            deals_json_seen = cdp.capture["deals_everyone_offers"]["json_response_count"] > 0
+            deals_visible = "курс:" in deals_body and ("erub" in deals_body or "rub" in deals_body)
+            if is_deals_landing and deals_json_seen and deals_visible:
+                session_ready = True
+                if eid_provider_seen:
+                    print("EID_HANDOFF=SBERKASSA_CALLBACK_CONFIRMED", flush=True)
+                    print("SBERKASSA_SESSION=AUTHENTICATED_AFTER_EID", flush=True)
+                else:
+                    print("SBERKASSA_SESSION=RESTORED_PROFILE_REUSED", flush=True)
+                break
+
             if (
                 eid_provider_seen
                 and auth_url.scheme == "https"
-                and (auth_host == "sberkassa.site" or auth_host.endswith(".sberkassa.site"))
+                and auth_host == "sberkassa.site"
+                and not callback_navigation_started
             ):
-                sberkassa_callback_seen = True
-                break
+                callback_navigation_started = True
+                print("EID_HANDOFF=SBERKASSA_CALLBACK_CONFIRMED", flush=True)
+                print("SBERKASSA_CALLBACK_PATH=%s" % auth_url.path, flush=True)
+                cdp.command("Page.navigate", {"url": "https://sberkassa.site/deals#tab-3"})
+                time.sleep(2)
+                continue
             time.sleep(2)
 
-        if not sberkassa_callback_seen:
+        if not session_ready:
             STATUS_FILE.write_text("AUTH_TIMEOUT", encoding="utf-8")
             print(
-                "EID_HANDOFF_TIMEOUT=%s"
-                % ("NO_SBERKASSA_CALLBACK" if eid_provider_seen else "EID_PROVIDER_NOT_SEEN"),
+                "SESSION_REUSE_OR_EID_TIMEOUT=%s"
+                % ("EID_CALLBACK_SEEN_BUT_QUOTES_NOT_READY" if eid_provider_seen else "NO_VALID_SESSION_OR_EID"),
                 flush=True,
             )
             return 1
 
-        print("EID_HANDOFF=SBERKASSA_CALLBACK_CONFIRMED", flush=True)
-        print("SBERKASSA_CALLBACK_PATH=%s" % auth_url.path, flush=True)
-        print("SBERKASSA_LOGIN=READY_IN_ORIGINAL_TAB", flush=True)
+        Path(__import__("os").environ["GITHUB_WORKSPACE"], "session-authenticated.txt").write_text(
+            "sberkassa\n", encoding="utf-8"
+        )
+        print("SBERKASSA_SESSION_AUTHENTICATED=YES", flush=True)
 
         seen_deals = False
         seen_exchange = False
@@ -293,6 +398,10 @@ def main() -> int:
         last_marker_signature = None
         page_timestamps: dict[str, str | None] = {}
         page_markers: dict[str, list[str]] = {}
+        page_quote_lines: dict[str, list[str]] = {}
+        page_quote_dom: dict[str, dict] = {}
+        deals_ready_since: float | None = None
+        exchange_navigation_started = False
         deadline = time.monotonic() + DEADLINE_SECONDS
 
         while time.monotonic() < deadline:
@@ -307,6 +416,37 @@ def main() -> int:
                         .map(x => x.trim())
                         .filter(x => x && /(обновл|updated|refresh|время обнов|последн.*курс|last update)/i.test(x))
                         .slice(0, 8),
+                      quoteLines: (document.body ? document.body.innerText : "")
+                        .split(/\\n/)
+                        .map(x => x.trim())
+                        .filter(x => x && x.length <= 200 && /(RUB|руб|₽|USDT|курс|rate|обмен)/i.test(x))
+                        .slice(0, 30),
+                      quoteDom: (() => {
+                        const visible = el => !!(el && el.getClientRects().length &&
+                          getComputedStyle(el).visibility !== "hidden" &&
+                          getComputedStyle(el).display !== "none");
+                        const clean = value => String(value || "").trim().replace(/\\s+/g, " ").slice(0, 160);
+                        const selects = Array.from(document.querySelectorAll("select"))
+                          .filter(visible).slice(0, 12).map(el => ({
+                            label: clean(el.labels && Array.from(el.labels).map(x => x.innerText).join(" ")),
+                            selected: clean(el.selectedOptions && el.selectedOptions[0] && el.selectedOptions[0].textContent),
+                            value: clean(el.value)
+                          }));
+                        const rateNodes = Array.from(document.querySelectorAll("body *"))
+                          .filter(el => visible(el) && el.children.length === 0)
+                          .map(el => clean(el.innerText || el.textContent))
+                          .filter(text => text && text.length <= 160 &&
+                            /(?:курс|rate|RUB|USDT|₽)/i.test(text) && /\\d/.test(text))
+                          .slice(0, 30);
+                        const rateInputs = Array.from(document.querySelectorAll("input"))
+                          .filter(visible).filter(el =>
+                            /rate|курс/i.test([el.name, el.id, el.getAttribute("aria-label"), el.placeholder].join(" "))
+                          ).slice(0, 8).map(el => ({
+                            label: clean([el.name, el.id, el.getAttribute("aria-label"), el.placeholder].join(" ")),
+                            value: clean(el.value)
+                          })).filter(el => /^\\d+(?:[.,]\\d+)?$/.test(el.value));
+                        return { selects, rate_nodes: rateNodes, rate_inputs: rateInputs };
+                      })(),
                       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
                       localNow: (() => {
                         const now = new Date();
@@ -344,6 +484,8 @@ def main() -> int:
                 page_name = "deals_everyone_offers" if is_deals else "exchange_rub_usdt"
                 markers = state.get("updateLines", [])
                 page_markers[page_name] = markers
+                page_quote_lines[page_name] = state.get("quoteLines", [])
+                page_quote_dom[page_name] = state.get("quoteDom", {})
                 cdp.current_path = parsed.path
                 signature = (page_name, tuple(markers))
                 if signature != last_marker_signature or page_name != last_page_key:
@@ -377,37 +519,63 @@ def main() -> int:
             cdp.drain_json_bodies()
 
             now = time.monotonic()
+            if is_deals and not exchange_navigation_started:
+                deals_data_ready = (
+                    cdp.capture["deals_everyone_offers"]["json_response_count"] > 0
+                    and any("курс:" in line.lower() for line in state.get("quoteLines", []))
+                )
+                if deals_data_ready:
+                    if deals_ready_since is None:
+                        deals_ready_since = now
+                    elif now - deals_ready_since >= 4:
+                        print("SBERKASSA_DEALS_CAPTURE_READY=YES", flush=True)
+                        print("SBERKASSA_AUTO_NAVIGATE=exchange", flush=True)
+                        cdp.command("Page.navigate", {"url": "https://sberkassa.site/exchange"})
+                        exchange_navigation_started = True
+                        time.sleep(2)
+                        continue
+                else:
+                    deals_ready_since = None
+
             if now - last_progress >= 20:
                 last_progress = now
                 print(
-                    "SBERKASSA_PROGRESS deals_seen=%s exchange_seen=%s location=%s"
-                    % (seen_deals, seen_exchange, safe_location(url)),
+                    "SBERKASSA_PROGRESS deals_seen=%s location=%s"
+                    % (seen_deals, safe_location(url)),
                     flush=True,
                 )
 
             if seen_deals and seen_exchange and now - last_target_activity >= 12:
                 artifact = {
-                    "schema_version": 1,
+                    "schema_version": 2,
                     "captured_at_utc": datetime.now(timezone.utc).isoformat(),
                     "source": "sberkassa.site",
+                    "quote_scope": "ERUB->RUB on /deals#tab-3 and RUB->USDT on /exchange",
                     "read_only": True,
                     "pages": {
                         "deals_everyone_offers": {
                             "url_path": "/deals#tab-3",
                             "page_updated_at": page_timestamps.get("deals_everyone_offers"),
                             "update_marker_lines": page_markers.get("deals_everyone_offers", []),
+                            "visible_quote_lines": page_quote_lines.get("deals_everyone_offers", []),
+                            "visible_quote_dom": page_quote_dom.get("deals_everyone_offers", {}),
                             **cdp.capture["deals_everyone_offers"],
                         },
                         "exchange_rub_usdt": {
                             "url_path": "/exchange",
                             "page_updated_at": page_timestamps.get("exchange_rub_usdt"),
                             "update_marker_lines": page_markers.get("exchange_rub_usdt", []),
+                            "visible_quote_lines": page_quote_lines.get("exchange_rub_usdt", []),
+                            "visible_quote_dom": page_quote_dom.get("exchange_rub_usdt", {}),
                             **cdp.capture["exchange_rub_usdt"],
                         },
                     },
                     "limitations": [
-                        "Sanitized quote-related scalar fields only; no raw response bodies or authentication material",
-                        "No commission, amount, volume, reserve, liquidity, or execution data used",
+                        "The restored authenticated profile is tested first; manual E-ID is needed only when the session is no longer valid",
+                    "The probe automatically visits /exchange after collecting the deals page using read-only navigation",
+                    "The ERUB/RUB everyone-offers page and RUB/USDT exchange page are captured independently",
+                        "Currency/direction identifiers and reciprocal rate fields are captured in sanitized form; no exchange rate is inferred from an unverified field",
+                        "No raw response body, offer amounts, commissions, volumes, reserves, liquidity, or authentication material is published",
                         "Page update markers are not yet correlated with a successful refresh",
                     ],
                 }
@@ -417,12 +585,13 @@ def main() -> int:
                 print("SBERKASSA_ARTIFACT_WRITTEN=sberkassa-current-inspection.json", flush=True)
                 with open(Path(__import__("os").environ["GITHUB_STEP_SUMMARY"]), "a", encoding="utf-8") as summary:
                     summary.write("\n## Sberkassa read-only page inspection\n")
-                    summary.write("- Both requested pages were visited in the manually authenticated standalone Chromium session.\n")
-                    summary.write("- Captured sanitized request/response metadata, quote-related JSON field names and numeric samples, and visible update-marker lines.\n")
-                    summary.write("- No raw response body, cookies, session tokens, or authorization headers were published.\n")
+                    summary.write("- The restored session was reused, or the user completed E-ID manually when required.\n")
+                    summary.write("- Both quote pages were visited using read-only navigation in the same Chromium profile.\n")
+                    summary.write("- Captured sanitized currency/direction identifiers, quote-related fields, and page update-marker lines separately for each page.\n")
+                    summary.write("- No raw response body, cookies, session tokens, authorization headers, or offer amounts were published.\n")
                     summary.write(f"- Deals page update timestamp: {page_timestamps.get('deals_everyone_offers') or 'not found'}\n")
                     summary.write(f"- Exchange page update timestamp: {page_timestamps.get('exchange_rub_usdt') or 'not found'}\n")
-                    summary.write("- Each page timestamp is independent; offer creation times are not used for freshness.\n")
+                    summary.write("- Offer creation timestamps are not used as page freshness.\n")
                     summary.write("- A visible timestamp still needs to be correlated with a successful refresh before enabling polling.\n")
                 STATUS_FILE.write_text("SBERKASSA_CAPTURE_COMPLETE", encoding="utf-8")
                 print("SBERKASSA_CAPTURE_COMPLETE=YES", flush=True)
