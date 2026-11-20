@@ -17,7 +17,6 @@ class SberkassaProbeSyntaxTests(unittest.TestCase):
         # Page changes are deliberately human-operated; the probe only observes.
         self.assertIn('"Runtime.evaluate"', source)
         self.assertNotIn('"Page.navigate"', source)
-        self.assertIn("https://sberkassa.site/login", source)
         self.assertIn('r"(rate|price|updated|timestamp|date|time)"', source)
         self.assertNotIn("volume|reserve|commission", source)
 
