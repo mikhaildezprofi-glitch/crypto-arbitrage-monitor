@@ -103,3 +103,18 @@ An attempted Chrome DevTools Protocol connection through the existing local forw
 ### Updated current result
 
 The public frontend structure is now partially confirmed, but no Sberkassa quote endpoint, quote schema, rate, commission, limit, volume, or freshness rule is confirmed. Both Sberkassa route steps remain unavailable. Next evidence must come from a successful, authorized, sanitized Network capture in the exact authenticated UI pages for ERUB -> RUB and RUB -> USDT, or official provider documentation.
+
+
+## Project-selected page and freshness rule (2026-11-20)
+
+The account owner has confirmed the intended Sberkassa source and quote-freshness semantics:
+
+- For the ERUB -> RUB route step, use only `https://sberkassa.site/deals#tab-3`, the **«Всем предлагают»** tab.
+- Do not substitute «Мне предлагают» or «Я предлагаю».
+- Ignore each offer's individual creation timestamp when deciding whether the current quote snapshot is fresh. Offers may have different creation times.
+- Freshness must be established by the page's own visible update/refresh timestamp, and only when that timestamp corresponds to a successful refresh of the displayed offers. Merely opening the tab or seeing a newly rendered page is not proof that the underlying offers were refreshed.
+- Record the page's confirmed update time as the quote's observation time. If the page does not show a trustworthy update time, or the refresh fails, mark this source unavailable; never reuse an older snapshot as fresh.
+
+The separate ERUB -> RUB page timestamp must not be applied to the second route step. For **Sberkassa Exchange RUB -> USDT**, inspect `https://sberkassa.site/exchange` independently and use that page's own confirmed update time. Its quote semantics, fees, limits, and refresh behavior still require verification.
+
+This is a project source-selection and acceptance rule, not evidence that the live Sberkassa page or its network request has already been captured. The exact request, response schema, current rate, page timestamp, and permitted polling method remain unverified. Do not implement or enable either provider until those facts are captured in the normal authenticated browser session or confirmed by official documentation. Do not bypass CAPTCHA, MFA, or device binding, and do not export cookies or session tokens.
