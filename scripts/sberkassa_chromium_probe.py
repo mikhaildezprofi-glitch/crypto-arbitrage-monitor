@@ -12,6 +12,7 @@ from __future__ import annotations
 import base64
 import json
 import re
+import sys
 import time
 import urllib.request
 from collections import Counter
@@ -19,6 +20,10 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import websocket
+
+sys.path.insert(0, str(Path.cwd()))
+sys.path.insert(0, str(Path.cwd() / "src"))
+from scripts.money_storage_cloud_read import parse_page_update_timestamp
 
 DEBUG_ENDPOINT = "http://127.0.0.1:9222/json/list"
 STATUS_FILE = Path("/tmp/eid-auth-status")
@@ -222,6 +227,7 @@ def main() -> int:
         last_progress = 0.0
         last_page_key = ""
         last_marker_signature = None
+        page_timestamps: dict[str, str | None] = {}
         deadline = time.monotonic() + DEADLINE_SECONDS
 
         while time.monotonic() < deadline:
@@ -235,7 +241,15 @@ def main() -> int:
                         .split(/\\n/)
                         .map(x => x.trim())
                         .filter(x => x && /(обновл|updated|refresh|время обнов|последн.*курс|last update)/i.test(x))
-                        .slice(0, 8)
+                        .slice(0, 8),
+                      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                      localNow: (() => {
+                        const now = new Date();
+                        return {
+                          year: now.getFullYear(), month: now.getMonth() + 1, day: now.getDate(),
+                          hour: now.getHours(), minute: now.getMinutes(), second: now.getSeconds()
+                        };
+                      })()
                     }))()""",
                     "returnByValue": True,
                 },
@@ -271,6 +285,25 @@ def main() -> int:
                         % (page_name, state.get("title", "")[:100], json.dumps(markers, ensure_ascii=False)),
                         flush=True,
                     )
+                    try:
+                        updated_at, update_text = parse_page_update_timestamp(
+                            markers,
+                            timezone_name=state.get("timezone", ""),
+                            browser_local_now=state.get("localNow", {}),
+                        )
+                        page_timestamps[page_name] = updated_at.isoformat()
+                        print(
+                            "PAGE_TIMESTAMP_CONFIRMED page=%s updated_at=%s marker=%r"
+                            % (page_name, updated_at.isoformat(), update_text),
+                            flush=True,
+                        )
+                    except Exception as exc:
+                        page_timestamps[page_name] = None
+                        print(
+                            "PAGE_TIMESTAMP_UNAVAILABLE page=%s reason=%s"
+                            % (page_name, type(exc).__name__),
+                            flush=True,
+                        )
                     last_marker_signature = signature
                     last_page_key = page_name
 
