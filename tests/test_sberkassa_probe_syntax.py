@@ -18,6 +18,7 @@ class SberkassaProbeSyntaxTests(unittest.TestCase):
         self.assertIn('"Runtime.evaluate"', source)
         self.assertNotIn('"Page.navigate"', source)
         self.assertIn('r"(rate|price|updated|timestamp|date|time)"', source)
+        self.assertIn("currency_id|from_id|to_id", source)
         self.assertNotIn("volume|reserve|commission", source)
 
     def test_sberkassa_uses_money_storage_style_first_twenty_average(self):
