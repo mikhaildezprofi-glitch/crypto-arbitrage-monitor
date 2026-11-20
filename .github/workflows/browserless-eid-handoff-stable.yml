@@ -95,16 +95,6 @@ jobs:
           sudo nginx -t
           sudo nginx
 
-          # Verify the configured secret against the actual Nginx Basic Auth gate
-          # before publishing a public tunnel URL. Never print the password.
-          LOCAL_AUTH_CODE="$(curl -sS --connect-timeout 3 --max-time 8 -u "viewer:$HTTP_PASSWORD" -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/vnc.html || true)"
-          if [ "$LOCAL_AUTH_CODE" != "200" ]; then
-            echo "LOCAL_HTTP_BASIC_AUTH_HEALTHCHECK=FAILED status=$LOCAL_AUTH_CODE"
-            echo "Check EID_BROWSER_HTTP_PASSWORD in GitHub Actions secrets."
-            exit 1
-          fi
-          echo "LOCAL_HTTP_BASIC_AUTH_HEALTHCHECK=OK"
-
           Xvfb :99 -screen 0 1440x900x24 -ac +extension RANDR >/tmp/xvfb.log 2>&1 &
           XVFB_PID=$!
 
@@ -167,6 +157,16 @@ jobs:
             sleep 1
           done
           curl -fsS http://127.0.0.1:6080/vnc.html -o /dev/null
+
+          # Verify HTTP Basic Auth only after the websockify upstream is ready.
+          # A 502 before this point would only mean the upstream is not listening yet.
+          LOCAL_AUTH_CODE="$(curl -sS --connect-timeout 3 --max-time 8 -u "viewer:$HTTP_PASSWORD" -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/vnc.html || true)"
+          if [ "$LOCAL_AUTH_CODE" != "200" ]; then
+            echo "LOCAL_HTTP_BASIC_AUTH_HEALTHCHECK=FAILED status=$LOCAL_AUTH_CODE"
+            echo "Check Nginx auth configuration and EID_BROWSER_HTTP_PASSWORD secret."
+            exit 1
+          fi
+          echo "LOCAL_HTTP_BASIC_AUTH_HEALTHCHECK=OK"
 
           # Confirm x11vnc is not merely running as a process: read its RFB banner.
           python3 - <<'PY'
