@@ -409,6 +409,7 @@ def main() -> int:
                       body: document.body ? document.body.innerText.slice(0, 12000) : ""
                     }))()""",
                     "returnByValue": True,
+                    "awaitPromise": True,
                 },
             ).get("result", {}).get("value", {})
             auth_url = urlparse(auth_state.get("url", ""))
