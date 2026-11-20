@@ -25,7 +25,7 @@ STATUS_FILE = Path("/tmp/eid-auth-status")
 DEADLINE_SECONDS = 1800
 MAX_BODY_BYTES = 1_000_000
 VALUE_KEYS = re.compile(
-    r"(rate|price|amount|min|max|volume|reserve|commission|updated|timestamp|created|date|time)",
+    r"(rate|price|min|max|volume|reserve|commission|updated|timestamp|created|date|time)",
     re.I,
 )
 TIME_LINE = re.compile(r"(обновл|updated|refresh|время обнов|последн.*курс|last update)", re.I)
@@ -88,6 +88,7 @@ class CDP:
         )
         self.next_id = 0
         self.pending_bodies: list[tuple[str, str]] = []
+        self.current_path = ""
 
     def close(self) -> None:
         self.ws.close()
@@ -98,7 +99,9 @@ class CDP:
         if method == "Page.frameNavigated":
             frame = params.get("frame", {})
             if not frame.get("parentId"):
-                print(f"NAV={safe_location(frame.get('url', ''))}", flush=True)
+                frame_url = frame.get("url", "")
+                self.current_path = urlparse(frame_url).path
+                print(f"NAV={safe_location(frame_url)}", flush=True)
         elif method == "Network.requestWillBeSent":
             request = params.get("request", {})
             parsed = urlparse(request.get("url", ""))
@@ -128,7 +131,12 @@ class CDP:
                 % (host, parsed.path, status, params.get("type", "unknown"), mime),
                 flush=True,
             )
-            if host == "sberkassa.site" and params.get("type") in ("XHR", "Fetch") and "json" in mime:
+            if (
+                host == "sberkassa.site"
+                and self.current_path in ("/deals", "/exchange")
+                and params.get("type") in ("XHR", "Fetch")
+                and "json" in mime
+            ):
                 self.pending_bodies.append((params.get("requestId", ""), parsed.path))
 
     def command(self, method: str, params: dict | None = None, timeout: float = 8) -> dict:
@@ -212,6 +220,8 @@ def main() -> int:
         seen_exchange = False
         last_target_activity = 0.0
         last_progress = 0.0
+        last_page_key = ""
+        last_marker_signature = None
         deadline = time.monotonic() + DEADLINE_SECONDS
 
         while time.monotonic() < deadline:
@@ -254,13 +264,15 @@ def main() -> int:
             if is_deals or is_exchange:
                 page_name = "deals_everyone_offers" if is_deals else "exchange_rub_usdt"
                 markers = state.get("updateLines", [])
-                print(
-                    "PAGE_UPDATE_MARKERS page=%s title=%r lines=%s"
-                    % (page_name, state.get("title", "")[:100], json.dumps(markers, ensure_ascii=False)),
-                    flush=True,
-                )
-                if time.monotonic() - last_target_activity > 2:
-                    last_target_activity = time.monotonic()
+                signature = (page_name, tuple(markers))
+                if signature != last_marker_signature or page_name != last_page_key:
+                    print(
+                        "PAGE_UPDATE_MARKERS page=%s title=%r lines=%s"
+                        % (page_name, state.get("title", "")[:100], json.dumps(markers, ensure_ascii=False)),
+                        flush=True,
+                    )
+                    last_marker_signature = signature
+                    last_page_key = page_name
 
             cdp.drain_json_bodies()
 
