@@ -51,7 +51,7 @@ jobs:
           set -euo pipefail
           sudo apt-get -o Acquire::Retries=8 -o Acquire::https::Timeout=45 update
           sudo apt-get -y --no-install-recommends -o Acquire::Retries=8 install \
-            xvfb x11vnc novnc websockify curl x11-utils nginx apache2-utils
+            xvfb x11vnc novnc websockify curl x11-utils nginx apache2-utils gnupg
           python3 -m pip install --retries 5 --timeout 45 --break-system-packages playwright websocket-client
           # Download the Chromium binary, then launch it directly as a normal GUI process.
           # Playwright is not used to create, control, or automate the browser session.
