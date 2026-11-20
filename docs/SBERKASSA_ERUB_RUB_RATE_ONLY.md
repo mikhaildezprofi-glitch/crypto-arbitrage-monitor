@@ -1,33 +1,24 @@
-# Sberkassa ERUB -> RUB: rate-only capture
+# Sberkassa ERUB -> RUB: rate-only calculation
 
-Updated: 2026-11-20
+## Scope
 
-## Confirmed source selection
-
-- Source: `https://sberkassa.site/deals#tab-3`.
+- Source page: `https://sberkassa.site/deals#tab-3`.
 - Tab: **«Всем предлагают»**.
 - Direction: **ERUB -> RUB**.
-- Endpoint observed in the authenticated page: `GET /public_deals/fetch`.
-- Latest inspected response: HTTP 200.
-- The response exposed 27 `rate` fields and 27 `back_rate` fields.
+- Only the exchange rate is relevant. Ignore commissions, amounts, volumes, reserves, limits, and liquidity.
+- Use the first 20 matching offers in the page/API order, or all if fewer than 20; calculate an unweighted arithmetic mean.
+- Mark the result indicative, not guaranteed executable.
 
-## Calculation
+## Important schema finding
 
-- Use only each offer's `rate` field in the response order.
-- Take the first 20 offers; if fewer than 20 exist, use all available offers.
-- Calculate the unweighted arithmetic mean.
-- Ignore `back_rate`, offer creation timestamps, commissions, amounts, volumes, reserves, limits, and liquidity.
-- Mark the result as indicative, not an execution guarantee.
-- Empty offers or invalid, non-finite, zero, or negative selected rates make the quote unavailable.
+The authenticated inspection of `/public_deals/fetch` returned 27 `rate` and 27 `back_rate` values. They are reciprocal in the sampled records (for example, `rate=0.03849115` and `back_rate=25.98`). The same response contained both small and large `rate` values, so a blind average of every `rate` field would mix directions or misinterpret the displayed direction.
 
-## Freshness remains a separate gate
+The sanitized inspection did not retain the offer currency/direction fields or request parameter values needed to filter the exact ERUB -> RUB records. Therefore the correct field (`rate` versus `back_rate`) is not yet proven. The calculation helper requires the caller to provide an already direction-filtered offer list and an explicit rate field; it deliberately does not guess.
 
-The inspection did not find a visible page update marker (`page_updated_at` was null). Individual offer `create_time` values are not a substitute. Until a trustworthy page-level refresh timestamp is identified and correlated with a successful refresh, the quote must remain unavailable for the live route calculation.
+## Freshness
 
-## Scope boundary
-
-This capture task covers only the Sberkassa ERUB -> RUB offer quote. The `/exchange` page is not part of this quote source and is not needed to calculate this individual step. Any separate RUB -> USDT route step must be handled independently and must not be conflated with ERUB -> RUB.
+The page-level update marker was not found (`page_updated_at=null`). Offer `create_time` values are not a substitute for the page's last-refresh time. The live quote remains unavailable until a page-level freshness marker or another explicitly approved freshness signal is verified.
 
 ## Safety
 
-Inspection is read-only. Do not submit deals, move funds, export cookies/tokens, or bypass CAPTCHA, MFA, or device binding.
+Read-only inspection and arithmetic only. No deal submission, fund movement, credential export, or CAPTCHA/MFA/device-binding bypass.
