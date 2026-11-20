@@ -210,10 +210,13 @@ class CDP:
                 return
             mime = (response.get("mimeType") or "unknown").split(";")[0]
             status = int(response.get("status", 0))
-            page_key = {
+            page_paths = {
                 "/deals": "deals_everyone_offers",
                 "/exchange": "exchange_rub_usdt",
-            }.get(self.current_path) if host == "sberkassa.site" else None
+            }
+            page_key = (
+                page_paths.get(parsed.path) or page_paths.get(self.current_path)
+            ) if host == "sberkassa.site" else None
             if page_key:
                 captured = self.capture[page_key]
                 statuses = captured["response_statuses"]
