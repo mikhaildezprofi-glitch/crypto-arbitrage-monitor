@@ -366,7 +366,8 @@ def main() -> int:
         last_marker_signature = None
         page_timestamps: dict[str, str | None] = {}
         page_markers: dict[str, list[str]] = {}
-        page_quote_lines: dict[str, list[str]] = {}\n        page_quote_dom: dict[str, dict] = {}
+        page_quote_lines: dict[str, list[str]] = {}
+        page_quote_dom: dict[str, dict] = {}
         deadline = time.monotonic() + DEADLINE_SECONDS
 
         while time.monotonic() < deadline:
@@ -503,14 +504,16 @@ def main() -> int:
                             "url_path": "/deals#tab-3",
                             "page_updated_at": page_timestamps.get("deals_everyone_offers"),
                             "update_marker_lines": page_markers.get("deals_everyone_offers", []),
-                            "visible_quote_lines": page_quote_lines.get("deals_everyone_offers", []),\n                            "visible_quote_dom": page_quote_dom.get("deals_everyone_offers", {}),
+                            "visible_quote_lines": page_quote_lines.get("deals_everyone_offers", []),
+                            "visible_quote_dom": page_quote_dom.get("deals_everyone_offers", {}),
                             **cdp.capture["deals_everyone_offers"],
                         },
                         "exchange_rub_usdt": {
                             "url_path": "/exchange",
                             "page_updated_at": page_timestamps.get("exchange_rub_usdt"),
                             "update_marker_lines": page_markers.get("exchange_rub_usdt", []),
-                            "visible_quote_lines": page_quote_lines.get("exchange_rub_usdt", []),\n                            "visible_quote_dom": page_quote_dom.get("exchange_rub_usdt", {}),
+                            "visible_quote_lines": page_quote_lines.get("exchange_rub_usdt", []),
+                            "visible_quote_dom": page_quote_dom.get("exchange_rub_usdt", {}),
                             **cdp.capture["exchange_rub_usdt"],
                         },
                     },
