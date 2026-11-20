@@ -450,7 +450,8 @@ def main() -> int:
                 page_name = "deals_everyone_offers" if is_deals else "exchange_rub_usdt"
                 markers = state.get("updateLines", [])
                 page_markers[page_name] = markers
-                page_quote_lines[page_name] = state.get("quoteLines", [])\n                page_quote_dom[page_name] = state.get("quoteDom", {})
+                page_quote_lines[page_name] = state.get("quoteLines", [])
+                page_quote_dom[page_name] = state.get("quoteDom", {})
                 cdp.current_path = parsed.path
                 signature = (page_name, tuple(markers))
                 if signature != last_marker_signature or page_name != last_page_key:
