@@ -31,6 +31,9 @@ class FourStepRunnerSyntaxTests(unittest.TestCase):
         self.assertIn("SBERKASSA_SNAPSHOT:", workflow)
         self.assertIn("workflow_call:", reusable)
         self.assertIn("free-eid-cloud-browser-stable-${{ inputs.target }}", reusable)
+        self.assertIn("  cancel-in-progress: false", reusable)
+        self.assertIn("four-step-quote-test-${{ github.ref }}", workflow)
+        self.assertIn("  cancel-in-progress: false", workflow)
 
 
 if __name__ == "__main__":
