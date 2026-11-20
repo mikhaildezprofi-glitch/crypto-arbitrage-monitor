@@ -12,7 +12,9 @@ class SberkassaProbeSyntaxTests(unittest.TestCase):
         self.assertIn('auth_host == "e-id.cards"', source)
         self.assertIn('auth_host == "sberkassa.site"', source)
         self.assertIn("eid_provider_seen", source)
-        self.assertIn("Page.navigate", source)
+        # Page changes are deliberately human-operated; the probe only observes.
+        self.assertIn('"Runtime.evaluate"', source)
+        self.assertNotIn('"Page.navigate"', source)
         self.assertIn("https://sberkassa.site/login", source)
         self.assertIn('r"(rate|price|updated|timestamp|date|time)"', source)
         self.assertNotIn("volume|reserve|commission", source)
@@ -24,7 +26,7 @@ class SberkassaProbeSyntaxTests(unittest.TestCase):
         self.assertIn("Do not use commissions, offer amounts, volumes, reserves", readme)
         self.assertIn("single displayed rate without inventing an average", readme)
 
-    def test_sberkassa_workflow_reuses_money_storage_eid_entry(self):
+    def test_sberkassa_workflow_starts_from_its_own_login_page(self):
         project_root = Path(__file__).resolve().parents[1]
         workflow = (project_root / ".github" / "workflows" / "browserless-eid-handoff-stable.yml").read_text(encoding="utf-8")
         self.assertIn('CHROMIUM_START_URL="https://sberkassa.site/login"', workflow)
