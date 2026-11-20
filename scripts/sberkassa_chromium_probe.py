@@ -35,6 +35,51 @@ VALUE_KEYS = re.compile(
     re.I,
 )
 TIME_LINE = re.compile(r"(обновл|updated|refresh|время обнов|последн.*курс|last update)", re.I)
+SAFE_OFFER_KEYS = re.compile(
+    r"^(from|to|from_currency|to_currency|give_currency|receive_currency|"
+    r"currency_from|currency_to|base_currency|quote_currency|pair|direction|"
+    r"side|type|rate|back_rate)$",
+    re.I,
+)
+
+
+def extract_offer_schema_samples(payload: object, limit: int = 30) -> list[dict[str, str]]:
+    """Keep only currency/direction identifiers and reciprocal rate fields."""
+    samples: list[dict[str, str]] = []
+
+    def walk(node: object, depth: int = 0) -> None:
+        if depth > 10 or len(samples) >= limit:
+            return
+        if isinstance(node, dict):
+            if "rate" in node or "back_rate" in node:
+                sample: dict[str, str] = {}
+                for key, value in node.items():
+                    if not SAFE_OFFER_KEYS.fullmatch(str(key)):
+                        continue
+                    if isinstance(value, (str, int, float)) and not isinstance(value, bool):
+                        text = str(value).strip()
+                        if text and len(text) <= 64:
+                            sample[str(key)[:64]] = text
+                    elif isinstance(value, dict):
+                        for child_key, child_value in value.items():
+                            if re.fullmatch(r"(id|code|symbol|name|currency)", str(child_key), re.I):
+                                if isinstance(child_value, (str, int, float)) and not isinstance(child_value, bool):
+                                    text = str(child_value).strip()
+                                    if text and len(text) <= 64:
+                                        sample[f"{key}.{child_key}"[:64]] = text
+                if sample:
+                    samples.append(sample)
+            for child in node.values():
+                if isinstance(child, (dict, list)):
+                    walk(child, depth + 1)
+        elif isinstance(node, list):
+            for child in node:
+                walk(child, depth + 1)
+
+    walk(payload)
+    return samples
+
+
 
 
 def safe_location(value: str) -> str:
@@ -96,8 +141,13 @@ class CDP:
         self.pending_bodies: list[tuple[str, str, str]] = []
         self.current_path = ""
         self.capture = {
-            "deals_everyone_offers": {"request_count": 0, "response_statuses": [], "json_response_count": 0, "quote_fields": []},
-            "exchange_rub_usdt": {"request_count": 0, "response_statuses": [], "json_response_count": 0, "quote_fields": []},
+            "deals_everyone_offers": {
+                "request_count": 0,
+                "response_statuses": [],
+                "json_response_count": 0,
+                "quote_fields": [],
+                "offer_schema_samples": [],
+            },
         }
 
     def close(self) -> None:
@@ -120,14 +170,19 @@ class CDP:
             page_key = {"/deals": "deals_everyone_offers", "/exchange": "exchange_rub_usdt"}.get(self.current_path)
             if page_key:
                 self.capture[page_key]["request_count"] += 1
-            query_keys = sorted(parse_qs(parsed.query, keep_blank_values=True).keys())
+            query = parse_qs(parsed.query, keep_blank_values=True)
+            safe_query = {
+                key: query[key][:3]
+                for key in ("from", "to", "offset", "limit")
+                if key in query
+            }
             print(
-                "REQUEST host=sberkassa.site path=%s method=%s type=%s query_keys=%s"
+                "REQUEST host=sberkassa.site path=%s method=%s type=%s safe_query=%s"
                 % (
                     parsed.path,
                     request.get("method", "GET"),
                     params.get("type", "unknown"),
-                    ",".join(query_keys[:20]) or "none",
+                    json.dumps(safe_query, ensure_ascii=False, separators=(",", ":")),
                 ),
                 flush=True,
             )
@@ -199,6 +254,8 @@ class CDP:
                     captured_fields = captured["quote_fields"]
                     remaining = max(0, 120 - len(captured_fields))
                     captured_fields.extend([[key, value] for key, value in fields[:remaining]])
+                    if path == "/public_deals/fetch" and page_key == "deals_everyone_offers":
+                        captured["offer_schema_samples"] = extract_offer_schema_samples(payload)
                 counts = Counter(name for name, _ in fields)
                 print(
                     "QUOTE_FIELDS path=%s fields=%s samples=%s"
@@ -380,16 +437,17 @@ def main() -> int:
             if now - last_progress >= 20:
                 last_progress = now
                 print(
-                    "SBERKASSA_PROGRESS deals_seen=%s exchange_seen=%s location=%s"
-                    % (seen_deals, seen_exchange, safe_location(url)),
+                    "SBERKASSA_PROGRESS deals_seen=%s location=%s"
+                    % (seen_deals, safe_location(url)),
                     flush=True,
                 )
 
-            if seen_deals and seen_exchange and now - last_target_activity >= 12:
+            if seen_deals and now - last_target_activity >= 12:
                 artifact = {
-                    "schema_version": 1,
+                    "schema_version": 2,
                     "captured_at_utc": datetime.now(timezone.utc).isoformat(),
                     "source": "sberkassa.site",
+                    "quote_scope": "ERUB->RUB, /deals#tab-3, everyone_offers",
                     "read_only": True,
                     "pages": {
                         "deals_everyone_offers": {
@@ -398,16 +456,11 @@ def main() -> int:
                             "update_marker_lines": page_markers.get("deals_everyone_offers", []),
                             **cdp.capture["deals_everyone_offers"],
                         },
-                        "exchange_rub_usdt": {
-                            "url_path": "/exchange",
-                            "page_updated_at": page_timestamps.get("exchange_rub_usdt"),
-                            "update_marker_lines": page_markers.get("exchange_rub_usdt", []),
-                            **cdp.capture["exchange_rub_usdt"],
-                        },
                     },
                     "limitations": [
-                        "Sanitized quote-related scalar fields only; no raw response bodies or authentication material",
-                        "No commission, amount, volume, reserve, liquidity, or execution data used",
+                        "Only the ERUB/RUB everyone-offers page is in scope",
+                        "Direction identifiers and reciprocal rate fields are captured in sanitized form to validate the displayed rate",
+                        "No raw response body, offer amounts, commissions, volumes, reserves, liquidity, or authentication material is published",
                         "Page update markers are not yet correlated with a successful refresh",
                     ],
                 }
@@ -417,12 +470,11 @@ def main() -> int:
                 print("SBERKASSA_ARTIFACT_WRITTEN=sberkassa-current-inspection.json", flush=True)
                 with open(Path(__import__("os").environ["GITHUB_STEP_SUMMARY"]), "a", encoding="utf-8") as summary:
                     summary.write("\n## Sberkassa read-only page inspection\n")
-                    summary.write("- Both requested pages were visited in the manually authenticated standalone Chromium session.\n")
-                    summary.write("- Captured sanitized request/response metadata, quote-related JSON field names and numeric samples, and visible update-marker lines.\n")
-                    summary.write("- No raw response body, cookies, session tokens, or authorization headers were published.\n")
+                    summary.write("- The ERUB -> RUB «Всем предлагают» page was visited in the manually authenticated standalone Chromium session.\n")
+                    summary.write("- Captured safe request direction parameters, sanitized offer currency/direction identifiers, reciprocal rate fields, and page update-marker lines.\n")
+                    summary.write("- No raw response body, cookies, session tokens, authorization headers, or offer amounts were published.\n")
                     summary.write(f"- Deals page update timestamp: {page_timestamps.get('deals_everyone_offers') or 'not found'}\n")
-                    summary.write(f"- Exchange page update timestamp: {page_timestamps.get('exchange_rub_usdt') or 'not found'}\n")
-                    summary.write("- Each page timestamp is independent; offer creation times are not used for freshness.\n")
+                    summary.write("- Offer creation timestamps are not used as page freshness.\n")
                     summary.write("- A visible timestamp still needs to be correlated with a successful refresh before enabling polling.\n")
                 STATUS_FILE.write_text("SBERKASSA_CAPTURE_COMPLETE", encoding="utf-8")
                 print("SBERKASSA_CAPTURE_COMPLETE=YES", flush=True)
