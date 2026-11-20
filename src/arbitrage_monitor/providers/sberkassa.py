@@ -109,6 +109,42 @@ def _offer_rows(payload: Any):
     yield from walk(payload)
 
 
+
+def extract_erub_rub_offer_records(payload: Any, limit: int = 500) -> list[dict[str, str | None]]:
+    """Extract only back_rate/create_time from offer rows, preserving source order."""
+    if limit < 1:
+        raise ValueError("limit must be positive.")
+    records: list[dict[str, str | None]] = []
+    seen: set[int] = set()
+
+    def walk(node: Any, depth: int = 0) -> None:
+        if depth > 12 or len(records) >= limit:
+            return
+        if isinstance(node, dict):
+            identity = id(node)
+            if identity in seen:
+                return
+            seen.add(identity)
+            if "back_rate" in node:
+                back_rate = node.get("back_rate")
+                create_time = node.get("create_time")
+                records.append({
+                    "back_rate": str(back_rate)[:64] if back_rate is not None else None,
+                    "create_time": str(create_time)[:64] if create_time is not None else None,
+                })
+                return
+            for child in node.values():
+                if isinstance(child, (dict, list)):
+                    walk(child, depth + 1)
+        elif isinstance(node, list):
+            for child in node:
+                if isinstance(child, (dict, list)):
+                    walk(child, depth + 1)
+
+    walk(payload)
+    return records
+
+
 def build_erub_rub_offer_quote(
     payload: Any,
     *,
