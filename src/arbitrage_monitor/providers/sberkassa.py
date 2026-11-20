@@ -86,17 +86,27 @@ def _parse_rate(value: Any) -> Decimal | None:
 
 
 def _offer_rows(payload: Any):
-    """Yield offer-like dictionaries in their original nested-list order."""
-    if isinstance(payload, dict):
-        if "back_rate" in payload:
-            yield payload
-        for value in payload.values():
-            if isinstance(value, (dict, list)):
-                yield from _offer_rows(value)
-    elif isinstance(payload, list):
-        for value in payload:
-            if isinstance(value, (dict, list)):
-                yield from _offer_rows(value)
+    """Yield each offer-like dictionary once, preserving source order."""
+    seen: set[int] = set()
+
+    def walk(node: Any):
+        if isinstance(node, dict):
+            identity = id(node)
+            if identity in seen:
+                return
+            seen.add(identity)
+            if "back_rate" in node:
+                yield node
+                return
+            for value in node.values():
+                if isinstance(value, (dict, list)):
+                    yield from walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                if isinstance(value, (dict, list)):
+                    yield from walk(value)
+
+    yield from walk(payload)
 
 
 def build_erub_rub_offer_quote(
@@ -132,3 +142,76 @@ def build_erub_rub_offer_quote(
     if freshest is None:
         return SberkassaOfferQuote(average, False, None, len(matching), len(selected), "no_offer_created_within_15_minutes")
     return SberkassaOfferQuote(average, True, freshest, len(matching), len(selected))
+
+
+class SberkassaSnapshotQuoteProvider:
+    """Read sanitized ERUB -> RUB offers captured from the exact public-deals query."""
+
+    def __init__(self, snapshot_path: str = "sberkassa-current-inspection.json", *, max_snapshot_age_seconds: int = 900):
+        if max_snapshot_age_seconds <= 0:
+            raise ValueError("max_snapshot_age_seconds must be positive.")
+        self.snapshot_path = snapshot_path
+        self.max_snapshot_age_seconds = max_snapshot_age_seconds
+
+    def fetch_quote(self):
+        import json
+        from pathlib import Path
+
+        from ..models import Quote
+
+        try:
+            artifact = json.loads(Path(self.snapshot_path).read_text(encoding="utf-8"))
+        except FileNotFoundError as exc:
+            raise RuntimeError("Sberkassa authenticated inspection snapshot is missing.") from exc
+        except (OSError, json.JSONDecodeError) as exc:
+            raise RuntimeError("Sberkassa inspection snapshot cannot be read.") from exc
+
+        if not isinstance(artifact, dict) or artifact.get("source") != "sberkassa.site" or artifact.get("read_only") is not True:
+            raise RuntimeError("Sberkassa snapshot source or read-only marker is invalid.")
+        try:
+            captured_at = datetime.fromisoformat(str(artifact["captured_at_utc"]).replace("Z", "+00:00"))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RuntimeError("Sberkassa snapshot capture time is missing or invalid.") from exc
+        if captured_at.tzinfo is None:
+            captured_at = captured_at.replace(tzinfo=timezone.utc)
+        captured_at = captured_at.astimezone(timezone.utc)
+        age = (datetime.now(timezone.utc) - captured_at).total_seconds()
+        if age < -60 or age > self.max_snapshot_age_seconds:
+            raise RuntimeError("Sberkassa inspection snapshot is future-dated or stale.")
+
+        page = artifact.get("pages", {}).get("deals_everyone_offers", {})
+        if page.get("url_path") != "/deals#tab-3":
+            raise RuntimeError("Sberkassa snapshot is not from the Everyone Offers deals tab.")
+        request = page.get("offer_request", {})
+        if (
+            request.get("path") != "/public_deals/fetch"
+            or request.get("from") != "ERUB"
+            or request.get("to") != "RUB"
+            or request.get("status") != 200
+        ):
+            raise RuntimeError("Sberkassa offers were not fetched using the verified ERUB -> RUB request.")
+        records = page.get("offer_records")
+        if not isinstance(records, list) or not records:
+            raise RuntimeError("Sberkassa snapshot contains no normalized ERUB -> RUB offers.")
+
+        normalized = []
+        for row in records:
+            if not isinstance(row, dict):
+                raise RuntimeError("Sberkassa snapshot contains a malformed offer record.")
+            normalized.append({
+                "from_currency": "ERUB",
+                "to_currency": "RUB",
+                "back_rate": row.get("back_rate"),
+                "create_time": row.get("create_time"),
+            })
+        result = build_erub_rub_offer_quote({"offers": normalized}, now=captured_at)
+        if not result.available or result.rate is None:
+            raise RuntimeError(result.reason or "Sberkassa ERUB -> RUB quote is unavailable.")
+        return Quote(
+            source="Sberkassa",
+            pair="ERUB/RUB",
+            base_currency="ERUB",
+            quote_currency="RUB",
+            rate=result.rate,
+            observed_at=captured_at,
+        )
