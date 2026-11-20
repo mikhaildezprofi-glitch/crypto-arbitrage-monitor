@@ -22,7 +22,7 @@ class SberkassaProbeSyntaxTests(unittest.TestCase):
         self.assertIn('"/exchange": "exchange_rub_usdt"', source)
         self.assertIn("if seen_deals and seen_exchange", source)
         self.assertIn("quoteLines:", source)
-        self.assertIn('"visible_quote_lines"', source)
+        self.assertIn('"visible_quote_lines"', source)\n        self.assertIn("quoteDom:", source)\n        self.assertIn('"visible_quote_dom"', source)\n        self.assertIn("rate_inputs", source)\n        self.assertIn("selectedOptions", source)
         self.assertIn("exchange_rate|buy_rate|sell_rate", source)
         self.assertNotIn("volume|reserve|commission", source)
 
