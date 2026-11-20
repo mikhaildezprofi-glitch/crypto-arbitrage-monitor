@@ -10,6 +10,31 @@ Private project for read-only monitoring and calculation of the five-step route:
 
 Starting reference capital: 1000 USDT. Money Storage polling interval: 900 seconds (15 minutes). The BlackBit/Winance polling cadence remains within the agreed 900–3600-second range and has not yet been selected.
 
+## Four-source diagnostic collection mode
+
+A partial diagnostic collection can explicitly request only the first four route sources:
+
+```python
+from arbitrage_monitor.providers.collection import (
+    FOUR_STEP_PROVIDER_KEYS,
+    collect_quotes,
+)
+
+batch = collect_quotes(providers, required_keys=FOUR_STEP_PROVIDER_KEYS)
+```
+
+The selected sequence is Money Storage (USDT -> ECR), BlackBit (ECR -> USDT),
+Winance (USDT -> ERUB), and Sberkassa (ERUB -> RUB). The fifth Sberkassa
+Exchange source (RUB -> USDT) is not called, is not marked as missing, and
+does not make this diagnostic batch incomplete. Any failure among the selected
+four sources still makes the batch incomplete. Calling `collect_quotes(providers)`
+without an explicit selection retains the original five-source requirement.
+
+This is a four-source quote inspection only. It ends in RUB, so it is not a
+closed USDT arbitrage cycle: do not calculate or display final USDT, profit,
+ROI, or a successful arbitrage result for this mode. BlackBit remains
+indicative-only.
+
 ## BlackBit quote method
 
 - Resolve the exact ECR/USDT pair from the public `/site/currency_pairs` response.
