@@ -1,0 +1,55 @@
+name: Four-step read-only quote test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  money-storage:
+    name: Read Money Storage using its encrypted browser profile
+    uses: ./.github/workflows/browserless-eid-handoff-stable.yml
+    with:
+      target: money_storage
+    secrets: inherit
+
+  sberkassa:
+    name: Read Sberkassa using its encrypted browser profile
+    uses: ./.github/workflows/browserless-eid-handoff-stable.yml
+    with:
+      target: sberkassa
+    secrets: inherit
+
+  collect-four-sources:
+    name: Collect and report the four route quotes
+    needs: [money-storage, sberkassa]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Download normalized browser snapshots from this run
+        uses: actions/download-artifact@v5
+        with:
+          pattern: '*'
+          path: artifacts
+          merge-multiple: false
+      - name: Run four-source quote collection
+        env:
+          PYTHONPATH: src
+          MONEY_STORAGE_SNAPSHOT: artifacts/money-storage-current-offers/money-storage-current-offers.json
+          SBERKASSA_SNAPSHOT: artifacts/sberkassa-current-inspection/sberkassa-current-inspection.json
+        run: |
+          set -euo pipefail
+          python scripts/run_four_step_quote_test.py | tee four-step-quote-report.json
+      - name: Publish four-source report
+        if: always() && hashFiles('four-step-quote-report.json') != ''
+        uses: actions/upload-artifact@v5
+        with:
+          name: four-step-quote-report
+          path: four-step-quote-report.json
+          if-no-files-found: error
+          retention-days: 1
