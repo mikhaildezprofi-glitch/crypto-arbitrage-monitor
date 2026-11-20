@@ -228,6 +228,7 @@ def main() -> int:
         # be reused. This performs navigation only, never form submission.
         print("EID_HANDOFF=WAITING_FOR_MONEY_STORAGE_CALLBACK", flush=True)
         auth_deadline = time.monotonic() + DEADLINE_SECONDS
+        eid_provider_seen = False
         money_storage_callback_seen = False
         while time.monotonic() < auth_deadline:
             auth_state = cdp.command(
@@ -238,9 +239,16 @@ def main() -> int:
                 },
             ).get("result", {}).get("value", {})
             auth_url = urlparse(auth_state.get("url", ""))
+            auth_host = (auth_url.hostname or "").lower()
+            if auth_url.scheme == "https" and (
+                auth_host == "e-id.cards" or auth_host.endswith(".e-id.cards")
+            ):
+                eid_provider_seen = True
+                print("EID_HANDOFF=IDENTITY_PROVIDER_SEEN", flush=True)
             if (
-                auth_url.scheme == "https"
-                and auth_url.netloc.lower() == "storage.money"
+                eid_provider_seen
+                and auth_url.scheme == "https"
+                and auth_host == "storage.money"
                 and auth_url.path.rstrip("/") == "/account"
             ):
                 money_storage_callback_seen = True
@@ -249,7 +257,11 @@ def main() -> int:
 
         if not money_storage_callback_seen:
             STATUS_FILE.write_text("AUTH_TIMEOUT", encoding="utf-8")
-            print("EID_HANDOFF_TIMEOUT=NO_MONEY_STORAGE_CALLBACK", flush=True)
+            print(
+                "EID_HANDOFF_TIMEOUT=%s"
+                % ("NO_MONEY_STORAGE_CALLBACK" if eid_provider_seen else "EID_PROVIDER_NOT_SEEN"),
+                flush=True,
+            )
             return 1
 
         print("EID_HANDOFF=MONEY_STORAGE_CALLBACK_CONFIRMED", flush=True)
