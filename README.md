@@ -32,14 +32,14 @@ This is an indicative market-rate average, not a promise that a trade can be exe
 ## Sberkassa quote method
 
 - For ERUB -> RUB, use only `https://sberkassa.site/deals#tab-3`, the **«Всем предлагают»** tab. Do not substitute «Мне предлагают» or «Я предлагаю».
-- For any Sberkassa page that exposes a list of offers for the required direction, calculate the simple arithmetic mean of the first 20 matching offers in displayed order. If fewer than 20 valid offers are available, average all available offers; an empty list or malformed/non-positive rate makes the step unavailable.
-- Do not use commissions, offer amounts, volumes, reserves, min/max limits, or liquidity in either Sberkassa rate calculation. Do not select one offer or simulate partial fills. These values are not required and must not affect the average.
-- For `/exchange`, first establish whether the page exposes a list of independent offers. If it does, use the same first-20 arithmetic mean. If it exposes only one published conversion rate, use that single displayed rate without inventing an average.
-- Ignore individual offer creation times for freshness. Use the page's own visible update time only when it confirms a successful refresh of the displayed quote/list; opening the page alone is not proof of freshness.
-- For RUB -> USDT, inspect `https://sberkassa.site/exchange` separately and use that page's own confirmed update time. Never transfer the timestamp from the deals page to the exchange page.
-- If a page does not confirm a successful refresh, mark that route step unavailable and do not reuse an older snapshot. Individual offer creation timestamps never determine freshness.
+- First filter offers by explicit currency/direction identifiers for ERUB -> RUB. Do not infer direction from the numerical value of a rate or from a reciprocal `rate` field.
+- **Freshness is checked independently from rate selection:** if at least one correctly directed offer has a valid `create_time` between the collection time and 15 minutes before it, the current offers data is considered fresh. A future timestamp or an invalid/missing timestamp does not confirm freshness.
+- **Rate selection does not use `create_time`:** take the first 20 correctly directed offers in their original source order, regardless of their creation times. If fewer than 20 exist, use all of them.
+- Calculate the simple arithmetic mean of `back_rate` from those first 20 offers only. Ignore `rate` completely. If there are no matching offers or any selected `back_rate` is missing, non-numeric, non-finite, zero, or negative, the quote is unavailable.
+- Do not use commissions, offer amounts, volumes, reserves, min/max limits, or liquidity in the rate calculation. Do not select one offer or simulate partial fills.
+- For RUB -> USDT, inspect `https://sberkassa.site/exchange` separately. Its rate and freshness must be established independently; never transfer the deals-page timestamp to this page. If it exposes one published conversion rate, use that single rate; if it exposes a list of independent offers, establish their direction and apply the agreed first-20 average.
 - Sberkassa authentication starts directly at `https://sberkassa.site/login` in its own cloud Chromium run. The user completes the E-ID redirect initiated by Sberkassa in that same tab; the probe waits for the E-ID provider to be visited and for the browser to return to Sberkassa. Money Storage is not opened in this mode. Any additional consent or login is completed manually. No cookies or tokens are copied.
-- The live request schema, rates, and permitted polling method remain unverified.
+- The live request schema, numeric currency identifiers (if any), and permitted polling method remain unverified. The pure ERUB -> RUB calculation helper is not yet wired into the hourly collector.
 
 ## Safety and calculation rules
 
@@ -53,7 +53,7 @@ This is an indicative market-rate average, not a promise that a trade can be exe
 
 ## Current implementation status
 
-This repository includes the calculation core, read-only BlackBit and Winance quote adapters, a common read-only provider protocol, a quote collector, and a pure Money Storage offer parser plus first-20 arithmetic-average quote builder. The Money Storage parser normalizes raw API src=ECR/dst=USDT records to displayed USDT -> ECR direction. The authenticated standalone-Chromium workflow has completed a real read from the "Всем предлагают" tab and produced a normalized current-offers artifact. The bridge uses the same manually authenticated browser session; it does not export cookies or automate authentication. The average builder uses the first 20 available target-direction offers and timestamps the quote from the page's confirmed visible update marker. The Money Storage poll interval is configured as 900 seconds. The parser and average builder do not perform network requests or authentication; official permission and a supported cloud-side access method are still required before live polling can be enabled. The collector requests all five configured source keys independently, validates each source's required currency direction and positive rate, records per-source failures, and marks the batch incomplete when any required provider is missing or fails. It never substitutes a previous quote. Telegram delivery, persistent history, and deployment are not yet implemented.
+This repository includes the calculation core, read-only BlackBit and Winance quote adapters, a common read-only provider protocol, a quote collector, and a pure Money Storage offer parser plus first-20 arithmetic-average quote builder. The Money Storage parser normalizes raw API src=ECR/dst=USDT records to displayed USDT -> ECR direction. The authenticated standalone-Chromium workflow has completed a real read from the "Всем предлагают" tab and produced a normalized current-offers artifact. The bridge uses the same manually authenticated browser session; it does not export cookies or automate authentication. The average builder uses the first 20 available target-direction offers and timestamps the quote from the page's confirmed visible update marker. The Money Storage poll interval is configured as 900 seconds. A pure Sberkassa ERUB -> RUB helper now applies the agreed independent 15-minute freshness check and first-20 `back_rate` average, with unit tests. It is not yet connected to a live Sberkassa provider or the hourly collection cycle. The parser and average builders do not perform network requests or authentication; official permission and a supported cloud-side access method are still required before live polling can be enabled. The collector requests all five configured source keys independently, validates each source's required currency direction and positive rate, records per-source failures, and marks the batch incomplete when any required provider is missing or fails. It never substitutes a previous quote. Telegram delivery, persistent history, and deployment are not yet implemented.
 
 ## Run tests
 
@@ -62,7 +62,8 @@ This repository includes the calculation core, read-only BlackBit and Winance qu
 ## Configuration
 
 Environment variables:
-- BLACKBIT_API_BASE_URL (default: https://blackbit.exchange/site)\n- WINANCE_POLL_SECONDS (must be explicitly selected within 900–3600 seconds before polling starts)
+- BLACKBIT_API_BASE_URL (default: https://blackbit.exchange/site)
+- WINANCE_POLL_SECONDS (must be explicitly selected within 900–3600 seconds before polling starts)
 - WINANCE_API_URL (default: https://winance.exchange/site/currency_pairs)
 - QUOTE_MAX_AGE_SECONDS (must be explicitly selected after the polling cadence is chosen)
 
