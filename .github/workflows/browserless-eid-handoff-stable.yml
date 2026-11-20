@@ -11,12 +11,21 @@ on:
         options:
           - money_storage
           - sberkassa
+  workflow_call:
+    inputs:
+      target:
+        description: "Which authenticated quote source to inspect"
+        required: true
+        type: string
+    secrets:
+      CHROMIUM_PROFILE_PASSPHRASE:
+        required: true
 
 permissions:
   contents: read
 
 concurrency:
-  group: free-eid-cloud-browser-stable
+  group: free-eid-cloud-browser-stable-${{ inputs.target }}
   cancel-in-progress: true
 
 jobs:
