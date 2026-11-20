@@ -150,6 +150,7 @@ class CDP:
                 "json_response_count": 0,
                 "quote_fields": [],
                 "offer_schema_samples": [],
+                "http_response_headers": [],
             },
             "exchange_rub_usdt": {
                 "request_count": 0,
@@ -157,6 +158,7 @@ class CDP:
                 "json_response_count": 0,
                 "quote_fields": [],
                 "offer_schema_samples": [],
+                "http_response_headers": [],
             },
         }
 
@@ -212,9 +214,26 @@ class CDP:
                 "/exchange": "exchange_rub_usdt",
             }.get(self.current_path) if host == "sberkassa.site" else None
             if page_key:
-                statuses = self.capture[page_key]["response_statuses"]
+                captured = self.capture[page_key]
+                statuses = captured["response_statuses"]
                 if len(statuses) < 40:
                     statuses.append(status)
+                # Only allowlisted freshness/cache headers; never cookies or auth.
+                if params.get("type") in ("Document", "XHR", "Fetch"):
+                    raw_headers = response.get("headers", {})
+                    allowed = {"date", "last-modified", "expires", "age", "cache-control", "etag", "vary"}
+                    safe_headers = {
+                        str(key).lower(): str(value)[:200]
+                        for key, value in raw_headers.items()
+                        if str(key).lower() in allowed and len(str(value)) <= 200
+                    }
+                    if safe_headers and len(captured["http_response_headers"]) < 60:
+                        captured["http_response_headers"].append({
+                            "path": parsed.path[:160],
+                            "resource_type": params.get("type", "unknown"),
+                            "status": status,
+                            "headers": safe_headers,
+                        })
             print(
                 "HTTP_DIAG host=%s path=%s status=%s type=%s content_type=%s"
                 % (host, parsed.path, status, params.get("type", "unknown"), mime),
@@ -400,6 +419,7 @@ def main() -> int:
         page_markers: dict[str, list[str]] = {}
         page_quote_lines: dict[str, list[str]] = {}
         page_quote_dom: dict[str, dict] = {}
+        page_time_metadata: dict[str, list[dict]] = {}
         deals_ready_since: float | None = None
         exchange_navigation_started = False
         deadline = time.monotonic() + DEADLINE_SECONDS
@@ -421,6 +441,26 @@ def main() -> int:
                         .map(x => x.trim())
                         .filter(x => x && x.length <= 200 && /(RUB|руб|₽|USDT|курс|rate|обмен)/i.test(x))
                         .slice(0, 30),
+                      timeMetadata: (() => {
+                        const clean = value => String(value || "").trim().replace(/\\s+/g, " ").slice(0, 180);
+                        const found = [];
+                        const add = (kind, name, value) => {
+                          const v = clean(value);
+                          if (v && found.length < 50) found.push({kind, name: clean(name), value: v});
+                        };
+                        document.querySelectorAll("time[datetime], meta[content], [datetime], [data-updated], [data-update-time], [data-timestamp], [data-last-update]")
+                          .forEach(el => {
+                            if (el.matches("meta[content]")) {
+                              const name = el.getAttribute("name") || el.getAttribute("property") || el.getAttribute("itemprop") || "";
+                              if (/(date|time|updated|modified|publish)/i.test(name)) add("meta", name, el.getAttribute("content"));
+                            } else {
+                              for (const attr of ["datetime", "data-updated", "data-update-time", "data-timestamp", "data-last-update"]) {
+                                if (el.hasAttribute(attr)) add("attribute", attr, el.getAttribute(attr));
+                              }
+                            }
+                          });
+                        return found;
+                      })(),
                       quoteDom: (() => {
                         const visible = el => !!(el && el.getClientRects().length &&
                           getComputedStyle(el).visibility !== "hidden" &&
@@ -486,6 +526,7 @@ def main() -> int:
                 page_markers[page_name] = markers
                 page_quote_lines[page_name] = state.get("quoteLines", [])
                 page_quote_dom[page_name] = state.get("quoteDom", {})
+                page_time_metadata[page_name] = state.get("timeMetadata", [])
                 cdp.current_path = parsed.path
                 signature = (page_name, tuple(markers))
                 if signature != last_marker_signature or page_name != last_page_key:
@@ -559,6 +600,7 @@ def main() -> int:
                             "update_marker_lines": page_markers.get("deals_everyone_offers", []),
                             "visible_quote_lines": page_quote_lines.get("deals_everyone_offers", []),
                             "visible_quote_dom": page_quote_dom.get("deals_everyone_offers", {}),
+                            "dom_time_metadata": page_time_metadata.get("deals_everyone_offers", []),
                             **cdp.capture["deals_everyone_offers"],
                         },
                         "exchange_rub_usdt": {
@@ -567,6 +609,7 @@ def main() -> int:
                             "update_marker_lines": page_markers.get("exchange_rub_usdt", []),
                             "visible_quote_lines": page_quote_lines.get("exchange_rub_usdt", []),
                             "visible_quote_dom": page_quote_dom.get("exchange_rub_usdt", {}),
+                            "dom_time_metadata": page_time_metadata.get("exchange_rub_usdt", []),
                             **cdp.capture["exchange_rub_usdt"],
                         },
                     },
@@ -576,7 +619,7 @@ def main() -> int:
                     "The ERUB/RUB everyone-offers page and RUB/USDT exchange page are captured independently",
                         "Currency/direction identifiers and reciprocal rate fields are captured in sanitized form; no exchange rate is inferred from an unverified field",
                         "No raw response body, offer amounts, commissions, volumes, reserves, liquidity, or authentication material is published",
-                        "Page update markers are not yet correlated with a successful refresh",
+                        "DOM time metadata and allowlisted HTTP freshness/cache headers are diagnostic candidates only; they are not accepted as quote freshness until validated against a successful refresh",
                     ],
                 }
                 Path("sberkassa-current-inspection.json").write_text(
