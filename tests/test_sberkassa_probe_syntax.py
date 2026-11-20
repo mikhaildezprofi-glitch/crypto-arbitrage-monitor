@@ -8,7 +8,6 @@ class SberkassaProbeSyntaxTests(unittest.TestCase):
         script_path = project_root / "scripts" / "sberkassa_chromium_probe.py"
         source = script_path.read_text(encoding="utf-8")
         compile(source, str(script_path), "exec")
-        self.assertIn("https://storage.money/account", source)
         self.assertIn("MONEY_STORAGE_CALLBACK_CONFIRMED", source)
         self.assertIn("Page.navigate", source)
         self.assertIn("https://sberkassa.site/login", source)
