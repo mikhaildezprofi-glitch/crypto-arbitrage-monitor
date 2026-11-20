@@ -251,19 +251,94 @@ jobs:
               context = browser.new_context(viewport={"width": 1440, "height": 900}, java_script_enabled=True)
               page = context.new_page()
 
+              def safe_location(value):
+                  try:
+                      u = urlparse(value)
+                      return "%s%s" % (u.netloc, u.path)
+                  except Exception:
+                      return "unparseable"
+
+              def response_diagnostic(response):
+                  # Only log response metadata for Money Storage, E-ID and Cloudflare.
+                  # Never log query strings, cookies, authorization headers or response bodies.
+                  try:
+                      u = urlparse(response.url)
+                      host = (u.hostname or "").lower()
+                      if not (host == "storage.money" or host.endswith(".storage.money")
+                              or host == "e-id.cards" or host.endswith(".e-id.cards")
+                              or "cloudflare" in host):
+                          return
+                      h = response.headers
+                      ray = h.get("cf-ray", "absent")
+                      mitigated = h.get("cf-mitigated", "absent")
+                      server = h.get("server", "absent")
+                      ctype = h.get("content-type", "absent").split(";")[0]
+                      location = h.get("location")
+                      location_safe = safe_location(location) if location else "absent"
+                      kind = "document" if response.request.is_navigation_request() else response.request.resource_type
+                      print("HTTP_DIAG host=%s path=%s status=%s type=%s server=%s cf_ray=%s cf_mitigated=%s content_type=%s redirect_to=%s" %
+                            (host, u.path, response.status, kind, server, ray, mitigated, ctype, location_safe), flush=True)
+                      if mitigated.lower() == "challenge" or "/cdn-cgi/challenge-platform/" in u.path:
+                          print("CLOUDFLARE_CHALLENGE_DETECTED=YES", flush=True)
+                      if response.status in (401, 403, 429, 503):
+                          print("ACCESS_RESPONSE_CLASSIFICATION host=%s status=%s" % (host, response.status), flush=True)
+                  except Exception as exc:
+                      print("HTTP_DIAG_ERROR=%s" % type(exc).__name__, flush=True)
+
               def nav(frame):
                   if frame == page.main_frame:
                       u = urlparse(frame.url)
                       print("NAV=%s%s" % (u.netloc, u.path), flush=True)
+                      try:
+                          title = page.title()
+                          title_safe = title[:100].replace("\\n", " ")
+                          body = (page.locator("body").inner_text(timeout=1500) or "").lower()[:12000]
+                          markers = {
+                              "cloudflare_turnstile": "turnstile" in body or "cf-turnstile" in body,
+                              "cloudflare_check": "checking your browser" in body or "verify you are human" in body,
+                              "captcha": "captcha" in body or "robot" in body or "бот" in body,
+                              "access_denied": "access denied" in body or "доступ запрещ" in body,
+                          }
+                          print("PAGE_DIAG title=%r markers=%s" % (title_safe, markers), flush=True)
+                          if any(markers.values()):
+                              print("BOT_OR_ACCESS_CHALLENGE_SUSPECTED=YES", flush=True)
+                      except Exception as exc:
+                          print("PAGE_DIAG_UNAVAILABLE=%s" % type(exc).__name__, flush=True)
+
+              page.on("response", response_diagnostic)
               page.on("framenavigated", nav)
               page.on("pageerror", lambda e: print("PAGE_ERROR=%s" % str(e)[:180], flush=True))
 
+              print("INITIAL_NAVIGATION=storage.money/account", flush=True)
               page.goto("https://storage.money/account", wait_until="domcontentloaded", timeout=60000)
               print("BROWSER_READY=Money Storage entry page opened", flush=True)
+              print("INITIAL_PAGE_TITLE=%r" % page.title()[:100], flush=True)
               deadline = time.monotonic() + 1800
               saw_eid = False
               done = False
+              last_periodic_diag = 0
               while time.monotonic() < deadline:
+                  now = time.monotonic()
+                  if now - last_periodic_diag >= 20:
+                      last_periodic_diag = now
+                      try:
+                          current = urlparse(page.url)
+                          print("AUTH_PROGRESS host=%s path=%s" % (current.netloc, current.path), flush=True)
+                          title = page.title()
+                          body = (page.locator("body").inner_text(timeout=1200) or "").lower()[:12000]
+                          challenge = ("turnstile" in body or "cf-turnstile" in body
+                                       or "checking your browser" in body
+                                       or "verify you are human" in body
+                                       or "captcha" in body or "robot" in body)
+                          denied = ("access denied" in body or "доступ запрещ" in body)
+                          print("AUTH_PAGE_STATE title=%r challenge_markers=%s access_denied_markers=%s" %
+                                (title[:100], challenge, denied), flush=True)
+                          if challenge:
+                              print("BOT_OR_ACCESS_CHALLENGE_SUSPECTED=YES", flush=True)
+                          if denied:
+                              print("ACCESS_DENIED_PAGE_SUSPECTED=YES", flush=True)
+                      except Exception as exc:
+                          print("AUTH_PROGRESS_DIAG_UNAVAILABLE=%s" % type(exc).__name__, flush=True)
                   u = urlparse(page.url)
                   host = (u.hostname or "").lower()
                   if host == "e-id.cards" or host.endswith(".e-id.cards"):
