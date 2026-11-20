@@ -57,9 +57,9 @@ This repository includes the calculation core, read-only BlackBit and Winance qu
 ## Configuration
 
 Environment variables:
-- BLACKBIT_API_BASE_URL (default: https://blackbit.exchange/site)\n- WINANCE_POLL_SECONDS (default: 300)
+- BLACKBIT_API_BASE_URL (default: https://blackbit.exchange/site)\n- WINANCE_POLL_SECONDS (must be explicitly selected within 900–3600 seconds before polling starts)
 - WINANCE_API_URL (default: https://winance.exchange/site/currency_pairs)
-- QUOTE_MAX_AGE_SECONDS (default: 900)
+- QUOTE_MAX_AGE_SECONDS (must be explicitly selected after the polling cadence is chosen)
 
 Money Storage polling interval: 900 seconds (15 minutes).
 The BlackBit adapter reads only the displayed ECR/USDT last_rate and marks it indicative. The Winance adapter is read-only and filters strictly for pair ID 18 / ERUB-USDT.
