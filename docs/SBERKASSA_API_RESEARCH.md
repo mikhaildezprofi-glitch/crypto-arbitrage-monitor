@@ -38,7 +38,14 @@ Do not assume these are the same market, endpoint, fee schedule, or direction. N
 
 ## Shared E-ID authentication workflow
 
-Sberkassa uses the same E-ID identity-provider flow as Money Storage. The cloud inspection workflow therefore reuses the existing Money Storage -> E-ID entry point and the same standalone Chromium profile:
+Sberkassa uses the same E-ID identity provider as Money Storage, but its login workflow must begin on Sberkassa's own page. The cloud inspection workflow opens `https://sberkassa.site/login` directly in a standalone Chromium profile:
+
+1. Open `https://sberkassa.site/login`.
+2. Complete the E-ID redirect initiated by Sberkassa manually in the same browser tab.
+3. The probe confirms that the browser visited `e-id.cards` and then returned to `sberkassa.site/login`.
+4. Continue inspecting the authenticated Sberkassa pages in that same session.
+
+Do not open `storage.money/account` as an intermediate login step in the Sberkassa workflow. Money Storage has its own separate workflow target. Any additional Sberkassa consent or login is completed manually. No cookies or tokens are copied.
 
 1. Open `https://storage.money/account` to establish the normal E-ID authorization flow.
 2. The account owner completes E-ID and any ordinary verification manually in the visible noVNC browser.
