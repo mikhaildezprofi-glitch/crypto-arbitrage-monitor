@@ -366,7 +366,7 @@ def main() -> int:
         last_marker_signature = None
         page_timestamps: dict[str, str | None] = {}
         page_markers: dict[str, list[str]] = {}
-        page_quote_lines: dict[str, list[str]] = {}
+        page_quote_lines: dict[str, list[str]] = {}\n        page_quote_dom: dict[str, dict] = {}
         deadline = time.monotonic() + DEADLINE_SECONDS
 
         while time.monotonic() < deadline:
@@ -386,6 +386,32 @@ def main() -> int:
                         .map(x => x.trim())
                         .filter(x => x && x.length <= 200 && /(RUB|руб|₽|USDT|курс|rate|обмен)/i.test(x))
                         .slice(0, 30),
+                      quoteDom: (() => {
+                        const visible = el => !!(el && el.getClientRects().length &&
+                          getComputedStyle(el).visibility !== "hidden" &&
+                          getComputedStyle(el).display !== "none");
+                        const clean = value => String(value || "").trim().replace(/\\s+/g, " ").slice(0, 160);
+                        const selects = Array.from(document.querySelectorAll("select"))
+                          .filter(visible).slice(0, 12).map(el => ({
+                            label: clean(el.labels && Array.from(el.labels).map(x => x.innerText).join(" ")),
+                            selected: clean(el.selectedOptions && el.selectedOptions[0] && el.selectedOptions[0].textContent),
+                            value: clean(el.value)
+                          }));
+                        const rateNodes = Array.from(document.querySelectorAll("body *"))
+                          .filter(el => visible(el) && el.children.length === 0)
+                          .map(el => clean(el.innerText || el.textContent))
+                          .filter(text => text && text.length <= 160 &&
+                            /(?:курс|rate|RUB|USDT|₽)/i.test(text) && /\\d/.test(text))
+                          .slice(0, 30);
+                        const rateInputs = Array.from(document.querySelectorAll("input"))
+                          .filter(visible).filter(el =>
+                            /rate|курс/i.test([el.name, el.id, el.getAttribute("aria-label"), el.placeholder].join(" "))
+                          ).slice(0, 8).map(el => ({
+                            label: clean([el.name, el.id, el.getAttribute("aria-label"), el.placeholder].join(" ")),
+                            value: clean(el.value)
+                          })).filter(el => /^\\d+(?:[.,]\\d+)?$/.test(el.value));
+                        return { selects, rate_nodes: rateNodes, rate_inputs: rateInputs };
+                      })(),
                       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
                       localNow: (() => {
                         const now = new Date();
@@ -423,7 +449,7 @@ def main() -> int:
                 page_name = "deals_everyone_offers" if is_deals else "exchange_rub_usdt"
                 markers = state.get("updateLines", [])
                 page_markers[page_name] = markers
-                page_quote_lines[page_name] = state.get("quoteLines", [])
+                page_quote_lines[page_name] = state.get("quoteLines", [])\n                page_quote_dom[page_name] = state.get("quoteDom", {})
                 cdp.current_path = parsed.path
                 signature = (page_name, tuple(markers))
                 if signature != last_marker_signature or page_name != last_page_key:
@@ -477,14 +503,14 @@ def main() -> int:
                             "url_path": "/deals#tab-3",
                             "page_updated_at": page_timestamps.get("deals_everyone_offers"),
                             "update_marker_lines": page_markers.get("deals_everyone_offers", []),
-                            "visible_quote_lines": page_quote_lines.get("deals_everyone_offers", []),
+                            "visible_quote_lines": page_quote_lines.get("deals_everyone_offers", []),\n                            "visible_quote_dom": page_quote_dom.get("deals_everyone_offers", {}),
                             **cdp.capture["deals_everyone_offers"],
                         },
                         "exchange_rub_usdt": {
                             "url_path": "/exchange",
                             "page_updated_at": page_timestamps.get("exchange_rub_usdt"),
                             "update_marker_lines": page_markers.get("exchange_rub_usdt", []),
-                            "visible_quote_lines": page_quote_lines.get("exchange_rub_usdt", []),
+                            "visible_quote_lines": page_quote_lines.get("exchange_rub_usdt", []),\n                            "visible_quote_dom": page_quote_dom.get("exchange_rub_usdt", {}),
                             **cdp.capture["exchange_rub_usdt"],
                         },
                     },
