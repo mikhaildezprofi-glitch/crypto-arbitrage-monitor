@@ -16,6 +16,8 @@ class SberkassaProbeSyntaxTests(unittest.TestCase):
         self.assertIn("eid_provider_seen", source)
         # Read-only navigation is used only between the two approved quote pages.
         self.assertIn('"Runtime.evaluate"', source)
+        auth_probe = source.split('auth_state = cdp.command(', 1)[1].split('auth_url = urlparse(auth_state.get("url", ""))', 1)[0]
+        self.assertIn('"awaitPromise": True', auth_probe)
         self.assertIn('"Page.navigate"', source)
         self.assertIn('SBERKASSA_SESSION=RESTORED_PROFILE_REUSED', source)
         self.assertIn('SBERKASSA_AUTO_NAVIGATE=exchange', source)
