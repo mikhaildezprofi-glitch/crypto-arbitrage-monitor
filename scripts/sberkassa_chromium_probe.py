@@ -221,6 +221,44 @@ def main() -> int:
         cdp.command("Network.enable")
         print("SBERKASSA_PROBE_READY=YES", flush=True)
 
+        # Reuse the exact Money Storage -> E-ID entry point. Wait until the
+        # user completes the ordinary E-ID flow and the browser returns to
+        # Money Storage's account callback; then visit Sberkassa in the same
+        # Chromium profile so the shared E-ID identity-provider session can
+        # be reused. This performs navigation only, never form submission.
+        print("EID_HANDOFF=WAITING_FOR_MONEY_STORAGE_CALLBACK", flush=True)
+        auth_deadline = time.monotonic() + DEADLINE_SECONDS
+        money_storage_callback_seen = False
+        while time.monotonic() < auth_deadline:
+            auth_state = cdp.command(
+                "Runtime.evaluate",
+                {
+                    "expression": "({url: location.href, ready: document.readyState})",
+                    "returnByValue": True,
+                },
+            ).get("result", {}).get("value", {})
+            auth_url = urlparse(auth_state.get("url", ""))
+            if (
+                auth_url.scheme == "https"
+                and auth_url.netloc.lower() == "storage.money"
+                and auth_url.path.rstrip("/") == "/account"
+            ):
+                money_storage_callback_seen = True
+                break
+            time.sleep(2)
+
+        if not money_storage_callback_seen:
+            STATUS_FILE.write_text("AUTH_TIMEOUT", encoding="utf-8")
+            print("EID_HANDOFF_TIMEOUT=NO_MONEY_STORAGE_CALLBACK", flush=True)
+            return 1
+
+        print("EID_HANDOFF=MONEY_STORAGE_CALLBACK_CONFIRMED", flush=True)
+        cdp.command(
+            "Page.navigate",
+            {"url": "https://sberkassa.site/login"},
+        )
+        print("SBERKASSA_NAVIGATION=STARTED_IN_SAME_CHROMIUM_PROFILE", flush=True)
+
         seen_deals = False
         seen_exchange = False
         last_target_activity = 0.0
