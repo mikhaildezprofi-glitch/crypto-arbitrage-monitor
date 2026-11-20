@@ -26,6 +26,7 @@ import websocket
 sys.path.insert(0, str(Path.cwd()))
 sys.path.insert(0, str(Path.cwd() / "src"))
 from scripts.money_storage_cloud_read import parse_page_update_timestamp
+from arbitrage_monitor.providers.sberkassa import extract_erub_rub_offer_records
 
 DEBUG_ENDPOINT = "http://127.0.0.1:9222/json/list"
 STATUS_FILE = Path("/tmp/eid-auth-status")
@@ -84,39 +85,6 @@ def extract_offer_schema_samples(payload: object, limit: int = 30) -> list[dict[
     return samples
 
 
-
-
-def extract_erub_rub_offer_records(payload: object, limit: int = 500) -> list[dict[str, str | None]]:
-    """Retain only back_rate/create_time from rows returned by the exact ERUB -> RUB API query."""
-    records: list[dict[str, str | None]] = []
-    seen: set[int] = set()
-
-    def walk(node: object, depth: int = 0) -> None:
-        if depth > 12 or len(records) >= limit:
-            return
-        if isinstance(node, dict):
-            identity = id(node)
-            if identity in seen:
-                return
-            seen.add(identity)
-            if "back_rate" in node:
-                back_rate = node.get("back_rate")
-                create_time = node.get("create_time")
-                records.append({
-                    "back_rate": str(back_rate)[:64] if back_rate is not None else None,
-                    "create_time": str(create_time)[:64] if create_time is not None else None,
-                })
-                return
-            for child in node.values():
-                if isinstance(child, (dict, list)):
-                    walk(child, depth + 1)
-        elif isinstance(node, list):
-            for child in node:
-                if isinstance(child, (dict, list)):
-                    walk(child, depth + 1)
-
-    walk(payload)
-    return records
 
 
 def safe_location(value: str) -> str:
