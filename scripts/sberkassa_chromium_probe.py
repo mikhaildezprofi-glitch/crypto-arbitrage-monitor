@@ -136,6 +136,15 @@ def extract_quote_fields(value: object) -> list[tuple[str, str]]:
     return found
 
 
+def parse_stream_quote_payload(raw: str) -> tuple[list[tuple[str, str]], list[dict[str, str]]]:
+    """Parse JSON stream frames but retain only whitelisted quote/time fields."""
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return [], []
+    return extract_quote_fields(payload), extract_offer_schema_samples(payload)
+
+
 class CDP:
     def __init__(self, ws_url: str):
         self.ws = websocket.create_connection(
@@ -152,6 +161,8 @@ class CDP:
                 "quote_fields": [],
                 "offer_schema_samples": [],
                 "http_response_headers": [],
+                "stream_quote_fields": [],
+                "request_timing": [],
             },
             "exchange_rub_usdt": {
                 "request_count": 0,
@@ -160,8 +171,25 @@ class CDP:
                 "quote_fields": [],
                 "offer_schema_samples": [],
                 "http_response_headers": [],
+                "stream_quote_fields": [],
+                "request_timing": [],
             },
         }
+
+    def record_stream_payload(self, raw: str, source: str) -> None:
+        page_key = {
+            "/deals": "deals_everyone_offers",
+            "/exchange": "exchange_rub_usdt",
+        }.get(self.current_path)
+        if not page_key:
+            return
+        fields, samples = parse_stream_quote_payload(raw)
+        captured = self.capture[page_key]
+        target = captured["stream_quote_fields"]
+        remaining = max(0, 120 - len(target))
+        target.extend([[source, key, value] for key, value in fields[:remaining]])
+        if samples:
+            captured["offer_schema_samples"] = (captured["offer_schema_samples"] + samples)[:60]
 
     def close(self) -> None:
         self.ws.close()
@@ -202,6 +230,16 @@ class CDP:
                 ),
                 flush=True,
             )
+        elif method == "Network.webSocketFrameReceived":
+            response = params.get("response", {})
+            frame = params.get("response", {})
+            payload = frame.get("payloadData", "")
+            if payload and len(payload) <= 200000:
+                self.record_stream_payload(payload, "websocket")
+        elif method == "Network.eventSourceMessageReceived":
+            payload = params.get("data", "")
+            if payload and len(payload) <= 200000:
+                self.record_stream_payload(payload, "eventsource")
         elif method == "Network.responseReceived":
             response = params.get("response", {})
             parsed = urlparse(response.get("url", ""))
@@ -222,6 +260,21 @@ class CDP:
                 statuses = captured["response_statuses"]
                 if len(statuses) < 40:
                     statuses.append(status)
+                timing = response.get("timing", {})
+                timing_sample = {
+                    "path": parsed.path[:160],
+                    "resource_type": params.get("type", "unknown"),
+                    "status": status,
+                    "from_disk_cache": bool(response.get("fromDiskCache", False)),
+                    "from_service_worker": bool(response.get("fromServiceWorker", False)),
+                    "from_prefetch_cache": bool(response.get("fromPrefetchCache", False)),
+                    "response_time": response.get("responseTime"),
+                    "request_time": timing.get("requestTime"),
+                    "receive_headers_end_ms": timing.get("receiveHeadersEnd"),
+                    "encoded_data_length": response.get("encodedDataLength"),
+                }
+                if len(captured["request_timing"]) < 80:
+                    captured["request_timing"].append(timing_sample)
                 # Only allowlisted freshness/cache headers; never cookies or auth.
                 if params.get("type") in ("Document", "XHR", "Fetch"):
                     raw_headers = response.get("headers", {})
@@ -425,6 +478,7 @@ def main() -> int:
         page_quote_lines: dict[str, list[str]] = {}
         page_quote_dom: dict[str, dict] = {}
         page_time_metadata: dict[str, list[dict]] = {}
+        page_source_inventory: dict[str, dict] = {}
         deals_ready_since: float | None = None
         exchange_navigation_started = False
         deadline = time.monotonic() + DEADLINE_SECONDS
@@ -493,6 +547,57 @@ def main() -> int:
                           })).filter(el => /^\\d+(?:[.,]\\d+)?$/.test(el.value));
                         return { selects, rate_nodes: rateNodes, rate_inputs: rateInputs };
                       })(),
+                      sourceInventory: (() => {
+                        const safePath = value => {
+                          try { const u = new URL(value, location.href); return u.origin === location.origin ? u.pathname : ""; }
+                          catch (_) { return ""; }
+                        };
+                        const numeric = value => /^[-+]?\\d+(?:[.,]\\d+)?$/.test(String(value || "").trim());
+                        const timeLike = value => /^(?:\\d{4}-\\d{2}-\\d{2}|\\d{1,2}[.\\/]\\d{1,2}[.\\/]\\d{2,4}|\\d{1,2}:\\d{2})/.test(String(value || "").trim());
+                        const currencyLike = value => /^(RUB|USDT|USD|RUR|\\u20bd|руб\\.?|тезер)$/i.test(String(value || "").trim());
+                        const safeKey = key => /^(rate|back_rate|exchange_rate|buy_rate|sell_rate|rate_value|price|currency|currency_id|from|to|from_id|to_id|base_currency|quote_currency|pair|pair_id|direction|updated_at|updatedAt|timestamp|date|time|last_updated|refresh_time)$/i.test(String(key));
+                        const candidates = [];
+                        const add = (source, key, value) => {
+                          const v = String(value ?? "").trim().slice(0, 80);
+                          if (v && (numeric(v) || timeLike(v) || currencyLike(v)) && candidates.length < 120)
+                            candidates.push({source, key: String(key).slice(0, 80), value: v});
+                        };
+                        const walk = (node, source, depth = 0) => {
+                          if (!node || depth > 7 || candidates.length >= 120) return;
+                          if (Array.isArray(node)) { node.slice(0, 40).forEach(x => walk(x, source, depth + 1)); return; }
+                          if (typeof node !== "object") return;
+                          Object.entries(node).slice(0, 100).forEach(([key, value]) => {
+                            if (safeKey(key) && (typeof value === "string" || typeof value === "number")) add(source, key, value);
+                            else if (value && typeof value === "object") walk(value, source + "." + key, depth + 1);
+                          });
+                        };
+                        document.querySelectorAll("*").forEach(el => {
+                          for (const attr of Array.from(el.attributes || [])) {
+                            if (/(rate|price|currency|pair|direction|updated|timestamp|refresh|date|time)/i.test(attr.name))
+                              add("dom-attribute", attr.name, attr.value);
+                          }
+                        });
+                        document.querySelectorAll("input").forEach(el => {
+                          const key = [el.name, el.id, el.getAttribute("aria-label"), el.placeholder].join(" ");
+                          if (/(rate|price|currency|updated|timestamp|date|time)/i.test(key)) add("input", key, el.value);
+                        });
+                        document.querySelectorAll('script[type="application/json"],script[type="application/ld+json"],script#__NEXT_DATA__').forEach((el, i) => {
+                          try { walk(JSON.parse(el.textContent || "{}"), "embedded-json-" + i); } catch (_) {}
+                        });
+                        const stateNames = Object.getOwnPropertyNames(window).filter(name =>
+                          /^__(INITIAL_STATE|INITIAL_DATA|PRELOADED_STATE|APOLLO_STATE|NEXT_DATA|NUXT)__$/i.test(name) ||
+                          /^(reduxStore|appState|initialState|preloadedState)$/i.test(name)
+                        ).slice(0, 12);
+                        stateNames.forEach(name => { try { walk(window[name], "window." + name); } catch (_) {} });
+                        const scripts = Array.from(document.scripts).map(el => safePath(el.src)).filter(Boolean).slice(0, 40);
+                        const resources = performance.getEntriesByType("resource").map(entry => ({
+                          path: safePath(entry.name), initiator: entry.initiatorType || "",
+                          duration_ms: Math.round(entry.duration || 0),
+                          response_end_ms: Math.round(entry.responseEnd || 0),
+                          transfer_size: entry.transferSize || 0
+                        })).filter(entry => entry.path).slice(-100);
+                        return {numeric_candidates: candidates, script_paths: scripts, resources};
+                      })(),
                       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
                       localNow: (() => {
                         const now = new Date();
@@ -533,6 +638,7 @@ def main() -> int:
                 page_quote_lines[page_name] = state.get("quoteLines", [])
                 page_quote_dom[page_name] = state.get("quoteDom", {})
                 page_time_metadata[page_name] = state.get("timeMetadata", [])
+                page_source_inventory[page_name] = state.get("sourceInventory", {})
                 cdp.current_path = parsed.path
                 signature = (page_name, tuple(markers))
                 if signature != last_marker_signature or page_name != last_page_key:
@@ -607,6 +713,7 @@ def main() -> int:
                             "visible_quote_lines": page_quote_lines.get("deals_everyone_offers", []),
                             "visible_quote_dom": page_quote_dom.get("deals_everyone_offers", {}),
                             "dom_time_metadata": page_time_metadata.get("deals_everyone_offers", []),
+                            "source_inventory": page_source_inventory.get("deals_everyone_offers", {}),
                             **cdp.capture["deals_everyone_offers"],
                         },
                         "exchange_rub_usdt": {
@@ -616,6 +723,7 @@ def main() -> int:
                             "visible_quote_lines": page_quote_lines.get("exchange_rub_usdt", []),
                             "visible_quote_dom": page_quote_dom.get("exchange_rub_usdt", {}),
                             "dom_time_metadata": page_time_metadata.get("exchange_rub_usdt", []),
+                            "source_inventory": page_source_inventory.get("exchange_rub_usdt", {}),
                             **cdp.capture["exchange_rub_usdt"],
                         },
                     },
@@ -623,7 +731,9 @@ def main() -> int:
                         "The restored authenticated profile is tested first; manual E-ID is needed only when the session is no longer valid",
                     "The probe automatically visits /exchange after collecting the deals page using read-only navigation",
                     "The ERUB/RUB everyone-offers page and RUB/USDT exchange page are captured independently",
-                        "Currency/direction identifiers and reciprocal rate fields are captured in sanitized form; no exchange rate is inferred from an unverified field",
+                        "Search includes JSON XHR/fetch responses, WebSocket/EventSource JSON frames, embedded JSON state, selected window state stores, DOM data attributes, numeric rate inputs, script paths, resource timing, and response cache metadata",
+                        "Only whitelisted numeric quote/time fields and currency/direction identifiers are retained; no raw stream frames, raw response bodies, or arbitrary page state is published",
+                        "No exchange rate is inferred from an unverified field",
                         "No raw response body, offer amounts, commissions, volumes, reserves, liquidity, or authentication material is published",
                         "DOM time metadata and allowlisted HTTP freshness/cache headers are diagnostic candidates only; they are not accepted as quote freshness until validated against a successful refresh",
                     ],
