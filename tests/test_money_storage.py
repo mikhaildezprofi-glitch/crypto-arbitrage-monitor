@@ -104,12 +104,14 @@ class MoneyStorageParserTests(unittest.TestCase):
             parse_public_offer(raw_offer(rate="0.20")),
             parse_public_offer(raw_offer(rate="0.30")),
         )
-        quote = average_first_20_offer_rate(offers)
+        observed = datetime(2026, 11, 16, 12, 0, tzinfo=timezone.utc)
+        quote = average_first_20_offer_rate(offers, observed_at=observed)
         self.assertEqual(quote.rate, Decimal("0.25"))
+        self.assertEqual(quote.observed_at, observed)
 
     def test_average_rejects_empty_offer_list(self):
         with self.assertRaisesRegex(ValueError, "no USDT/ECR offers"):
-            average_first_20_offer_rate([])
+            average_first_20_offer_rate([], observed_at=datetime(2026, 11, 16, 12, 0, tzinfo=timezone.utc))
 
     def test_money_storage_polling_interval_is_15_minutes(self):
         self.assertEqual(MONEY_STORAGE_POLL_SECONDS, 900)
@@ -129,50 +131,11 @@ class MoneyStorageHttpProviderTests(unittest.TestCase):
                 from_currency="ECR", to_currency="USDT", endpoint="http://storage.money/public_deals/fetch"
             )
 
-    def test_unauthorized_response_fails_closed_without_quote(self):
-        from urllib.error import HTTPError
+    def test_direct_http_provider_refuses_to_publish_without_page_timestamp(self):
         from unittest.mock import patch
 
         provider = MoneyStorageQuoteProvider(from_currency="ECR", to_currency="USDT")
-        error = HTTPError(provider.endpoint, 401, "Unauthorized", {}, None)
-        with patch("urllib.request.urlopen", side_effect=error):
-            with self.assertRaisesRegex(RuntimeError, "requires authentication"):
+        with patch("urllib.request.urlopen") as mocked:
+            with self.assertRaisesRegex(RuntimeError, "cannot verify the page update timestamp"):
                 provider.fetch_quote()
-
-    def test_successful_provider_uses_confirmed_filters_and_averages_first_20(self):
-        import io
-        import json
-        from unittest.mock import patch
-
-        rows = [
-            raw_offer(rate=str(Decimal("0.20") + Decimal(i) / 100))
-            for i in range(20)
-        ]
-        payload = {"result": "ok", "data": rows}
-        provider = MoneyStorageQuoteProvider(from_currency="ECR", to_currency="USDT")
-
-        with patch(
-            "urllib.request.urlopen",
-            return_value=io.BytesIO(json.dumps(payload).encode("utf-8")),
-        ) as mocked:
-            quote = provider.fetch_quote()
-
-        request = mocked.call_args.args[0]
-        self.assertEqual(
-            request.full_url,
-            "https://storage.money/public_deals/fetch?offset=0&limit=20&from=ECR&to=USDT",
-        )
-        expected = sum((Decimal(row["rate"]) for row in rows), Decimal("0")) / Decimal("20")
-        self.assertEqual(quote.rate, expected)
-        self.assertEqual(quote.pair, "USDT/ECR")
-
-    def test_rate_limit_response_is_not_retried(self):
-        from urllib.error import HTTPError
-        from unittest.mock import patch
-
-        provider = MoneyStorageQuoteProvider(from_currency="ECR", to_currency="USDT")
-        error = HTTPError(provider.endpoint, 429, "Too Many Requests", {}, None)
-        with patch("urllib.request.urlopen", side_effect=error) as mocked:
-            with self.assertRaisesRegex(RuntimeError, "no retry was attempted"):
-                provider.fetch_quote()
-        self.assertEqual(mocked.call_count, 1)
+        mocked.assert_not_called()
