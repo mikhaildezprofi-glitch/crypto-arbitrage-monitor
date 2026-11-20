@@ -8,7 +8,7 @@ Private project for read-only monitoring and calculation of the five-step route:
 4. Sberkassa: ERUB -> RUB
 5. Sberkassa Exchange: RUB -> USDT
 
-Starting reference capital: 1000 USDT. Winance polling interval: 300 seconds. Money Storage polling interval: 900 seconds (15 minutes).
+Starting reference capital: 1000 USDT. Money Storage polling interval: 900 seconds (15 minutes). The BlackBit/Winance polling cadence remains within the agreed 900–3600-second range and has not yet been selected.
 
 ## BlackBit quote method
 
@@ -25,9 +25,16 @@ Starting reference capital: 1000 USDT. Winance polling interval: 300 seconds. Mo
 - If fewer than 20 target-direction offers are returned, average the available offers; an empty result is unavailable.
 - Do not select one offer, add offer amounts, combine liquidity, assume partial fills, or simulate a purchase.
 - The quote timestamp is the time the page was observed during polling. The source offer creation timestamps remain available as row metadata.
-- The displayed commission belongs to the offer creator/seller when we accept offers in the "Мне предлагают" direction; it is not charged to this route calculation.
+- Per project rule, the displayed Money Storage commission is retained only as source metadata and is not deducted from this route calculation.
 
 This is an indicative market-rate average, not a promise that a trade can be executed at that rate. The monitor does not buy, accept, create, or modify offers.
+
+## Sberkassa quote method
+
+- For ERUB -> RUB, use only `https://sberkassa.site/deals#tab-3`, the **«Всем предлагают»** tab. Do not substitute «Мне предлагают» or «Я предлагаю».
+- Ignore individual offer creation times for freshness. Use the page's own visible update time only when it confirms a successful refresh of the offers; opening the page alone is not proof of freshness.
+- For RUB -> USDT, inspect `https://sberkassa.site/exchange` separately and use that page's own confirmed update time. Never transfer the timestamp from the deals page to the exchange page.
+- If a page does not confirm a successful refresh, mark that route step unavailable and do not reuse an older snapshot. The live request schema, rates, fees, limits, and permitted polling method remain unverified.
 
 ## Safety and calculation rules
 
