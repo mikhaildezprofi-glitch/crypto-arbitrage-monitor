@@ -23,9 +23,9 @@ class SberkassaProbeSyntaxTests(unittest.TestCase):
         self.assertIn('sourceInventory: await (async () => {', capture_probe)
         self.assertIn('"awaitPromise": True', capture_probe)
         self.assertIn('"Page.navigate"', source)
-        self.assertIn('SBERKASSA_SESSION=RESTORED_PROFILE_REUSED', source)
-        self.assertIn('SBERKASSA_AUTO_NAVIGATE=exchange', source)
-        self.assertIn('session-authenticated.txt', source)
+        self.assertIn("SBERKASSA_SESSION=RESTORED_PROFILE_REUSED", source)
+        self.assertIn("SBERKASSA_AUTO_NAVIGATE=exchange", source)
+        self.assertIn("session-authenticated.txt", source)
         self.assertIn('r"(rate|price|updated|timestamp|date|time)"', source)
         self.assertIn("currency_id|from_id|to_id", source)
         self.assertIn('"/exchange": "exchange_rub_usdt"', source)
@@ -52,12 +52,15 @@ class SberkassaProbeSyntaxTests(unittest.TestCase):
         self.assertIn("getAll(undefined, 20)", source)
         self.assertNotIn("volume|reserve|commission", source)
 
-    def test_sberkassa_uses_money_storage_style_first_twenty_average(self):
+    def test_sberkassa_uses_the_agreed_independent_freshness_and_average_rules(self):
         project_root = Path(__file__).resolve().parents[1]
         readme = (project_root / "README.md").read_text(encoding="utf-8")
-        self.assertIn("arithmetic mean of the first 20 matching offers", readme)
-        self.assertIn("Do not use commissions, offer amounts, volumes, reserves", readme)
-        self.assertIn("single displayed rate without inventing an average", readme)
+        self.assertIn("at least one correctly directed offer", readme)
+        self.assertIn("15 minutes before it", readme)
+        self.assertIn("regardless of their creation times", readme)
+        self.assertIn("arithmetic mean of `back_rate`", readme)
+        self.assertIn("Ignore `rate` completely", readme)
+        self.assertIn("single rate", readme)
 
     def test_sberkassa_workflow_starts_from_its_own_login_page(self):
         project_root = Path(__file__).resolve().parents[1]
