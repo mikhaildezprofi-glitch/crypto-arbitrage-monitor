@@ -118,7 +118,7 @@ class TransientMoneyStorageReadError(RuntimeError):
 
 
 
-def parse_authenticated_payload(payload: Mapping[str, Any], observed_at: datetime | None = None) -> dict[str, Any]:
+def parse_authenticated_payload(payload: Mapping[str, Any], observed_at: datetime) -> dict[str, Any]:
     if not isinstance(payload, Mapping) or payload.get("result") != "ok":
         raise ValueError("Money Storage did not return result=ok.")
     offers = parse_public_offers(payload)
