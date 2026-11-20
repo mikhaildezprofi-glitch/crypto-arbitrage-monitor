@@ -32,13 +32,26 @@ jobs:
       - name: Keep browser and Cloudflare tunnel alive during E-ID handoff
         shell: bash
         timeout-minutes: 35
+        env:
+          EID_BROWSER_HTTP_PASSWORD: ${{ secrets.EID_BROWSER_HTTP_PASSWORD }}
+          EID_BROWSER_VNC_PASSWORD: ${{ secrets.EID_BROWSER_VNC_PASSWORD }}
         run: |
           set -euo pipefail
           umask 077
 
-          VNC_PASSWORD="$(python3 -c 'import secrets,string; print("".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(8)))')"
-          HTTP_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(36))')"
-          sudo htpasswd -Bbn viewer "$HTTP_PASSWORD" | sudo tee /etc/nginx/eid.htpasswd >/dev/null
+          HTTP_PASSWORD="${EID_BROWSER_HTTP_PASSWORD:-}"
+          VNC_PASSWORD="${EID_BROWSER_VNC_PASSWORD:-}"
+          if [ "${#HTTP_PASSWORD}" -lt 20 ]; then
+            echo "EID_BROWSER_HTTP_PASSWORD_MISSING_OR_TOO_SHORT"
+            exit 1
+          fi
+          if [[ ! "$VNC_PASSWORD" =~ ^[A-Za-z0-9]{8}$ ]]; then
+            echo "EID_BROWSER_VNC_PASSWORD_MUST_BE_8_ASCII_ALNUM"
+            exit 1
+          fi
+          printf '%s\n' "$HTTP_PASSWORD" | sudo htpasswd -B -i -c /etc/nginx/eid.htpasswd viewer
+          printf '%s\n' "$VNC_PASSWORD" > /tmp/eid-vnc-password
+          chmod 600 /tmp/eid-vnc-password
           sudo chown root:www-data /etc/nginx/eid.htpasswd
           sudo chmod 640 /etc/nginx/eid.htpasswd
 
@@ -112,7 +125,7 @@ jobs:
           fi
           echo "XVFB_DISPLAY_HEALTHCHECK=OK"
 
-          x11vnc -display :99 -rfbport 5900 -forever -shared -repeat -noxdamage -passwd "$VNC_PASSWORD" >/tmp/x11vnc.log 2>&1 &
+          x11vnc -display :99 -rfbport 5900 -forever -shared -repeat -noxdamage -passwdfile /tmp/eid-vnc-password >/tmp/x11vnc.log 2>&1 &
           VNC_PID=$!
 
           # Wait for the RFB listener itself, not merely for the noVNC web page.
