@@ -151,6 +151,13 @@ class CDP:
                 "quote_fields": [],
                 "offer_schema_samples": [],
             },
+            "exchange_rub_usdt": {
+                "request_count": 0,
+                "response_statuses": [],
+                "json_response_count": 0,
+                "quote_fields": [],
+                "offer_schema_samples": [],
+            },
         }
 
     def close(self) -> None:
@@ -170,7 +177,10 @@ class CDP:
             parsed = urlparse(request.get("url", ""))
             if parsed.hostname != "sberkassa.site":
                 return
-            page_key = {"/deals": "deals_everyone_offers"}.get(self.current_path)
+            page_key = {
+                "/deals": "deals_everyone_offers",
+                "/exchange": "exchange_rub_usdt",
+            }.get(self.current_path)
             if page_key:
                 self.capture[page_key]["request_count"] += 1
             query = parse_qs(parsed.query, keep_blank_values=True)
@@ -197,7 +207,10 @@ class CDP:
                 return
             mime = (response.get("mimeType") or "unknown").split(";")[0]
             status = int(response.get("status", 0))
-            page_key = {"/deals": "deals_everyone_offers"}.get(self.current_path) if host == "sberkassa.site" else None
+            page_key = {
+                "/deals": "deals_everyone_offers",
+                "/exchange": "exchange_rub_usdt",
+            }.get(self.current_path) if host == "sberkassa.site" else None
             if page_key:
                 statuses = self.capture[page_key]["response_statuses"]
                 if len(statuses) < 40:
@@ -257,7 +270,10 @@ class CDP:
                     captured_fields = captured["quote_fields"]
                     remaining = max(0, 120 - len(captured_fields))
                     captured_fields.extend([[key, value] for key, value in fields[:remaining]])
-                    if path == "/public_deals/fetch" and page_key == "deals_everyone_offers":
+                    if page_key and any(
+                        key in payload if isinstance(payload, dict) else False
+                        for key in ("data", "result", "offers", "items")
+                    ):
                         captured["offer_schema_samples"] = extract_offer_schema_samples(payload)
                 counts = Counter(name for name, _ in fields)
                 print(
@@ -445,12 +461,12 @@ def main() -> int:
                     flush=True,
                 )
 
-            if seen_deals and now - last_target_activity >= 12:
+            if seen_deals and seen_exchange and now - last_target_activity >= 12:
                 artifact = {
                     "schema_version": 2,
                     "captured_at_utc": datetime.now(timezone.utc).isoformat(),
                     "source": "sberkassa.site",
-                    "quote_scope": "ERUB->RUB, /deals#tab-3, everyone_offers",
+                    "quote_scope": "ERUB->RUB on /deals#tab-3 and RUB->USDT on /exchange",
                     "read_only": True,
                     "pages": {
                         "deals_everyone_offers": {
@@ -459,10 +475,16 @@ def main() -> int:
                             "update_marker_lines": page_markers.get("deals_everyone_offers", []),
                             **cdp.capture["deals_everyone_offers"],
                         },
+                        "exchange_rub_usdt": {
+                            "url_path": "/exchange",
+                            "page_updated_at": page_timestamps.get("exchange_rub_usdt"),
+                            "update_marker_lines": page_markers.get("exchange_rub_usdt", []),
+                            **cdp.capture["exchange_rub_usdt"],
+                        },
                     },
                     "limitations": [
-                        "Only the ERUB/RUB everyone-offers page is in scope",
-                        "Direction identifiers and reciprocal rate fields are captured in sanitized form to validate the displayed rate",
+                        "The ERUB/RUB everyone-offers page and RUB/USDT exchange page are captured independently",
+                        "Currency/direction identifiers and reciprocal rate fields are captured in sanitized form; no exchange rate is inferred from an unverified field",
                         "No raw response body, offer amounts, commissions, volumes, reserves, liquidity, or authentication material is published",
                         "Page update markers are not yet correlated with a successful refresh",
                     ],
@@ -473,10 +495,11 @@ def main() -> int:
                 print("SBERKASSA_ARTIFACT_WRITTEN=sberkassa-current-inspection.json", flush=True)
                 with open(Path(__import__("os").environ["GITHUB_STEP_SUMMARY"]), "a", encoding="utf-8") as summary:
                     summary.write("\n## Sberkassa read-only page inspection\n")
-                    summary.write("- The ERUB -> RUB «Всем предлагают» page was visited in the manually authenticated standalone Chromium session.\n")
-                    summary.write("- Captured safe request direction parameters, sanitized offer currency/direction identifiers, reciprocal rate fields, and page update-marker lines.\n")
+                    summary.write("- Both the ERUB -> RUB «Всем предлагают» page and the RUB -> USDT exchange page were visited in the manually authenticated standalone Chromium session.\n")
+                    summary.write("- Captured sanitized currency/direction identifiers, quote-related fields, and page update-marker lines separately for each page.\n")
                     summary.write("- No raw response body, cookies, session tokens, authorization headers, or offer amounts were published.\n")
                     summary.write(f"- Deals page update timestamp: {page_timestamps.get('deals_everyone_offers') or 'not found'}\n")
+                    summary.write(f"- Exchange page update timestamp: {page_timestamps.get('exchange_rub_usdt') or 'not found'}\n")
                     summary.write("- Offer creation timestamps are not used as page freshness.\n")
                     summary.write("- A visible timestamp still needs to be correlated with a successful refresh before enabling polling.\n")
                 STATUS_FILE.write_text("SBERKASSA_CAPTURE_COMPLETE", encoding="utf-8")
