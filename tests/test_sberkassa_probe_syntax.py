@@ -31,6 +31,15 @@ class SberkassaProbeSyntaxTests(unittest.TestCase):
         self.assertIn("rate_inputs", source)
         self.assertIn("selectedOptions", source)
         self.assertIn("exchange_rate|buy_rate|sell_rate", source)
+        # Broad but sanitized source discovery: DOM attributes, embedded state,
+        # XHR/fetch JSON, WebSocket/EventSource frames and cache/response timing.
+        self.assertIn("sourceInventory:", source)
+        self.assertIn("embedded-json-", source)
+        self.assertIn("Network.webSocketFrameReceived", source)
+        self.assertIn("Network.eventSourceMessageReceived", source)
+        self.assertIn("stream_quote_fields", source)
+        self.assertIn("request_timing", source)
+        self.assertIn("from_service_worker", source)
         self.assertNotIn("volume|reserve|commission", source)
 
     def test_sberkassa_uses_money_storage_style_first_twenty_average(self):
