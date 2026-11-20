@@ -40,6 +40,10 @@ class SberkassaProbeSyntaxTests(unittest.TestCase):
         self.assertIn("stream_quote_fields", source)
         self.assertIn("request_timing", source)
         self.assertIn("from_service_worker", source)
+        self.assertIn('"localStorage", "sessionStorage"', source)
+        self.assertIn("caches.keys()", source)
+        self.assertIn("indexedDB.databases()", source)
+        self.assertIn("getAll(undefined, 20)", source)
         self.assertNotIn("volume|reserve|commission", source)
 
     def test_sberkassa_uses_money_storage_style_first_twenty_average(self):
