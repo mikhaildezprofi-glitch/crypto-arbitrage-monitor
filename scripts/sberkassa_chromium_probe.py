@@ -86,6 +86,39 @@ def extract_offer_schema_samples(payload: object, limit: int = 30) -> list[dict[
 
 
 
+def extract_erub_rub_offer_records(payload: object, limit: int = 500) -> list[dict[str, str | None]]:
+    """Retain only back_rate/create_time from rows returned by the exact ERUB -> RUB API query."""
+    records: list[dict[str, str | None]] = []
+    seen: set[int] = set()
+
+    def walk(node: object, depth: int = 0) -> None:
+        if depth > 12 or len(records) >= limit:
+            return
+        if isinstance(node, dict):
+            identity = id(node)
+            if identity in seen:
+                return
+            seen.add(identity)
+            if "back_rate" in node:
+                back_rate = node.get("back_rate")
+                create_time = node.get("create_time")
+                records.append({
+                    "back_rate": str(back_rate)[:64] if back_rate is not None else None,
+                    "create_time": str(create_time)[:64] if create_time is not None else None,
+                })
+                return
+            for child in node.values():
+                if isinstance(child, (dict, list)):
+                    walk(child, depth + 1)
+        elif isinstance(node, list):
+            for child in node:
+                if isinstance(child, (dict, list)):
+                    walk(child, depth + 1)
+
+    walk(payload)
+    return records
+
+
 def safe_location(value: str) -> str:
     parsed = urlparse(value)
     suffix = f"#{parsed.fragment}" if parsed.fragment else ""
@@ -151,7 +184,7 @@ class CDP:
             ws_url, timeout=2, suppress_origin=True, enable_multithread=True
         )
         self.next_id = 0
-        self.pending_bodies: list[tuple[str, str, str]] = []
+        self.pending_bodies: list[tuple[str, str, str, dict, int]] = []
         self.current_path = ""
         self.capture = {
             "deals_everyone_offers": {
@@ -160,6 +193,8 @@ class CDP:
                 "json_response_count": 0,
                 "quote_fields": [],
                 "offer_schema_samples": [],
+                "offer_records": [],
+                "offer_request": {},
                 "http_response_headers": [],
                 "stream_quote_fields": [],
                 "request_timing": [],
@@ -302,7 +337,18 @@ class CDP:
                 and params.get("type") in ("XHR", "Fetch")
                 and "json" in mime
             ):
-                self.pending_bodies.append((params.get("requestId", ""), parsed.path, page_key))
+                query = parse_qs(parsed.query, keep_blank_values=True)
+                safe_query = {
+                    key: query.get(key, [""])[0]
+                    for key in ("from", "to")
+                }
+                self.pending_bodies.append((
+                    params.get("requestId", ""),
+                    parsed.path,
+                    page_key,
+                    safe_query,
+                    status,
+                ))
 
     def command(self, method: str, params: dict | None = None, timeout: float = 8) -> dict:
         self.next_id += 1
@@ -325,7 +371,7 @@ class CDP:
 
     def drain_json_bodies(self) -> None:
         pending, self.pending_bodies = self.pending_bodies, []
-        for request_id, path, page_key in pending[:20]:
+        for request_id, path, page_key, safe_query, status in pending[:20]:
             if not request_id:
                 continue
             try:
@@ -348,6 +394,25 @@ class CDP:
                     captured_fields.extend([[key, value] for key, value in fields[:remaining]])
                     if page_key:
                         captured["offer_schema_samples"] = extract_offer_schema_samples(payload)
+                    if (
+                        page_key == "deals_everyone_offers"
+                        and path == "/public_deals/fetch"
+                        and safe_query.get("from") == "ERUB"
+                        and safe_query.get("to") == "RUB"
+                    ):
+                        records = extract_erub_rub_offer_records(payload)
+                        captured["offer_request"] = {
+                            "path": path,
+                            "from": "ERUB",
+                            "to": "RUB",
+                            "status": status,
+                        }
+                        captured["offer_records"] = records
+                        print(
+                            "SBERKASSA_ERUB_RUB_OFFERS captured=%s status=%s"
+                            % (len(records), status),
+                            flush=True,
+                        )
                 counts = Counter(name for name, _ in fields)
                 print(
                     "QUOTE_FIELDS path=%s fields=%s samples=%s"
