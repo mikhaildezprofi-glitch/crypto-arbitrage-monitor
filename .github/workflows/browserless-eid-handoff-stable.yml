@@ -254,7 +254,9 @@ jobs:
           "$CHROMIUM_BIN" --version
           TARGET="${{ inputs.target }}"
           if [ "$TARGET" = "sberkassa" ]; then
-            CHROMIUM_START_URL="https://sberkassa.site/login"
+            # Reuse the proven Money Storage -> E-ID handoff to establish the
+            # same identity-provider browser session before visiting Sberkassa.
+            CHROMIUM_START_URL="https://storage.money/account"
             BRIDGE_SCRIPT="scripts/sberkassa_chromium_probe.py"
           else
             CHROMIUM_START_URL="https://storage.money/account"
