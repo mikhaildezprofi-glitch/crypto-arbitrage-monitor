@@ -18,6 +18,10 @@ class SberkassaProbeSyntaxTests(unittest.TestCase):
         self.assertIn('"Runtime.evaluate"', source)
         auth_probe = source.split('auth_state = cdp.command(', 1)[1].split('auth_url = urlparse(auth_state.get("url", ""))', 1)[0]
         self.assertIn('"awaitPromise": True', auth_probe)
+        capture_probe = source.split('state = cdp.command(', 1)[1].split('url = state.get("url", "")', 1)[0]
+        self.assertIn('"expression": """(async () => ({', capture_probe)
+        self.assertIn('sourceInventory: await (async () => {', capture_probe)
+        self.assertIn('"awaitPromise": True', capture_probe)
         self.assertIn('"Page.navigate"', source)
         self.assertIn('SBERKASSA_SESSION=RESTORED_PROFILE_REUSED', source)
         self.assertIn('SBERKASSA_AUTO_NAVIGATE=exchange', source)
