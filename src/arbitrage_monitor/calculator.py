@@ -112,9 +112,8 @@ def five_step_route(
     for name, input_currency, output_currency, key, indicative in definitions:
         if key not in quotes:
             raise ValueError(f"Missing quote: {key}")
-        # This route accepts a counterparty's Money Storage offer ("Мне предлагают").
-        # The offer creator/seller pays the displayed commission, not the accepting user.
-        # Keep the seller's commission in the provider offer data, but do not charge it here.
+        # This route uses the approved Money Storage "Всем предлагают" source.
+        # Per project rules, the displayed commission is not applied to this leg.
         fee_percent = Decimal("0") if key == "money_storage" else fees_percent.get(key)
         steps.append(
             RouteStep(
