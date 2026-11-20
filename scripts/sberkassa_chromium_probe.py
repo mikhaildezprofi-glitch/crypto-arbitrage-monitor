@@ -167,7 +167,7 @@ class CDP:
             parsed = urlparse(request.get("url", ""))
             if parsed.hostname != "sberkassa.site":
                 return
-            page_key = {"/deals": "deals_everyone_offers", "/exchange": "exchange_rub_usdt"}.get(self.current_path)
+            page_key = {"/deals": "deals_everyone_offers"}.get(self.current_path)
             if page_key:
                 self.capture[page_key]["request_count"] += 1
             query = parse_qs(parsed.query, keep_blank_values=True)
@@ -194,7 +194,7 @@ class CDP:
                 return
             mime = (response.get("mimeType") or "unknown").split(";")[0]
             status = int(response.get("status", 0))
-            page_key = {"/deals": "deals_everyone_offers", "/exchange": "exchange_rub_usdt"}.get(self.current_path) if host == "sberkassa.site" else None
+            page_key = {"/deals": "deals_everyone_offers"}.get(self.current_path) if host == "sberkassa.site" else None
             if page_key:
                 statuses = self.capture[page_key]["response_statuses"]
                 if len(statuses) < 40:
