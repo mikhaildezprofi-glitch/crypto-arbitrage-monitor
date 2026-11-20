@@ -47,11 +47,10 @@ def _decimal(value: Any, field: str, *, optional: bool = False) -> Decimal | Non
 
 
 def parse_public_offer(row: Mapping[str, Any]) -> MoneyStorageOffer:
-    """Normalize raw API fields to the displayed 'Мне предлагают' direction.
+    """Normalize raw API fields from the approved 'Всем предлагают' tab to the project's USDT -> ECR direction.
 
     For displayed USDT -> ECR offers, raw API fields are src=ECR and dst=USDT.
-    The offer creator/seller pays the displayed commission when we accept,
-    so this commission is retained as source information, not charged here.
+    The displayed commission is retained as source information. Per project rules, it is not applied to the calculated Money Storage leg.
     """
     if not isinstance(row, Mapping):
         raise TypeError("Money Storage offer must be a mapping.")
