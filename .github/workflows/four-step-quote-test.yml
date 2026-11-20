@@ -24,6 +24,7 @@ jobs:
 
   collect-four-sources:
     name: Collect and report the four route quotes
+    if: always()
     needs: [money-storage, sberkassa]
     runs-on: ubuntu-24.04
     steps:
@@ -37,6 +38,7 @@ jobs:
           pattern: '*'
           path: artifacts
           merge-multiple: false
+        continue-on-error: true
       - name: Run four-source quote collection
         env:
           PYTHONPATH: src
