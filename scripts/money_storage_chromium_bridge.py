@@ -12,12 +12,18 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import time
 import urllib.request
 from pathlib import Path
 from urllib.parse import urlparse
 
 import websocket
+
+# Running a file from scripts/ puts that directory, not the repository root,
+# at sys.path[0]. Add the checkout root and src/ for project imports.
+sys.path.insert(0, str(Path.cwd()))
+sys.path.insert(0, str(Path.cwd() / "src"))
 
 from scripts.money_storage_cloud_read import (
     TransientMoneyStorageReadError,
