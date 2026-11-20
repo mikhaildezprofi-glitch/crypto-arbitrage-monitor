@@ -488,7 +488,7 @@ def main() -> int:
             state = cdp.command(
                 "Runtime.evaluate",
                 {
-                    "expression": """(() => ({
+                    "expression": """(async () => ({
                       url: location.href,
                       title: document.title || "",
                       updateLines: (document.body ? document.body.innerText : "")
@@ -548,7 +548,7 @@ def main() -> int:
                           })).filter(el => /^\\d+(?:[.,]\\d+)?$/.test(el.value));
                         return { selects, rate_nodes: rateNodes, rate_inputs: rateInputs };
                       })(),
-                      sourceInventory: (() => {
+                      sourceInventory: await (async () => {
                         const safePath = value => {
                           try { const u = new URL(value, location.href); return u.origin === location.origin ? u.pathname : ""; }
                           catch (_) { return ""; }
