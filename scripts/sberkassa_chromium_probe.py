@@ -403,7 +403,7 @@ def main() -> int:
             auth_state = cdp.command(
                 "Runtime.evaluate",
                 {
-                    "expression": """(() => ({
+                    "expression": """(async () => ({
                       url: location.href,
                       ready: document.readyState,
                       body: document.body ? document.body.innerText.slice(0, 12000) : ""
@@ -589,6 +589,70 @@ def main() -> int:
                           /^(reduxStore|appState|initialState|preloadedState)$/i.test(name)
                         ).slice(0, 12);
                         stateNames.forEach(name => { try { walk(window[name], "window." + name); } catch (_) {} });
+                        const browserStorage = [];
+                        for (const storageName of ["localStorage", "sessionStorage"]) {
+                          try {
+                            const store = window[storageName];
+                            Object.keys(store).slice(0, 100).forEach(key => {
+                              if (!/(rate|price|currency|pair|direction|quote|exchange|updated|timestamp|date|time)/i.test(key)) return;
+                              const raw = store.getItem(key);
+                              if (raw == null || raw.length > 200000) return;
+                              if (numeric(raw) || timeLike(raw) || currencyLike(raw)) add("storage-" + storageName, key, raw);
+                              else { try { walk(JSON.parse(raw), "storage-" + storageName + "." + key); } catch (_) {} }
+                            });
+                          } catch (_) {}
+                        }
+                        const cacheInventory = [];
+                        try {
+                          for (const cacheName of (await caches.keys()).slice(0, 20)) {
+                            const cache = await caches.open(cacheName);
+                            for (const request of (await cache.keys()).slice(0, 50)) {
+                              const path = safePath(request.url);
+                              if (!path || !/(rate|price|exchange|currency|quote|deal)/i.test(path)) continue;
+                              const response = await cache.match(request);
+                              if (!response) continue;
+                              const contentType = response.headers.get("content-type") || "";
+                              const headerSample = {};
+                              for (const name of ["date", "last-modified", "age", "etag", "cache-control"]) {
+                                const value = response.headers.get(name);
+                                if (value) headerSample[name] = value.slice(0, 160);
+                              }
+                              const item = {cache: cacheName.slice(0, 80), path, content_type: contentType.slice(0, 80), headers: headerSample};
+                              if (/json/i.test(contentType) && cacheInventory.length < 30) {
+                                try { walk(await response.clone().json(), "cache." + path); item.json_candidate = true; } catch (_) { item.json_candidate = false; }
+                              }
+                              if (cacheInventory.length < 30) cacheInventory.push(item);
+                            }
+                          }
+                        } catch (_) {}
+                        const indexedDbInventory = [];
+                        try {
+                          if (indexedDB.databases) {
+                            for (const info of (await indexedDB.databases()).slice(0, 20)) {
+                              if (!info.name) continue;
+                              const db = await new Promise(resolve => {
+                                const request = indexedDB.open(info.name);
+                                request.onsuccess = () => resolve(request.result);
+                                request.onerror = () => resolve(null);
+                                request.onblocked = () => resolve(null);
+                              });
+                              if (!db) continue;
+                              const storeNames = Array.from(db.objectStoreNames);
+                              for (const storeName of storeNames.filter(name => /(rate|price|currency|pair|quote|exchange|market)/i.test(name)).slice(0, 10)) {
+                                try {
+                                  const records = await new Promise(resolve => {
+                                    const request = db.transaction(storeName, "readonly").objectStore(storeName).getAll(undefined, 20);
+                                    request.onsuccess = () => resolve(request.result || []);
+                                    request.onerror = () => resolve([]);
+                                  });
+                                  records.forEach(record => walk(record, "indexeddb." + storeName));
+                                } catch (_) {}
+                              }
+                              indexedDbInventory.push({database: info.name.slice(0, 80), stores: storeNames.map(name => name.slice(0, 80)).slice(0, 30)});
+                              db.close();
+                            }
+                          }
+                        } catch (_) {}
                         const scripts = Array.from(document.scripts).map(el => safePath(el.src)).filter(Boolean).slice(0, 40);
                         const resources = performance.getEntriesByType("resource").map(entry => ({
                           path: safePath(entry.name), initiator: entry.initiatorType || "",
@@ -596,7 +660,7 @@ def main() -> int:
                           response_end_ms: Math.round(entry.responseEnd || 0),
                           transfer_size: entry.transferSize || 0
                         })).filter(entry => entry.path).slice(-100);
-                        return {numeric_candidates: candidates, script_paths: scripts, resources};
+                        return {numeric_candidates: candidates, browser_storage_candidates: browserStorage, cache_inventory: cacheInventory, indexeddb_inventory: indexedDbInventory, script_paths: scripts, resources};
                       })(),
                       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
                       localNow: (() => {
@@ -608,6 +672,7 @@ def main() -> int:
                       })()
                     }))()""",
                     "returnByValue": True,
+                    "awaitPromise": True,
                 },
             ).get("result", {}).get("value", {})
             url = state.get("url", "")
