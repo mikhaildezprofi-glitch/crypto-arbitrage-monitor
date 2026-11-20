@@ -123,6 +123,18 @@ def fetch_quote(timeout_seconds: int = 15) -> Quote:
     return parse_winance_response(payload)
 
 
+class WinanceQuoteProvider:
+    """QuoteProvider-compatible wrapper for the common route collector."""
+
+    def __init__(self, timeout_seconds: int = 15):
+        if timeout_seconds < 1:
+            raise ValueError("timeout_seconds must be at least 1.")
+        self.timeout_seconds = timeout_seconds
+
+    def fetch_quote(self) -> Quote:
+        return fetch_quote(timeout_seconds=self.timeout_seconds)
+
+
 if __name__ == "__main__":
     quote = fetch_quote()
     print(
