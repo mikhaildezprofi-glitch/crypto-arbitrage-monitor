@@ -2,7 +2,10 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from arbitrage_monitor.providers.sberkassa import build_erub_rub_offer_quote
+from arbitrage_monitor.providers.sberkassa import (
+    build_erub_rub_offer_quote,
+    extract_erub_rub_offer_records,
+)
 
 
 NOW = datetime(2026, 11, 21, 12, 0, tzinfo=timezone.utc)
@@ -63,6 +66,38 @@ class SberkassaOfferQuoteTests(unittest.TestCase):
         quote = build_erub_rub_offer_quote({"offers": rows}, now=NOW)
         self.assertIsNone(quote.rate)
         self.assertEqual(quote.reason, "invalid_back_rate_in_first_20")
+
+    def test_extracts_only_rate_and_creation_time_from_api_offer_rows(self):
+        payload = {
+            "result": "ok",
+            "data": [
+                {"back_rate": "25.1", "rate": "0.0398", "create_time": 1795210000, "amount": "secret-not-retained"},
+                {"nested": [{"back_rate": "25.2", "rate": "0.0396", "create_time": 1795210010}]},
+            ],
+        }
+        records = extract_erub_rub_offer_records(payload)
+        self.assertEqual(records, [
+            {"back_rate": "25.1", "create_time": "1795210000"},
+            {"back_rate": "25.2", "create_time": "1795210010"},
+        ])
+
+    def test_offer_extraction_preserves_order_and_applies_limit(self):
+        rows = [{"back_rate": str(i), "create_time": str(i)} for i in range(5)]
+        self.assertEqual(
+            extract_erub_rub_offer_records({"offers": rows}, limit=3),
+            [
+                {"back_rate": "0", "create_time": "0"},
+                {"back_rate": "1", "create_time": "1"},
+                {"back_rate": "2", "create_time": "2"},
+            ],
+        )
+
+    def test_offer_extraction_does_not_duplicate_same_nested_object(self):
+        row = {"back_rate": "25", "create_time": "1795210000"}
+        self.assertEqual(
+            extract_erub_rub_offer_records({"first": row, "second": row}),
+            [{"back_rate": "25", "create_time": "1795210000"}],
+        )
 
     def test_more_than_twenty_uses_only_first_twenty_rates(self):
         rows = [offer("10", NOW.isoformat()) for _ in range(20)]
