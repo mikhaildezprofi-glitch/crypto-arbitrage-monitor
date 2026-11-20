@@ -4,7 +4,7 @@
 
 Live cloud polling is **blocked** until Money Storage provides a supported server-side read-access method.
 
-The repository contains a pure parser, quote builder, and a configurable HTTPS read-only provider (`MoneyStorageQuoteProvider`). The provider requests only `offset=0&limit=20`, requires explicit `from`/`to` filters, validates the `result=ok` response envelope, and fails closed on HTTP/auth/rate-limit errors. It does not support browser cookies, session tokens, or credentials. It has not yet been demonstrated to retrieve live offers from the cloud. The frontend JavaScript exposes the public-deals route:
+The repository contains a pure parser and quote builder plus a disabled direct-HTTPS adapter (`MoneyStorageQuoteProvider`). The adapter deliberately refuses to publish a quote because a direct request cannot verify the page's visible last-updated marker. Only the manually authenticated page bridge can supply the required page timestamp. The frontend JavaScript exposes the observed public-deals route:
 
 - `GET /public_deals/fetch`
 - Query fields used by the frontend: `offset`, `limit`, `from`, `to`
