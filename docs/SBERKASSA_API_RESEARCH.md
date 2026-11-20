@@ -129,3 +129,17 @@ The account owner has confirmed the intended Sberkassa source and quote-freshnes
 The separate ERUB -> RUB page timestamp must not be applied to the second route step. For **Sberkassa Exchange RUB -> USDT**, inspect `https://sberkassa.site/exchange` independently and use that page's own confirmed update time. Its quote semantics, fees, limits, and refresh behavior still require verification.
 
 This is a project source-selection and acceptance rule, not evidence that the live Sberkassa page or its network request has already been captured. The exact request, response schema, current rate, page timestamp, and permitted polling method remain unverified. Do not implement or enable either provider until those facts are captured in the normal authenticated browser session or confirmed by official documentation. Do not bypass CAPTCHA, MFA, or device binding, and do not export cookies or session tokens.
+
+
+## Project-selected rate calculation rule (2026-11-20)
+
+The account owner has confirmed that Sberkassa commissions and liquidity/volume data are not needed, following the Money Storage approach:
+
+- For each required direction where the page exposes multiple independent offers, take the first 20 matching offers in the page/API order and calculate the unweighted arithmetic mean of their positive finite rate values.
+- If fewer than 20 matching offers are available, average all valid available offers. If there are no matching offers, or a required rate is malformed, non-finite, zero, or negative, mark that quote unavailable.
+- Do not read, require, calculate with, or apply commissions, offer amounts, volumes, reserves, minimums, maximums, or liquidity. Do not sum amounts, select a single offer, or model partial fills.
+- For `/exchange`, first determine whether the UI actually presents a list of independent offers. If so, apply the same first-20 arithmetic mean. If it presents only one published conversion rate, use that single rate; do not fabricate a 20-offer average.
+- The average is indicative only and is not an execution guarantee.
+- Keep page freshness independent for each route step: ERUB -> RUB uses the `/deals#tab-3` page marker; RUB -> USDT uses the `/exchange` page marker. Individual offer creation times are ignored for freshness.
+
+The browser probe is intentionally limited to rate/price and timestamp-related response fields. Commission, volume, reserve, and limit fields are outside the required capture.
