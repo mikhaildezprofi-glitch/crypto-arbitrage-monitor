@@ -12,6 +12,12 @@ class SberkassaProbeSyntaxTests(unittest.TestCase):
         self.assertIn('auth_host == "e-id.cards"', source)
         self.assertIn('auth_host == "sberkassa.site"', source)
         self.assertNotIn('auth_url.path.rstrip("/") == "/login"', source)
+        self.assertIn("extract_erub_rub_offer_records", source)
+        self.assertIn('"offer_records": []', source)
+        self.assertIn('"offer_request": {}', source)
+        self.assertIn('safe_query.get("from") == "ERUB"', source)
+        self.assertIn('safe_query.get("to") == "RUB"', source)
+        self.assertIn('"SBERKASSA_ERUB_RUB_OFFERS captured=%s status=%s"', source)
         self.assertIn("sberkassa-current-inspection.json", source)
         self.assertIn("eid_provider_seen", source)
         # Read-only navigation is used only between the two approved quote pages.
