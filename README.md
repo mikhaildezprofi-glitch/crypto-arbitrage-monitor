@@ -24,7 +24,7 @@ Starting reference capital: 1000 USDT. Money Storage polling interval: 900 secon
 - Use the arithmetic mean of the rate field across the first 20 available target-direction offers as the Money Storage quote.
 - If fewer than 20 target-direction offers are returned, average the available offers; an empty result is unavailable.
 - Do not select one offer, add offer amounts, combine liquidity, assume partial fills, or simulate a purchase.
-- The quote timestamp is the time the page was observed during polling. The source offer creation timestamps remain available as row metadata.
+- The quote timestamp comes from the page's own visible last-updated marker, not the scrape time or offer creation timestamps. The marker must parse successfully and be no older than the 900-second Money Storage interval; if it is missing, invalid, or stale, the source is unavailable. Offer creation timestamps remain row metadata only.
 - Per project rule, the displayed Money Storage commission is retained only as source metadata and is not deducted from this route calculation.
 
 This is an indicative market-rate average, not a promise that a trade can be executed at that rate. The monitor does not buy, accept, create, or modify offers.
