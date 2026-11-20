@@ -450,14 +450,19 @@ def main() -> int:
                           const v = clean(value);
                           if (v && found.length < 50) found.push({kind, name: clean(name), value: v});
                         };
-                        document.querySelectorAll("time[datetime], meta[content], [datetime], [data-updated], [data-update-time], [data-timestamp], [data-last-update]")
+                        document.querySelectorAll("time[datetime], meta[content], [datetime], input")
                           .forEach(el => {
                             if (el.matches("meta[content]")) {
                               const name = el.getAttribute("name") || el.getAttribute("property") || el.getAttribute("itemprop") || "";
                               if (/(date|time|updated|modified|publish)/i.test(name)) add("meta", name, el.getAttribute("content"));
                             } else {
-                              for (const attr of ["datetime", "data-updated", "data-update-time", "data-timestamp", "data-last-update"]) {
-                                if (el.hasAttribute(attr)) add("attribute", attr, el.getAttribute(attr));
+                              for (const attr of Array.from(el.attributes || [])) {
+                                if (attr.name === "datetime" || (attr.name.startsWith("data-") && /(date|time|updated|modified|timestamp|refresh)/i.test(attr.name))) {
+                                  add("attribute", attr.name, attr.value);
+                                }
+                              }
+                              if (el.matches("input") && /(date|time|updated|modified|timestamp|refresh)/i.test([el.name, el.id].join(" "))) {
+                                add("input", el.name || el.id, el.value);
                               }
                             }
                           });
