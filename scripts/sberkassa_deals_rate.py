@@ -1,50 +1,52 @@
-"""Rate-only parser for Sberkassa «Всем предлагают» ERUB -> RUB offers.
+"""Rate-only arithmetic averaging for an already direction-filtered Sberkassa offer list.
 
-This parser ignores back_rate, offer timestamps, commissions, amounts,
-limits, reserves, and liquidity. Freshness is validated separately.
+The caller must establish that the supplied records are ERUB -> RUB offers and
+explicitly select the matching displayed-rate field. This module never guesses
+between `rate` and `back_rate`.
 """
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from typing import Any, Mapping, Sequence
 
 MAX_OFFERS = 20
+ALLOWED_RATE_FIELDS = {"rate", "back_rate"}
 
 
 class SberkassaQuoteError(ValueError):
     """The current Sberkassa offers cannot produce a safe indicative quote."""
 
 
-def _walk_offer_records(node: Any):
-    if isinstance(node, dict):
-        if "rate" in node:
-            yield node
-        for key, value in node.items():
-            if key not in {"rate", "back_rate"} and isinstance(value, (dict, list)):
-                yield from _walk_offer_records(value)
-    elif isinstance(node, list):
-        for value in node:
-            yield from _walk_offer_records(value)
+def calculate_erub_rub_average(
+    offers: Sequence[Mapping[str, Any]], *, rate_field: str
+) -> dict[str, Any]:
+    """Average the first 20 selected offer rates in their original order.
 
+    `offers` must already contain only ERUB -> RUB records. `rate_field` is
+    mandatory because Sberkassa exposes reciprocal `rate` and `back_rate`
+    values and the correct displayed direction must be verified upstream.
+    """
+    if rate_field not in ALLOWED_RATE_FIELDS:
+        raise SberkassaQuoteError("An explicit supported rate field is required.")
+    if not isinstance(offers, Sequence) or isinstance(offers, (str, bytes)):
+        raise SberkassaQuoteError("The offer collection is malformed.")
+    if not offers:
+        raise SberkassaQuoteError("No ERUB/RUB offers were found.")
 
-def calculate_erub_rub_average(payload: Any) -> dict[str, Any]:
-    """Average the first 20 offer rate values in payload order."""
-    records = list(_walk_offer_records(payload))
-    if not records:
-        raise SberkassaQuoteError("No ERUB/RUB offers with a rate field were found.")
-
-    selected = records[:MAX_OFFERS]
+    selected = offers[:MAX_OFFERS]
     rates: list[Decimal] = []
-    for index, record in enumerate(selected, start=1):
-        raw = record.get("rate")
+    for index, offer in enumerate(selected, start=1):
+        if not isinstance(offer, Mapping):
+            raise SberkassaQuoteError(f"Offer {index} is malformed.")
+        raw = offer.get(rate_field)
         if isinstance(raw, bool) or raw is None:
-            raise SberkassaQuoteError(f"Offer {index} has an invalid rate.")
+            raise SberkassaQuoteError(f"Offer {index} has an invalid {rate_field}.")
         try:
             rate = Decimal(str(raw).strip().replace(",", "."))
         except (InvalidOperation, AttributeError):
-            raise SberkassaQuoteError(f"Offer {index} has an invalid rate.") from None
+            raise SberkassaQuoteError(f"Offer {index} has an invalid {rate_field}.") from None
         if not rate.is_finite() or rate <= 0:
-            raise SberkassaQuoteError(f"Offer {index} has a non-positive or non-finite rate.")
+            raise SberkassaQuoteError(f"Offer {index} has a non-positive or non-finite {rate_field}.")
         rates.append(rate)
 
     average = sum(rates, Decimal("0")) / Decimal(len(rates))
@@ -52,8 +54,8 @@ def calculate_erub_rub_average(payload: Any) -> dict[str, Any]:
         "base_currency": "ERUB",
         "quote_currency": "RUB",
         "rate": float(average),
+        "rate_field": rate_field,
         "offers_used": len(rates),
         "method": "arithmetic_mean_first_20",
         "indicative_only": True,
-        "back_rate_used": False,
     }
