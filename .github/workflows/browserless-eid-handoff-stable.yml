@@ -466,6 +466,11 @@ jobs:
           echo "VNC_AUTH=automatic; credentials are not printed"
           echo "Complete E-ID only in this remote browser. Treat the URL as a temporary secret."
 
+          # Forward only the browser's sanitized diagnostic lines into Actions logs.
+          # The browser process writes to a private file; without this relay its
+          # navigation and Cloudflare/E-ID diagnostics remain invisible.
+          BROWSER_LOG_LINES=0
+          echo "BROWSER_DIAGNOSTIC_STREAM=STARTED"
           for i in $(seq 1 900); do
             STATUS="$(cat /tmp/eid-auth-status 2>/dev/null || echo WAITING_FOR_LOGIN)"
             if [ "$STATUS" = "OFFERS_READ_OK" ]; then
@@ -496,6 +501,12 @@ jobs:
                 "$TUNNEL_URL/$ACCESS_TOKEN/websockify" >/dev/null 2>&1 || true)"
               if grep -qE '^HTTP/[0-9.]+ 101' /tmp/eid-ws-headers; then WS_STATUS=101; else WS_STATUS=FAILED; fi
               echo "PUBLIC_TUNNEL_HEALTHCHECK interval=30s http=$CODE websocket=$WS_STATUS"
+              CURRENT_BROWSER_LINES="$(wc -l < /tmp/eid-browser.log 2>/dev/null || echo 0)"
+              if [ "$CURRENT_BROWSER_LINES" -gt "$BROWSER_LOG_LINES" ]; then
+                echo "BROWSER_DIAGNOSTICS_UPDATE:"
+                sed -n "$((BROWSER_LOG_LINES + 1)),${CURRENT_BROWSER_LINES}p" /tmp/eid-browser.log | grep -E '^(INITIAL_NAVIGATION=|BROWSER_READY=|INITIAL_PAGE_TITLE=|NAV=|HTTP_DIAG |CLOUDFLARE_CHALLENGE_DETECTED=|ACCESS_RESPONSE_CLASSIFICATION |PAGE_DIAG |BOT_OR_ACCESS_CHALLENGE_SUSPECTED=|AUTH_PROGRESS |AUTH_PAGE_STATE |ACCESS_DENIED_PAGE_SUSPECTED=|AUTH_RETURNED_TO_ACCOUNT|OFFERS_READ_|AUTH_TIMEOUT|AUTH_PROGRESS_DIAG_UNAVAILABLE=|PAGE_DIAG_UNAVAILABLE=|HTTP_DIAG_ERROR=)' || true
+                BROWSER_LOG_LINES="$CURRENT_BROWSER_LINES"
+              fi
               if [ "$CODE" != "200" ] || [ "$WS_STATUS" != "101" ]; then
                 tail -n 30 /tmp/cloudflared.log || true
                 cat /tmp/eid-ws-headers || true
