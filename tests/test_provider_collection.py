@@ -50,6 +50,55 @@ class QuoteCollectionTests(unittest.TestCase):
         self.assertEqual(dict(batch.errors), {})
         self.assertTrue(all(provider.calls == 1 for provider in providers.values()))
 
+    def test_four_step_collection_does_not_request_or_require_fifth_source(self):
+        from arbitrage_monitor.providers.collection import FOUR_STEP_PROVIDER_KEYS
+
+        providers = self.make_providers()
+        batch = collect_quotes(providers, required_keys=FOUR_STEP_PROVIDER_KEYS)
+
+        self.assertTrue(batch.complete)
+        self.assertEqual(batch.required_keys, FOUR_STEP_PROVIDER_KEYS)
+        self.assertEqual(set(batch.quotes), set(FOUR_STEP_PROVIDER_KEYS))
+        self.assertEqual(dict(batch.errors), {})
+        self.assertEqual(providers["sberkassa_exchange"].calls, 0)
+        self.assertTrue(
+            all(providers[key].calls == 1 for key in FOUR_STEP_PROVIDER_KEYS)
+        )
+
+    def test_four_step_collection_ignores_missing_fifth_provider(self):
+        from arbitrage_monitor.providers.collection import FOUR_STEP_PROVIDER_KEYS
+
+        providers = self.make_providers()
+        del providers["sberkassa_exchange"]
+        batch = collect_quotes(providers, required_keys=FOUR_STEP_PROVIDER_KEYS)
+
+        self.assertTrue(batch.complete)
+        self.assertNotIn("sberkassa_exchange", batch.errors)
+
+    def test_four_step_collection_still_fails_if_selected_source_is_missing(self):
+        from arbitrage_monitor.providers.collection import FOUR_STEP_PROVIDER_KEYS
+
+        providers = self.make_providers()
+        del providers["sberkassa_sell"]
+        batch = collect_quotes(providers, required_keys=FOUR_STEP_PROVIDER_KEYS)
+
+        self.assertFalse(batch.complete)
+        self.assertIn("sberkassa_sell", batch.errors)
+
+    def test_default_collection_still_requires_all_five_sources(self):
+        providers = self.make_providers()
+        del providers["sberkassa_exchange"]
+        batch = collect_quotes(providers)
+
+        self.assertFalse(batch.complete)
+        self.assertIn("sberkassa_exchange", batch.errors)
+
+    def test_collection_rejects_unknown_or_duplicate_selection(self):
+        with self.assertRaisesRegex(ValueError, "Unknown provider key"):
+            collect_quotes({}, required_keys=("not_a_provider",))
+        with self.assertRaisesRegex(ValueError, "unique"):
+            collect_quotes({}, required_keys=("blackbit", "blackbit"))
+
     def test_one_failure_does_not_stop_other_sources(self):
         providers = self.make_providers()
         providers["blackbit"] = FakeProvider(error=TimeoutError("source timed out"))
