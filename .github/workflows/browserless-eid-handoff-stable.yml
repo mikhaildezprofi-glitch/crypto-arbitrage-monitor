@@ -24,7 +24,9 @@ jobs:
           sudo apt-get -o Acquire::Retries=8 -o Acquire::https::Timeout=45 update
           sudo apt-get -y --no-install-recommends -o Acquire::Retries=8 install \
             xvfb x11vnc novnc websockify curl x11-utils nginx apache2-utils
-          python3 -m pip install --retries 5 --timeout 45 --break-system-packages playwright
+          python3 -m pip install --retries 5 --timeout 45 --break-system-packages playwright websocket-client
+          # Download the Chromium binary, then launch it directly as a normal GUI process.
+          # Playwright is not used to create, control, or automate the browser session.
           python3 -m playwright install chromium
 
       # All long-lived processes stay inside this step. The runner tears down
@@ -230,159 +232,56 @@ jobs:
               raise SystemExit(1)
           PY
 
-          cat >/tmp/launch_eid_browser.py <<'PY'
-          import os, sys, time
-          from pathlib import Path
-          from urllib.parse import urlparse
-          from playwright.sync_api import sync_playwright
-
-          sys.path.insert(0, str(Path.cwd()))
-          sys.path.insert(0, str(Path.cwd() / "src"))
-          from scripts.money_storage_cloud_read import (
-              TransientMoneyStorageReadError,
-              fetch_from_authenticated_page,
-              write_normalized_snapshot,
-          )
-
-          status = Path("/tmp/eid-auth-status")
-          status.write_text("WAITING_FOR_LOGIN", encoding="utf-8")
-          with sync_playwright() as p:
-              browser = p.chromium.launch(headless=False, args=["--no-sandbox", "--disable-dev-shm-usage"])
-              context = browser.new_context(viewport={"width": 1440, "height": 900}, java_script_enabled=True)
-              page = context.new_page()
-
-              def safe_location(value):
-                  try:
-                      u = urlparse(value)
-                      return "%s%s" % (u.netloc, u.path)
-                  except Exception:
-                      return "unparseable"
-
-              def response_diagnostic(response):
-                  # Only log response metadata for Money Storage, E-ID and Cloudflare.
-                  # Never log query strings, cookies, authorization headers or response bodies.
-                  try:
-                      u = urlparse(response.url)
-                      host = (u.hostname or "").lower()
-                      if not (host == "storage.money" or host.endswith(".storage.money")
-                              or host == "e-id.cards" or host.endswith(".e-id.cards")
-                              or "cloudflare" in host):
-                          return
-                      h = response.headers
-                      ray = h.get("cf-ray", "absent")
-                      mitigated = h.get("cf-mitigated", "absent")
-                      server = h.get("server", "absent")
-                      ctype = h.get("content-type", "absent").split(";")[0]
-                      location = h.get("location")
-                      location_safe = safe_location(location) if location else "absent"
-                      kind = "document" if response.request.is_navigation_request() else response.request.resource_type
-                      print("HTTP_DIAG host=%s path=%s status=%s type=%s server=%s cf_ray=%s cf_mitigated=%s content_type=%s redirect_to=%s" %
-                            (host, u.path, response.status, kind, server, ray, mitigated, ctype, location_safe), flush=True)
-                      if mitigated.lower() == "challenge" or "/cdn-cgi/challenge-platform/" in u.path:
-                          print("CLOUDFLARE_CHALLENGE_DETECTED=YES", flush=True)
-                      if response.status in (401, 403, 429, 503):
-                          print("ACCESS_RESPONSE_CLASSIFICATION host=%s status=%s" % (host, response.status), flush=True)
-                  except Exception as exc:
-                      print("HTTP_DIAG_ERROR=%s" % type(exc).__name__, flush=True)
-
-              def nav(frame):
-                  if frame == page.main_frame:
-                      u = urlparse(frame.url)
-                      print("NAV=%s%s" % (u.netloc, u.path), flush=True)
-                      try:
-                          title = page.title()
-                          title_safe = title[:100].replace("\\n", " ")
-                          body = (page.locator("body").inner_text(timeout=1500) or "").lower()[:12000]
-                          markers = {
-                              "cloudflare_turnstile": "turnstile" in body or "cf-turnstile" in body,
-                              "cloudflare_check": "checking your browser" in body or "verify you are human" in body,
-                              "captcha": "captcha" in body or "robot" in body or "бот" in body,
-                              "access_denied": "access denied" in body or "доступ запрещ" in body,
-                          }
-                          print("PAGE_DIAG title=%r markers=%s" % (title_safe, markers), flush=True)
-                          if any(markers.values()):
-                              print("BOT_OR_ACCESS_CHALLENGE_SUSPECTED=YES", flush=True)
-                      except Exception as exc:
-                          print("PAGE_DIAG_UNAVAILABLE=%s" % type(exc).__name__, flush=True)
-
-              page.on("response", response_diagnostic)
-              page.on("framenavigated", nav)
-              page.on("pageerror", lambda e: print("PAGE_ERROR=%s" % str(e)[:180], flush=True))
-
-              print("INITIAL_NAVIGATION=storage.money/account", flush=True)
-              page.goto("https://storage.money/account", wait_until="domcontentloaded", timeout=60000)
-              print("BROWSER_READY=Money Storage entry page opened", flush=True)
-              print("INITIAL_PAGE_TITLE=%r" % page.title()[:100], flush=True)
-              deadline = time.monotonic() + 1800
-              saw_eid = False
-              done = False
-              last_periodic_diag = 0
-              while time.monotonic() < deadline:
-                  now = time.monotonic()
-                  if now - last_periodic_diag >= 20:
-                      last_periodic_diag = now
-                      try:
-                          current = urlparse(page.url)
-                          print("AUTH_PROGRESS host=%s path=%s" % (current.netloc, current.path), flush=True)
-                          title = page.title()
-                          body = (page.locator("body").inner_text(timeout=1200) or "").lower()[:12000]
-                          challenge = ("turnstile" in body or "cf-turnstile" in body
-                                       or "checking your browser" in body
-                                       or "verify you are human" in body
-                                       or "captcha" in body or "robot" in body)
-                          denied = ("access denied" in body or "доступ запрещ" in body)
-                          print("AUTH_PAGE_STATE title=%r challenge_markers=%s access_denied_markers=%s" %
-                                (title[:100], challenge, denied), flush=True)
-                          if challenge:
-                              print("BOT_OR_ACCESS_CHALLENGE_SUSPECTED=YES", flush=True)
-                          if denied:
-                              print("ACCESS_DENIED_PAGE_SUSPECTED=YES", flush=True)
-                      except Exception as exc:
-                          print("AUTH_PROGRESS_DIAG_UNAVAILABLE=%s" % type(exc).__name__, flush=True)
-                  u = urlparse(page.url)
-                  host = (u.hostname or "").lower()
-                  if host == "e-id.cards" or host.endswith(".e-id.cards"):
-                      saw_eid = True
-                  if saw_eid and u.scheme == "https" and host == "storage.money" and u.path.rstrip("/") == "/account":
-                      print("AUTH_RETURNED_TO_ACCOUNT", flush=True)
-                      try:
-                          page.goto("https://storage.money/deals#tab-3", wait_until="domcontentloaded", timeout=60000)
-                          snapshot = None
-                          for attempt in range(1, 4):
-                              try:
-                                  snapshot = fetch_from_authenticated_page(page)
-                                  break
-                              except TransientMoneyStorageReadError as e:
-                                  print("OFFERS_READ_TRANSIENT_FAILURE attempt=%s/3 reason=%s" % (attempt, str(e)[:180]), flush=True)
-                                  if attempt == 3:
-                                      raise
-                                  time.sleep(3 * attempt)
-                          if snapshot is None:
-                              raise RuntimeError("No snapshot returned")
-                          write_normalized_snapshot(snapshot, str(Path(os.environ["GITHUB_WORKSPACE"]) / "money-storage-current-offers.json"))
-                          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
-                              f.write("\n## Money Storage: «Всем предлагают»\n")
-                              f.write("- Успешно прочитан актуальный снимок.\n")
-                              f.write(f"- Предложений: {snapshot['offer_count']}\n")
-                              f.write(f"- Средний курс USDT → ECR: {snapshot['rate']} ECR за 1 USDT\n")
-                              f.write(f"- Время UTC: {snapshot['observed_at']}\n")
-                              f.write("- Комиссия не учитывалась; история не сохранялась.\n")
-                          status.write_text("OFFERS_READ_OK", encoding="utf-8")
-                          print("OFFERS_READ_OK count=%s rate=%s" % (snapshot["offer_count"], snapshot["rate"]), flush=True)
-                      except Exception as e:
-                          status.write_text("OFFERS_READ_FAILED", encoding="utf-8")
-                          print("OFFERS_READ_FAILED=%s reason=%s" % (type(e).__name__, str(e)[:240]), flush=True)
-                      done = True
-                      break
-                  time.sleep(2)
-              if not done:
-                  status.write_text("AUTH_TIMEOUT", encoding="utf-8")
-                  print("AUTH_TIMEOUT: browser did not return to Money Storage account", flush=True)
-              browser.close()
-          PY
-
-          DISPLAY=:99 python3 /tmp/launch_eid_browser.py >/tmp/eid-browser.log 2>&1 &
+          # Launch the downloaded Chromium executable directly. No Playwright
+          # browser/context/page objects are created; the user operates this
+          # ordinary visible browser through the noVNC desktop.
+          CHROMIUM_BIN="$(find "$HOME/.cache/ms-playwright" -type f -name chrome -perm -111 | head -n 1)"
+          if [ -z "$CHROMIUM_BIN" ]; then
+            echo "STANDALONE_CHROMIUM_BINARY_NOT_FOUND"
+            find "$HOME/.cache/ms-playwright" -maxdepth 4 -type f -name chrome -print || true
+            exit 1
+          fi
+          echo "STANDALONE_CHROMIUM=$(basename "$(dirname "$CHROMIUM_BIN")")/chrome"
+          "$CHROMIUM_BIN" --version
+          "$CHROMIUM_BIN" \
+            --no-sandbox \
+            --disable-dev-shm-usage \
+            --no-first-run \
+            --no-default-browser-check \
+            --password-store=basic \
+            --remote-debugging-address=127.0.0.1 \
+            --remote-debugging-port=9222 \
+            --remote-allow-origins=* \
+            --user-data-dir=/tmp/eid-chromium-profile \
+            --window-size=1440,900 \
+            "https://storage.money/account" >/tmp/chromium.log 2>&1 &
           BROWSER_PID=$!
+
+          CDP_READY=""
+          for i in $(seq 1 60); do
+            if curl -fsS --connect-timeout 2 --max-time 3 http://127.0.0.1:9222/json/version >/tmp/chromium-cdp-version.json; then
+              CDP_READY=yes
+              break
+            fi
+            if ! kill -0 "$BROWSER_PID" 2>/dev/null; then
+              echo "STANDALONE_CHROMIUM_EXITED"
+              tail -n 100 /tmp/chromium.log || true
+              exit 1
+            fi
+            sleep 1
+          done
+          if [ -z "$CDP_READY" ]; then
+            echo "STANDALONE_CHROMIUM_CDP_NOT_READY"
+            tail -n 100 /tmp/chromium.log || true
+            exit 1
+          fi
+          echo "STANDALONE_CHROMIUM_HEALTHCHECK=OK"
+
+          # The bridge only observes the visible tab and performs the approved
+          # same-origin read after the user has completed E-ID in that tab.
+          python3 scripts/money_storage_chromium_bridge.py >/tmp/eid-browser.log 2>&1 &
+          BRIDGE_PID=$!
+
 
           curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 \
             https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
@@ -392,7 +291,7 @@ jobs:
           TUNNEL_PID=$!
 
           cleanup_all() {
-            kill "$TUNNEL_PID" "$BROWSER_PID" 2>/dev/null || true
+            kill "$TUNNEL_PID" "$BROWSER_PID" "${BRIDGE_PID:-}" 2>/dev/null || true
             cleanup
           }
           trap cleanup_all EXIT
@@ -488,8 +387,13 @@ jobs:
               exit 1
             fi
             if ! kill -0 "$BROWSER_PID" 2>/dev/null; then
-              echo "BROWSER_PROCESS_EXITED"
-              tail -n 100 /tmp/eid-browser.log
+              echo "STANDALONE_CHROMIUM_PROCESS_EXITED"
+              tail -n 100 /tmp/chromium.log || true
+              exit 1
+            fi
+            if ! kill -0 "$BRIDGE_PID" 2>/dev/null; then
+              echo "CHROMIUM_SESSION_BRIDGE_EXITED"
+              tail -n 100 /tmp/eid-browser.log || true
               exit 1
             fi
             if [ $((i % 15)) -eq 0 ]; then
