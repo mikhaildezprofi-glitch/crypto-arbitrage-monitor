@@ -252,6 +252,16 @@ jobs:
           fi
           echo "STANDALONE_CHROMIUM=$(basename "$(dirname "$CHROMIUM_BIN")")/chrome"
           "$CHROMIUM_BIN" --version
+          TARGET="${{ inputs.target }}"
+          if [ "$TARGET" = "sberkassa" ]; then
+            CHROMIUM_START_URL="https://sberkassa.site/login"
+            BRIDGE_SCRIPT="scripts/sberkassa_chromium_probe.py"
+          else
+            CHROMIUM_START_URL="https://storage.money/account"
+            BRIDGE_SCRIPT="scripts/money_storage_chromium_bridge.py"
+          fi
+          echo "BROWSER_TARGET=$TARGET"
+
           DISPLAY=:99 "$CHROMIUM_BIN" \
             --no-sandbox \
             --disable-dev-shm-usage \
