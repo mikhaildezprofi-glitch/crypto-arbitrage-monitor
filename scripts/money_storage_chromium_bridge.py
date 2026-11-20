@@ -236,11 +236,29 @@ def main() -> int:
                 if denied:
                     print("ACCESS_DENIED_PAGE_SUSPECTED=YES", flush=True)
 
-            if saw_eid and parsed.scheme == "https" and host == "storage.money" and parsed.path.rstrip("/") == "/account":
+            if (
+                saw_eid
+                and parsed.scheme == "https"
+                and host == "storage.money"
+                and parsed.path.rstrip("/") == "/account"
+            ):
                 print("AUTH_RETURNED_TO_ACCOUNT", flush=True)
+                cdp.command("Page.navigate", {"url": "https://storage.money/deals#tab-3"})
+                time.sleep(2)
+                continue
+
+            if (
+                parsed.scheme == "https"
+                and host == "storage.money"
+                and parsed.path.rstrip("/") == "/deals"
+                and parsed.fragment == "tab-3"
+            ):
+                print(
+                    "MONEY_STORAGE_SESSION=%s"
+                    % ("AUTHENTICATED_AFTER_EID" if saw_eid else "RESTORED_PROFILE_REUSED"),
+                    flush=True,
+                )
                 try:
-                    cdp.command("Page.navigate", {"url": "https://storage.money/deals#tab-3"})
-                    time.sleep(2)
                     snapshot = None
                     for attempt in range(1, 4):
                         try:
@@ -255,17 +273,31 @@ def main() -> int:
                             if attempt == 3:
                                 raise
                             time.sleep(3 * attempt)
+                        except RuntimeError as exc:
+                            message = str(exc)
+                            if any(marker in message for marker in (
+                                "HTTP 401", "HTTP 403", "redirected outside the approved origin",
+                                "response was not JSON",
+                            )):
+                                print("MONEY_STORAGE_AUTH_REQUIRED=YES; waiting for normal E-ID flow", flush=True)
+                                snapshot = None
+                                break
+                            raise
                     if snapshot is None:
-                        raise RuntimeError("No snapshot returned")
+                        time.sleep(2)
+                        continue
                     output = Path(os.environ["GITHUB_WORKSPACE"]) / "money-storage-current-offers.json"
                     write_normalized_snapshot(snapshot, str(output))
+                    Path(os.environ["GITHUB_WORKSPACE"], "session-authenticated.txt").write_text(
+                        "money_storage\\n", encoding="utf-8"
+                    )
                     with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
-                        summary.write("\n## Money Storage: «Всем предлагают»\n")
-                        summary.write("- Успешно прочитан актуальный снимок из той же Chromium-сессии.\n")
-                        summary.write(f"- Предложений: {snapshot['offer_count']}\n")
-                        summary.write(f"- Средний курс USDT → ECR: {snapshot['rate']} ECR за 1 USDT\n")
-                        summary.write(f"- Время UTC: {snapshot['observed_at']}\n")
-                        summary.write("- Комиссия не учитывалась; история не сохранялась.\n")
+                        summary.write("\\n## Money Storage: «Всем предлагают»\\n")
+                        summary.write("- Успешно прочитан актуальный снимок из восстановленной или вручную подтверждённой Chromium-сессии.\\n")
+                        summary.write(f"- Предложений: {snapshot['offer_count']}\\n")
+                        summary.write(f"- Средний курс USDT → ECR: {snapshot['rate']} ECR за 1 USDT\\n")
+                        summary.write(f"- Время UTC: {snapshot['observed_at']}\\n")
+                        summary.write("- Комиссия не учитывалась; история не сохранялась.\\n")
                     STATUS_FILE.write_text("OFFERS_READ_OK", encoding="utf-8")
                     print(
                         "OFFERS_READ_OK count=%s rate=%s"
