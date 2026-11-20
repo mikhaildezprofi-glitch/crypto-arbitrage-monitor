@@ -2,6 +2,15 @@ name: Free E-ID cloud browser (stable tunnel)
 
 on:
   workflow_dispatch:
+    inputs:
+      target:
+        description: "Which authenticated quote source to inspect"
+        required: true
+        type: choice
+        default: money_storage
+        options:
+          - money_storage
+          - sberkassa
 
 permissions:
   contents: read
@@ -254,7 +263,7 @@ jobs:
             --remote-allow-origins=* \
             --user-data-dir=/tmp/eid-chromium-profile \
             --window-size=1440,900 \
-            "https://storage.money/account" >/tmp/chromium.log 2>&1 &
+            "$CHROMIUM_START_URL" >/tmp/chromium.log 2>&1 &
           BROWSER_PID=$!
 
           CDP_READY=""
@@ -279,7 +288,7 @@ jobs:
 
           # The bridge only observes the visible tab and performs the approved
           # same-origin read after the user has completed E-ID in that tab.
-          python3 scripts/money_storage_chromium_bridge.py >/tmp/eid-browser.log 2>&1 &
+          python3 "$BRIDGE_SCRIPT" >/tmp/eid-browser.log 2>&1 &
           BRIDGE_PID=$!
 
 
@@ -372,11 +381,11 @@ jobs:
           echo "BROWSER_DIAGNOSTIC_STREAM=STARTED"
           for i in $(seq 1 900); do
             STATUS="$(cat /tmp/eid-auth-status 2>/dev/null || echo WAITING_FOR_LOGIN)"
-            if [ "$STATUS" = "OFFERS_READ_OK" ]; then
-              echo "Authenticated Money Storage read completed."
+            if [ "$STATUS" = "OFFERS_READ_OK" ] || [ "$STATUS" = "SBERKASSA_CAPTURE_COMPLETE" ]; then
+              echo "Authenticated read-only browser inspection completed for target=$TARGET."
               exit 0
             fi
-            if [ "$STATUS" = "OFFERS_READ_FAILED" ] || [ "$STATUS" = "AUTH_TIMEOUT" ]; then
+            if [ "$STATUS" = "OFFERS_READ_FAILED" ] || [ "$STATUS" = "AUTH_TIMEOUT" ] || [ "$STATUS" = "SBERKASSA_CAPTURE_FAILED" ] || [ "$STATUS" = "SBERKASSA_CAPTURE_TIMEOUT" ]; then
               echo "BROWSER_DIAGNOSTICS:"
               grep -E 'OFFERS_READ_|AUTH_|NAV=|PAGE_ERROR=' /tmp/eid-browser.log | tail -n 80 || true
               exit 1
@@ -408,7 +417,7 @@ jobs:
               CURRENT_BROWSER_LINES="$(wc -l < /tmp/eid-browser.log 2>/dev/null || echo 0)"
               if [ "$CURRENT_BROWSER_LINES" -gt "$BROWSER_LOG_LINES" ]; then
                 echo "BROWSER_DIAGNOSTICS_UPDATE:"
-                sed -n "$((BROWSER_LOG_LINES + 1)),${CURRENT_BROWSER_LINES}p" /tmp/eid-browser.log | grep -E '^(INITIAL_NAVIGATION=|BROWSER_READY=|INITIAL_PAGE_TITLE=|NAV=|HTTP_DIAG |CLOUDFLARE_CHALLENGE_DETECTED=|ACCESS_RESPONSE_CLASSIFICATION |PAGE_DIAG |BOT_OR_ACCESS_CHALLENGE_SUSPECTED=|AUTH_PROGRESS |AUTH_PAGE_STATE |ACCESS_DENIED_PAGE_SUSPECTED=|AUTH_RETURNED_TO_ACCOUNT|OFFERS_READ_|AUTH_TIMEOUT|AUTH_PROGRESS_DIAG_UNAVAILABLE=|PAGE_DIAG_UNAVAILABLE=|HTTP_DIAG_ERROR=)' || true
+                sed -n "$((BROWSER_LOG_LINES + 1)),${CURRENT_BROWSER_LINES}p" /tmp/eid-browser.log | grep -E '^(INITIAL_NAVIGATION=|BROWSER_READY=|INITIAL_PAGE_TITLE=|NAV=|HTTP_DIAG |REQUEST |QUOTE_FIELDS |JSON_SCHEMA |PAGE_UPDATE_MARKERS |SBERKASSA_|CLOUDFLARE_CHALLENGE_DETECTED=|ACCESS_RESPONSE_CLASSIFICATION |PAGE_DIAG |BOT_OR_ACCESS_CHALLENGE_SUSPECTED=|AUTH_PROGRESS |AUTH_PAGE_STATE |ACCESS_DENIED_PAGE_SUSPECTED=|AUTH_RETURNED_TO_ACCOUNT|OFFERS_READ_|AUTH_TIMEOUT|AUTH_PROGRESS_DIAG_UNAVAILABLE=|PAGE_DIAG_UNAVAILABLE=|HTTP_DIAG_ERROR=)' || true
                 BROWSER_LOG_LINES="$CURRENT_BROWSER_LINES"
               fi
               if [ "$CODE" != "200" ] || [ "$WS_STATUS" != "101" ]; then
