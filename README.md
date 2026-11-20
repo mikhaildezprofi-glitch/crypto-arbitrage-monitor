@@ -78,7 +78,33 @@ This is an indicative market-rate average, not a promise that a trade can be exe
 
 ## Current implementation status
 
-This repository includes the calculation core, read-only BlackBit and Winance quote adapters, a common read-only provider protocol, a quote collector, and a pure Money Storage offer parser plus first-20 arithmetic-average quote builder. The Money Storage parser normalizes raw API src=ECR/dst=USDT records to displayed USDT -> ECR direction. The authenticated standalone-Chromium workflow has completed a real read from the "Всем предлагают" tab and produced a normalized current-offers artifact. The bridge uses the same manually authenticated browser session; it does not export cookies or automate authentication. The average builder uses the first 20 available target-direction offers and timestamps the quote from the page's confirmed visible update marker. The Money Storage poll interval is configured as 900 seconds. A pure Sberkassa ERUB -> RUB helper now applies the agreed independent 15-minute freshness check and first-20 `back_rate` average, with unit tests. It is not yet connected to a live Sberkassa provider or the hourly collection cycle. The parser and average builders do not perform network requests or authentication; official permission and a supported cloud-side access method are still required before live polling can be enabled. The collector requests all five configured source keys independently, validates each source's required currency direction and positive rate, records per-source failures, and marks the batch incomplete when any required provider is missing or fails. It never substitutes a previous quote. Telegram delivery, persistent history, and deployment are not yet implemented.
+This repository includes the calculation core, read-only BlackBit and Winance API adapters, snapshot-backed Money Storage and Sberkassa quote providers, a common provider protocol, and a selectable four-source collector. The Money Storage parser normalizes raw API src=ECR/dst=USDT records to displayed USDT -> ECR direction; its snapshot provider accepts only the Everyone Offers tab and a page update marker no older than 900 seconds. The Sberkassa browser probe now captures only `back_rate` and `create_time` from the successful `/public_deals/fetch` response when its exact request query is `from=ERUB&to=RUB`; its snapshot provider verifies that request metadata, snapshot age, the independent 15-minute offer freshness rule, and the first-20 `back_rate` average. The combined manual four-source workflow runs both authenticated browser bridges using their separate encrypted Chromium profiles, then fetches BlackBit and Winance and writes a four-source report. It intentionally does not calculate profit or ROI because the route ends in RUB. Human E-ID/CAPTCHA completion remains manual. The regular five-source collector remains the default. The parser and average builders do not perform network requests or authentication; official permission and a supported cloud-side access method are still required before live polling can be enabled. The collector requests all five configured source keys independently, validates each source's required currency direction and positive rate, records per-source failures, and marks the batch incomplete when any required provider is missing or fails. It never substitutes a previous quote. Telegram delivery, persistent history, and deployment are not yet implemented.
+
+## Four-source live quote test
+
+Run the **Four-step read-only quote test** workflow manually from GitHub Actions.
+It calls the existing authenticated browser workflow twice in the same workflow
+run: once with the encrypted Money Storage profile and once with the separate
+encrypted Sberkassa profile. Each browser session remains human-operated; E-ID,
+CAPTCHA, or other identity checks are completed manually when requested.
+
+The browser bridges publish short-lived, normalized artifacts only:
+- Money Storage: the approved Everyone Offers tab, average of the first 20
+  USDT -> ECR rates, timestamp from the page's own update marker.
+- Sberkassa: the exact `/public_deals/fetch?from=ERUB&to=RUB` JSON response,
+  retaining only `back_rate` and `create_time` for offer rows. The request
+  direction and HTTP 200 status are attached to the sanitized records. Freshness
+  is confirmed when at least one offer is no older than 15 minutes; the average
+  still uses the first 20 matching rows in source order.
+- BlackBit and Winance: fetched through their read-only public API adapters.
+
+The collector reports each of the four source results independently. It does
+not call the fifth Sberkassa RUB -> USDT source and does not calculate final
+USDT, profit, ROI, or a completed arbitrage cycle. Missing snapshots, stale
+timestamps, malformed rows, or source errors are reported as unavailable.
+
+The combined workflow uploads a one-day four-source report artifact. It does
+not create a recurring schedule.
 
 ## Run tests
 
