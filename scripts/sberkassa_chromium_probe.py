@@ -41,7 +41,7 @@ SAFE_OFFER_KEYS = re.compile(
     r"target_currency|currency_id|from_id|to_id|give_id|receive_id|"
     r"currency1|currency2|currency1_id|currency2_id|currency_give|currency_receive|"
     r"exchange_direction|direction|pair|pair_id|side|side_id|type|type_id|"
-    r"is_buy|is_sell|rate|back_rate)$",
+    r"is_buy|is_sell|rate|back_rate|exchange_rate|buy_rate|sell_rate|rate_value)$",
     re.I,
 )
 
@@ -54,7 +54,7 @@ def extract_offer_schema_samples(payload: object, limit: int = 30) -> list[dict[
         if depth > 10 or len(samples) >= limit:
             return
         if isinstance(node, dict):
-            if "rate" in node or "back_rate" in node:
+            if any(re.search(r"(rate|price)", str(key), re.I) for key in node):
                 sample: dict[str, str] = {}
                 for key, value in node.items():
                     if not SAFE_OFFER_KEYS.fullmatch(str(key)):
