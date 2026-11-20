@@ -6,6 +6,7 @@ never calculates final USDT, profit, or ROI because the route ends in RUB.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,10 +22,10 @@ from arbitrage_monitor.providers.winance import WinanceQuoteProvider
 
 def main() -> int:
     providers = {
-        "money_storage": MoneyStorageSnapshotQuoteProvider(),
+        "money_storage": MoneyStorageSnapshotQuoteProvider(os.getenv("MONEY_STORAGE_SNAPSHOT", "money-storage-current-offers.json")),
         "blackbit": BlackBitQuoteProvider(),
         "winance": WinanceQuoteProvider(),
-        "sberkassa_sell": SberkassaSnapshotQuoteProvider(),
+        "sberkassa_sell": SberkassaSnapshotQuoteProvider(os.getenv("SBERKASSA_SNAPSHOT", "sberkassa-current-inspection.json")),
     }
     batch = collect_quotes(providers, required_keys=FOUR_STEP_PROVIDER_KEYS)
     report = {
