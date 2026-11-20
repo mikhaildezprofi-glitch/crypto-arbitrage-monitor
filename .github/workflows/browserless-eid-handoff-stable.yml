@@ -84,23 +84,65 @@ jobs:
 
           Xvfb :99 -screen 0 1440x900x24 -ac +extension RANDR >/tmp/xvfb.log 2>&1 &
           XVFB_PID=$!
-          x11vnc -display :99 -rfbport 5900 -forever -shared -repeat -noxdamage -passwd "$VNC_PASSWORD" >/tmp/x11vnc.log 2>&1 &
-          VNC_PID=$!
-          websockify --web=/usr/share/novnc 6080 127.0.0.1:5900 >/tmp/websockify.log 2>&1 &
-          WEBSOCKIFY_PID=$!
 
           cleanup() {
-            kill "$WEBSOCKIFY_PID" "$VNC_PID" "$XVFB_PID" 2>/dev/null || true
+            [ -n "${WEBSOCKIFY_PID:-}" ] && kill "$WEBSOCKIFY_PID" 2>/dev/null || true
+            [ -n "${VNC_PID:-}" ] && kill "$VNC_PID" 2>/dev/null || true
+            [ -n "${XVFB_PID:-}" ] && kill "$XVFB_PID" 2>/dev/null || true
             sudo nginx -s quit 2>/dev/null || true
             rm -f /tmp/eid-http-password /tmp/eid-vnc-password
           }
           trap cleanup EXIT
 
+          # Do not start x11vnc until Xvfb has completed initialization.
+          DISPLAY_READY=""
           for i in $(seq 1 30); do
-            if xdpyinfo -display :99 >/dev/null 2>&1 && curl -fsS http://127.0.0.1:6080/vnc.html -o /dev/null; then break; fi
+            if xdpyinfo -display :99 >/dev/null 2>&1; then DISPLAY_READY=yes; break; fi
+            if ! kill -0 "$XVFB_PID" 2>/dev/null; then
+              echo "XVFB_PROCESS_EXITED"
+              cat /tmp/xvfb.log || true
+              exit 1
+            fi
             sleep 1
           done
-          xdpyinfo -display :99 >/dev/null
+          if [ -z "$DISPLAY_READY" ]; then
+            echo "XVFB_DISPLAY_NOT_READY"
+            cat /tmp/xvfb.log || true
+            exit 1
+          fi
+          echo "XVFB_DISPLAY_HEALTHCHECK=OK"
+
+          x11vnc -display :99 -rfbport 5900 -forever -shared -repeat -noxdamage -passwd "$VNC_PASSWORD" >/tmp/x11vnc.log 2>&1 &
+          VNC_PID=$!
+
+          # Wait for the RFB listener itself, not merely for the noVNC web page.
+          VNC_READY=""
+          for i in $(seq 1 30); do
+            if python3 -c 'import socket; s=socket.create_connection(("127.0.0.1",5900),timeout=1); s.close()' 2>/dev/null; then
+              VNC_READY=yes
+              break
+            fi
+            if ! kill -0 "$VNC_PID" 2>/dev/null; then
+              echo "X11VNC_PROCESS_EXITED"
+              tail -n 100 /tmp/x11vnc.log || true
+              exit 1
+            fi
+            sleep 1
+          done
+          if [ -z "$VNC_READY" ]; then
+            echo "X11VNC_LISTENER_NOT_READY"
+            ss -ltnp '( sport = :5900 )' || true
+            tail -n 100 /tmp/x11vnc.log || true
+            exit 1
+          fi
+          echo "X11VNC_LISTENER_HEALTHCHECK=OK"
+
+          websockify --web=/usr/share/novnc 6080 127.0.0.1:5900 >/tmp/websockify.log 2>&1 &
+          WEBSOCKIFY_PID=$!
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:6080/vnc.html -o /dev/null; then break; fi
+            sleep 1
+          done
           curl -fsS http://127.0.0.1:6080/vnc.html -o /dev/null
 
           # Confirm x11vnc is not merely running as a process: read its RFB banner.
