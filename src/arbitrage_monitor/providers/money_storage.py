@@ -139,8 +139,8 @@ def average_first_20_offer_rate(
     """Build the Money Storage quote as the arithmetic mean of the first 20 offers.
 
     No offer amounts are summed, no individual offer is selected, and no
-    purchase or execution is implied. The quote timestamp is the observation
-    time of this polling cycle, not the creation time of an individual offer.
+    purchase or execution is implied. The required quote timestamp is the
+    page's confirmed update time, never the scrape time or offer creation time.
     """
     selected = tuple(offers[:MONEY_STORAGE_PAGE_SIZE])
     if not selected:
