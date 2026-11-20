@@ -31,7 +31,7 @@ Do not use browser cookies, session tokens, OAuth authorization codes, browser s
 - If fewer than 20 matching offers are returned, average the available matching offers. If none are returned, mark the source unavailable.
 - Do not sum offer amounts, select a best offer, infer partial fills, or simulate an order.
 - The displayed commission is paid by the seller when accepting an offer in this direction; retain it as source metadata but do not deduct it from this route step.
-- Timestamp the resulting quote at successful observation time, not at offer creation time.
+- Timestamp the resulting quote from the page's own visible last-updated marker, not from the scrape time or an individual offer's creation time. Require a parseable page marker no older than the 900-second Money Storage interval; missing, invalid, future, or stale page timestamps make the source unavailable.
 - Reject non-success HTTP responses, malformed payloads, wrong currency direction, non-positive/non-finite rates, and empty results.
 - Never substitute a previous quote after a failed poll.
 
