@@ -9,6 +9,8 @@ class SberkassaProbeSyntaxTests(unittest.TestCase):
         source = script_path.read_text(encoding="utf-8")
         compile(source, str(script_path), "exec")
         self.assertIn("MONEY_STORAGE_CALLBACK_CONFIRMED", source)
+        self.assertIn('auth_host == "e-id.cards"', source)
+        self.assertIn("eid_provider_seen", source)
         self.assertIn("Page.navigate", source)
         self.assertIn("https://sberkassa.site/login", source)
 
