@@ -49,7 +49,7 @@ def calculate_route(
     starting_amount: Decimal,
     starting_currency: str,
     steps: tuple[RouteStep, ...],
-    max_quote_age_seconds: int = 900,
+    max_quote_age_seconds: int | None = None,
     now: datetime | None = None,
 ) -> RouteResult:
     """Calculate only when every quote is fresh and every fee is known."""
@@ -57,6 +57,8 @@ def calculate_route(
         raise ValueError("Starting amount must be positive.")
     if not steps:
         raise ValueError("At least one route step is required.")
+    if max_quote_age_seconds is None:
+        raise ValueError("Maximum quote age must be explicitly configured after selecting the polling interval.")
     if max_quote_age_seconds < 0:
         raise ValueError("Maximum quote age cannot be negative.")
 
