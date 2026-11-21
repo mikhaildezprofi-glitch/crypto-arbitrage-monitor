@@ -1,4 +1,8 @@
+import json
+import os
+import tempfile
 import unittest
+from unittest.mock import patch
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -59,11 +63,13 @@ class MoneyStorageOfferFreshnessTests(unittest.TestCase):
                         "status": 200,
                         "finalUrl": "https://storage.money/public_deals/fetch?offset=0&limit=20&from=ECR&to=USDT",
                         "contentType": "application/json",
-                        "text": __import__("json").dumps(payload),
+                        "text": json.dumps(payload),
                     }
                 raise AssertionError("Reader must reuse captured page response, not issue another fetch.")
 
-        snapshot = fetch_from_authenticated_page(CapturedOffersPage())
+        with tempfile.TemporaryDirectory() as workspace:
+            with patch.dict(os.environ, {"GITHUB_WORKSPACE": workspace}):
+                snapshot = fetch_from_authenticated_page(CapturedOffersPage())
         self.assertEqual(snapshot["rate"], "0.25")
         self.assertTrue(snapshot["freshness_confirmed"])
 
