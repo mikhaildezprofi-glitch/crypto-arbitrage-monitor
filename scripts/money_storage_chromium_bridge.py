@@ -212,13 +212,13 @@ def main() -> int:
                       try {
                         const rawUrl = args[0] instanceof Request ? args[0].url : String(args[0]);
                         const url = new URL(rawUrl, location.href);
+                        // Capture the provider endpoint response first, then let the Python
+                        // reader validate the exact query string and HTTP status.
+                        // This avoids silently missing a legitimate page request
+                        // when the provider changes parameter ordering or encoding.
                         const expected = url.origin === "https://storage.money"
-                          && url.pathname === "/public_deals/fetch"
-                          && url.searchParams.get("offset") === "0"
-                          && url.searchParams.get("limit") === "20"
-                          && url.searchParams.get("from") === "ECR"
-                          && url.searchParams.get("to") === "USDT";
-                        if (expected && response.status === 200 && !window.__moneyStorageOffersCapture) {
+                          && url.pathname === "/public_deals/fetch";
+                        if (expected && !window.__moneyStorageOffersCapture) {
                           response.clone().text().then(text => {
                             if (text.length <= 1000000) {
                               window.__moneyStorageOffersCapture = {
