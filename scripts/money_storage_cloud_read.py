@@ -156,14 +156,37 @@ def fetch_from_authenticated_page(page) -> dict[str, Any]:
 
     page_meta = page.evaluate(
         """() => {
+          const marker = /(обновл|updated|refresh|last update|время обнов|последн.*курс)/i;
           const lines = (document.body ? document.body.innerText : "")
             .split(/\\n/)
             .map(line => line.trim())
-            .filter(line => line && /(обновл|updated|refresh|last update|время обнов|последн.*курс)/i.test(line))
+            .filter(line => line && marker.test(line))
             .slice(0, 12);
+          // Some providers expose update labels in visible title/ARIA/data attributes
+          // rather than body text. Collect only short marker-bearing candidates;
+          // do not export arbitrary page text or user/account data.
+          const attributeCandidates = [];
+          for (const el of Array.from(document.querySelectorAll("body *"))) {
+            if (attributeCandidates.length >= 12) break;
+            if (!el.getClientRects().length) continue;
+            const ownText = Array.from(el.childNodes)
+              .filter(node => node.nodeType === Node.TEXT_NODE)
+              .map(node => node.textContent || "")
+              .join(" ").trim();
+            const attrs = ["title", "aria-label", "data-updated-at", "data-update-time", "datetime"]
+              .map(name => el.getAttribute(name) || "")
+              .filter(Boolean);
+            for (const value of [ownText, ...attrs]) {
+              const candidate = value.replace(/\\s+/g, " ").trim();
+              if (candidate && candidate.length <= 240 && marker.test(candidate)) {
+                attributeCandidates.push(candidate);
+                if (attributeCandidates.length >= 12) break;
+              }
+            }
+          }
           const now = new Date();
           return {
-            updateLines: lines,
+            updateLines: Array.from(new Set([...lines, ...attributeCandidates])).slice(0, 20),
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             localNow: {
               year: now.getFullYear(), month: now.getMonth() + 1, day: now.getDate(),
