@@ -18,42 +18,55 @@ class SnapshotProviderTests(unittest.TestCase):
         path.write_text(json.dumps(payload), encoding="utf-8")
         return str(path)
 
-    def test_money_storage_snapshot_provider_returns_page_timestamped_quote(self):
+    def money_snapshot(self, *, observed_at=None, newest_offer_created_at=None, tab="everyone_offers"):
+        return {
+            "source": "money_storage",
+            "tab": tab,
+            "pair": "USDT/ECR",
+            "rate": "0.291",
+            "observed_at": (observed_at or NOW).isoformat(),
+            "newest_offer_created_at": (newest_offer_created_at or NOW - timedelta(minutes=5)).isoformat(),
+            "freshness_window_seconds": 900,
+            "freshness_confirmed": True,
+        }
+
+    def test_money_storage_snapshot_uses_newest_offer_timestamp_for_freshness(self):
         with tempfile.TemporaryDirectory() as directory:
-            path = self.write_json(directory, "money.json", {
-                "source": "money_storage",
-                "tab": "everyone_offers",
-                "pair": "USDT/ECR",
-                "rate": "0.291",
-                "observed_at": NOW.isoformat(),
-            })
+            path = self.write_json(directory, "money.json", self.money_snapshot())
             quote = MoneyStorageSnapshotQuoteProvider(path).fetch_quote()
         self.assertEqual(quote.pair, "USDT/ECR")
         self.assertEqual(quote.rate, Decimal("0.291"))
         self.assertEqual(quote.observed_at, NOW)
 
-    def test_money_storage_snapshot_rejects_stale_page_timestamp(self):
+    def test_money_storage_snapshot_rejects_stale_newest_offer_even_when_collection_is_recent(self):
         with tempfile.TemporaryDirectory() as directory:
-            path = self.write_json(directory, "money.json", {
-                "source": "money_storage",
-                "tab": "everyone_offers",
-                "pair": "USDT/ECR",
-                "rate": "0.291",
-                "observed_at": (NOW - timedelta(minutes=16)).isoformat(),
-            })
-            with self.assertRaisesRegex(RuntimeError, "stale"):
+            path = self.write_json(directory, "money.json", self.money_snapshot(
+                newest_offer_created_at=NOW - timedelta(minutes=16)
+            ))
+            with self.assertRaisesRegex(RuntimeError, "newest offer is older"):
+                MoneyStorageSnapshotQuoteProvider(path).fetch_quote()
+
+    def test_money_storage_snapshot_rejects_stale_collection_time(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write_json(directory, "money.json", self.money_snapshot(
+                observed_at=NOW - timedelta(minutes=16),
+                newest_offer_created_at=NOW - timedelta(minutes=17),
+            ))
+            with self.assertRaisesRegex(RuntimeError, "collection time is stale"):
                 MoneyStorageSnapshotQuoteProvider(path).fetch_quote()
 
     def test_money_storage_snapshot_rejects_wrong_tab(self):
         with tempfile.TemporaryDirectory() as directory:
-            path = self.write_json(directory, "money.json", {
-                "source": "money_storage",
-                "tab": "my_offers",
-                "pair": "USDT/ECR",
-                "rate": "0.291",
-                "observed_at": NOW.isoformat(),
-            })
+            path = self.write_json(directory, "money.json", self.money_snapshot(tab="my_offers"))
             with self.assertRaisesRegex(RuntimeError, "source or tab"):
+                MoneyStorageSnapshotQuoteProvider(path).fetch_quote()
+
+    def test_money_storage_snapshot_rejects_future_offer_timestamp(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write_json(directory, "money.json", self.money_snapshot(
+                newest_offer_created_at=NOW + timedelta(seconds=1)
+            ))
+            with self.assertRaisesRegex(RuntimeError, "ahead of the collection clock"):
                 MoneyStorageSnapshotQuoteProvider(path).fetch_quote()
 
     def sber_snapshot(self, *, created_at=None, request_from="ERUB", request_to="RUB"):
