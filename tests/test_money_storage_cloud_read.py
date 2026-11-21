@@ -6,6 +6,7 @@ from arbitrage_monitor.providers.money_storage import parse_public_offer
 from scripts.money_storage_cloud_read import (
     confirm_offer_freshness,
     latest_offer_created_at,
+    fetch_from_authenticated_page,
     parse_authenticated_payload,
 )
 
@@ -27,6 +28,18 @@ def raw_offer(created_at, rate="0.20"):
 class MoneyStorageOfferFreshnessTests(unittest.TestCase):
     def setUp(self):
         self.now = datetime(2026, 11, 21, 12, 0, tzinfo=timezone.utc)
+
+    def test_browser_clock_must_match_cloud_runner_clock(self):
+        class SkewedBrowserPage:
+            url = "https://storage.money/deals#tab-3"
+
+            def evaluate(self, script, argument=None):
+                if "Date.now()" in script:
+                    return datetime.now(timezone.utc).timestamp() * 1000 + 10_000
+                raise AssertionError("API request must not run when browser clock is skewed.")
+
+        with self.assertRaisesRegex(RuntimeError, "clocks differ by more than 5 seconds"):
+            fetch_from_authenticated_page(SkewedBrowserPage())
 
     def test_newest_offer_within_15_minutes_confirms_freshness(self):
         offers = (
