@@ -178,6 +178,15 @@ def fetch_from_authenticated_page(page) -> dict[str, Any]:
         payload = json.loads(result["text"])
     except json.JSONDecodeError as exc:
         raise RuntimeError("Money Storage returned malformed JSON.") from exc
+    if not isinstance(payload, Mapping) or payload.get("result") != "ok":
+        raise RuntimeError("Money Storage authenticated endpoint did not return result=ok.")
+
+    # A successful protected API response proves the browser session is
+    # authenticated even when the quote itself is stale. Preserve the encrypted
+    # session independently from quote freshness so the user need not repeat E-ID.
+    workspace = Path(__import__("os").environ.get("GITHUB_WORKSPACE", "."))
+    (workspace / "session-authenticated.txt").write_text("money_storage\\n", encoding="utf-8")
+
     snapshot = parse_authenticated_payload(payload, observed_at=runner_now)
     snapshot["browser_clock_skew_seconds"] = round(clock_skew_seconds, 3)
     return snapshot
