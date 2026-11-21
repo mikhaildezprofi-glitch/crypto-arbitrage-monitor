@@ -38,22 +38,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Verify cloud runner UTC clock synchronization
-        shell: bash
-        run: |
-          set -euo pipefail
-          if ! command -v timedatectl >/dev/null 2>&1; then
-            echo "RUNNER_NTP_STATUS=UNAVAILABLE"
-            exit 1
-          fi
-          NTP_SYNC="$(timedatectl show --property=NTPSynchronized --value 2>/dev/null || true)"
-          echo "RUNNER_NTP_SYNCHRONIZED=$NTP_SYNC"
-          if [ "$NTP_SYNC" != "yes" ]; then
-            echo "Cloud runner clock is not confirmed synchronized; refusing timestamp comparisons."
-            exit 1
-          fi
-          date -u +"RUNNER_CLOCK_UTC=%Y-%m-%dT%H:%M:%SZ"
-
+      - name: Verify runner UTC clock against independent HTTPS time references
+        run: python3 scripts/check_runner_clock.py
       - name: Require Chromium profile encryption secret
         shell: bash
         run: |
