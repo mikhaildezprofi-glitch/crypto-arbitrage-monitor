@@ -37,80 +37,27 @@ RELATIVE_RE = re.compile(
 )
 
 
-def parse_page_update_timestamp(
-    lines: list[str] | tuple[str, ...],
-    *,
-    timezone_name: str,
-    browser_local_now: Mapping[str, int],
-) -> tuple[datetime, str]:
-    """Parse the page's own update marker; never substitute the scrape time."""
-    try:
-        page_zone = ZoneInfo(timezone_name)
-    except Exception as exc:
-        raise ValueError("Money Storage browser timezone is unavailable or invalid.") from exc
+def latest_offer_created_at(offers) -> datetime:
+    """Return the newest provider-supplied offer creation time."""
+    if not offers:
+        raise ValueError("Money Storage returned no offers with creation timestamps.")
+    timestamps = [offer.created_at for offer in offers]
+    if any(value.tzinfo is None for value in timestamps):
+        raise ValueError("Money Storage offer creation timestamp has no timezone.")
+    return max(value.astimezone(timezone.utc) for value in timestamps)
 
-    local_now = datetime(
-        int(browser_local_now["year"]),
-        int(browser_local_now["month"]),
-        int(browser_local_now["day"]),
-        int(browser_local_now["hour"]),
-        int(browser_local_now["minute"]),
-        int(browser_local_now.get("second", 0)),
-        tzinfo=page_zone,
-    )
 
-    for line in lines:
-        if not UPDATE_MARKER_RE.search(line):
-            continue
-
-        iso_match = ISO_TIMESTAMP_RE.search(line)
-        if iso_match:
-            raw = iso_match.group(1).replace("Z", "+00:00")
-            try:
-                parsed = datetime.fromisoformat(raw)
-            except ValueError:
-                parsed = None
-            if parsed is not None:
-                if parsed.tzinfo is None:
-                    parsed = parsed.replace(tzinfo=page_zone)
-                return parsed.astimezone(timezone.utc), line[:240]
-
-        dmy_match = DMY_TIMESTAMP_RE.search(line)
-        if dmy_match:
-            day, month, year, hour, minute, second = dmy_match.groups()
-            parsed = datetime(
-                int(year), int(month), int(day), int(hour), int(minute),
-                int(second or 0), tzinfo=page_zone
-            )
-            return parsed.astimezone(timezone.utc), line[:240]
-
-        relative_match = RELATIVE_RE.search(line)
-        if relative_match:
-            amount = int(relative_match.group(1))
-            unit = relative_match.group(2).lower()
-            if "сек" in unit or unit in ("s", "second", "seconds"):
-                delta = timedelta(seconds=amount)
-            elif "мин" in unit or unit.startswith(("min", "mins")):
-                delta = timedelta(minutes=amount)
-            elif "час" in unit or unit.startswith(("hour", "hr")):
-                delta = timedelta(hours=amount)
-            else:
-                delta = timedelta(days=amount)
-            return (local_now - delta).astimezone(timezone.utc), line[:240]
-        if re.search(r"(только что|just now|сейчас)", line, re.I):
-            return local_now.astimezone(timezone.utc), line[:240]
-
-        time_match = TIME_ONLY_RE.search(line)
-        if time_match:
-            hour, minute, second = time_match.groups()
-            parsed = local_now.replace(
-                hour=int(hour), minute=int(minute), second=int(second or 0), microsecond=0
-            )
-            if parsed - local_now > timedelta(hours=1):
-                parsed -= timedelta(days=1)
-            return parsed.astimezone(timezone.utc), line[:240]
-
-    raise ValueError("Money Storage page did not expose a parseable update timestamp.")
+def confirm_offer_freshness(offers, *, collected_at: datetime, max_age_seconds: int = 900) -> datetime:
+    """Fresh only when the newest offer was created within the last 15 minutes."""
+    if collected_at.tzinfo is None:
+        raise ValueError("Money Storage collection time must be timezone-aware.")
+    newest = latest_offer_created_at(offers)
+    age_seconds = (collected_at.astimezone(timezone.utc) - newest).total_seconds()
+    if age_seconds < 0:
+        raise ValueError("Money Storage newest offer creation time is in the future.")
+    if age_seconds > max_age_seconds:
+        raise ValueError("Money Storage newest offer is older than the 900-second freshness window.")
+    return newest
 
 
 class TransientMoneyStorageReadError(RuntimeError):
@@ -122,6 +69,7 @@ def parse_authenticated_payload(payload: Mapping[str, Any], observed_at: datetim
     if not isinstance(payload, Mapping) or payload.get("result") != "ok":
         raise ValueError("Money Storage did not return result=ok.")
     offers = parse_public_offers(payload)
+    newest_offer_created_at = confirm_offer_freshness(offers, collected_at=observed_at)
     quote = average_first_20_offer_rate(offers, observed_at=observed_at)
     rows = []
     for offer in offers[:20]:
@@ -139,6 +87,9 @@ def parse_authenticated_payload(payload: Mapping[str, Any], observed_at: datetim
         "observed_at": quote.observed_at.isoformat(),
         "offer_count": len(rows),
         "offers": rows,
+        "newest_offer_created_at": newest_offer_created_at.isoformat(),
+        "freshness_window_seconds": 900,
+        "freshness_confirmed": True,
         "commission_applied": False,
         "historical_data_saved": False,
     }
@@ -154,58 +105,7 @@ def fetch_from_authenticated_page(page) -> dict[str, Any]:
     ):
         raise RuntimeError("Authenticated page is not Money Storage Deals -> «Всем предлагают».")
 
-    page_meta = page.evaluate(
-        """() => {
-          const marker = /(обновл|updated|refresh|last update|время обнов|последн.*курс)/i;
-          const lines = (document.body ? document.body.innerText : "")
-            .split(/\\n/)
-            .map(line => line.trim())
-            .filter(line => line && marker.test(line))
-            .slice(0, 12);
-          // Some providers expose update labels in visible title/ARIA/data attributes
-          // rather than body text. Collect only short marker-bearing candidates;
-          // do not export arbitrary page text or user/account data.
-          const attributeCandidates = [];
-          for (const el of Array.from(document.querySelectorAll("body *"))) {
-            if (attributeCandidates.length >= 12) break;
-            if (!el.getClientRects().length) continue;
-            const ownText = Array.from(el.childNodes)
-              .filter(node => node.nodeType === Node.TEXT_NODE)
-              .map(node => node.textContent || "")
-              .join(" ").trim();
-            const attrs = ["title", "aria-label", "data-updated-at", "data-update-time", "datetime"]
-              .map(name => el.getAttribute(name) || "")
-              .filter(Boolean);
-            for (const value of [ownText, ...attrs]) {
-              const candidate = value.replace(/\\s+/g, " ").trim();
-              if (candidate && candidate.length <= 240 && marker.test(candidate)) {
-                attributeCandidates.push(candidate);
-                if (attributeCandidates.length >= 12) break;
-              }
-            }
-          }
-          const now = new Date();
-          return {
-            updateLines: Array.from(new Set([...lines, ...attributeCandidates])).slice(0, 20),
-            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-            localNow: {
-              year: now.getFullYear(), month: now.getMonth() + 1, day: now.getDate(),
-              hour: now.getHours(), minute: now.getMinutes(), second: now.getSeconds()
-            }
-          };
-        }"""
-    )
-    page_updated_at, page_update_text = parse_page_update_timestamp(
-        page_meta.get("updateLines", []),
-        timezone_name=page_meta.get("timezone", ""),
-        browser_local_now=page_meta.get("localNow", {}),
-    )
     observed_now = datetime.now(timezone.utc)
-    age_seconds = (observed_now - page_updated_at).total_seconds()
-    if age_seconds < -60:
-        raise RuntimeError("Money Storage page update timestamp is in the future.")
-    if age_seconds > 900:
-        raise RuntimeError("Money Storage page update timestamp is older than the 900-second source interval.")
 
     result = page.evaluate(
         """async (url) => {
@@ -269,10 +169,7 @@ def fetch_from_authenticated_page(page) -> dict[str, Any]:
         payload = json.loads(result["text"])
     except json.JSONDecodeError as exc:
         raise RuntimeError("Money Storage returned malformed JSON.") from exc
-    snapshot = parse_authenticated_payload(payload, observed_at=page_updated_at)
-    snapshot["page_updated_at"] = page_updated_at.isoformat()
-    snapshot["page_update_text"] = page_update_text
-    snapshot["page_timezone"] = page_meta.get("timezone")
+    snapshot = parse_authenticated_payload(payload, observed_at=observed_now)
     return snapshot
 
 
