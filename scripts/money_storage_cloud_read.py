@@ -9,7 +9,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from arbitrage_monitor.providers.money_storage import (
     average_first_20_offer_rate,
@@ -119,6 +119,18 @@ def fetch_from_authenticated_page(page) -> dict[str, Any]:
         raise RuntimeError(
             "Money Storage Deals page did not expose its initial authenticated offers response."
         )
+    final_url = urlparse(result.get("finalUrl", ""))
+    final_query = parse_qs(final_url.query)
+    if (
+        final_url.scheme != "https"
+        or final_url.netloc.lower() != "storage.money"
+        or final_url.path != "/public_deals/fetch"
+        or final_query.get("offset") != ["0"]
+        or final_query.get("limit") != ["20"]
+        or final_query.get("from") != ["ECR"]
+        or final_query.get("to") != ["USDT"]
+    ):
+        raise RuntimeError("Captured Money Storage response did not match the approved offers endpoint.")
     if result.get("invalidOrigin"):
         raise RuntimeError("Money Storage read redirected outside the approved origin.")
     if result.get("tooLarge"):
