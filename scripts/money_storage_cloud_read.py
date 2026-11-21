@@ -104,7 +104,7 @@ def fetch_from_authenticated_page(page) -> dict[str, Any]:
     # Reuse that authenticated response instead of issuing a second request that can
     # trigger provider rate limits (HTTP 429).
     result = page.evaluate(
-        \"\"\"async () => {
+        """async () => {
           const deadline = Date.now() + 10000;
           while (Date.now() < deadline) {
             const captured = window.__moneyStorageOffersCapture;
@@ -112,7 +112,7 @@ def fetch_from_authenticated_page(page) -> dict[str, Any]:
             await new Promise(resolve => setTimeout(resolve, 100));
           }
           return { notCaptured: true };
-        }\"\"\",
+        }""",
         None,
     )
     if result.get("notCaptured"):
