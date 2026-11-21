@@ -136,6 +136,6 @@ class MoneyStorageHttpProviderTests(unittest.TestCase):
 
         provider = MoneyStorageQuoteProvider(from_currency="ECR", to_currency="USDT")
         with patch("urllib.request.urlopen") as mocked:
-            with self.assertRaisesRegex(RuntimeError, "cannot verify the page update timestamp"):
+            with self.assertRaisesRegex(RuntimeError, "Direct Money Storage HTTP polling is disabled"):
                 provider.fetch_quote()
         mocked.assert_not_called()
