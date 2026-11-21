@@ -105,7 +105,16 @@ def fetch_from_authenticated_page(page) -> dict[str, Any]:
     ):
         raise RuntimeError("Authenticated page is not Money Storage Deals -> «Всем предлагают».")
 
-    observed_now = datetime.now(timezone.utc)
+    runner_now = datetime.now(timezone.utc)
+    browser_now_ms = page.evaluate("() => Date.now()")
+    if not isinstance(browser_now_ms, (int, float)):
+        raise RuntimeError("Money Storage browser clock could not be read.")
+    browser_now = datetime.fromtimestamp(browser_now_ms / 1000, tz=timezone.utc)
+    clock_skew_seconds = abs((runner_now - browser_now).total_seconds())
+    if clock_skew_seconds > 5:
+        raise RuntimeError(
+            "Money Storage browser and cloud-runner clocks differ by more than 5 seconds."
+        )
 
     result = page.evaluate(
         """async (url) => {
@@ -169,7 +178,8 @@ def fetch_from_authenticated_page(page) -> dict[str, Any]:
         payload = json.loads(result["text"])
     except json.JSONDecodeError as exc:
         raise RuntimeError("Money Storage returned malformed JSON.") from exc
-    snapshot = parse_authenticated_payload(payload, observed_at=observed_now)
+    snapshot = parse_authenticated_payload(payload, observed_at=runner_now)
+    snapshot["browser_clock_skew_seconds"] = round(clock_skew_seconds, 3)
     return snapshot
 
 
