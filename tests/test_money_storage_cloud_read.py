@@ -41,6 +41,32 @@ class MoneyStorageOfferFreshnessTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "clocks differ by more than 5 seconds"):
             fetch_from_authenticated_page(SkewedBrowserPage())
 
+    def test_reader_reuses_page_captured_response_without_second_request(self):
+        now = datetime.now(timezone.utc)
+        payload = {
+            "result": "ok",
+            "data": [raw_offer(now - timedelta(minutes=2), "0.25")],
+        }
+
+        class CapturedOffersPage:
+            url = "https://storage.money/deals#tab-3"
+
+            def evaluate(self, script, argument=None):
+                if "Date.now()" in script:
+                    return datetime.now(timezone.utc).timestamp() * 1000
+                if "__moneyStorageOffersCapture" in script:
+                    return {
+                        "status": 200,
+                        "finalUrl": "https://storage.money/public_deals/fetch?offset=0&limit=20&from=ECR&to=USDT",
+                        "contentType": "application/json",
+                        "text": __import__("json").dumps(payload),
+                    }
+                raise AssertionError("Reader must reuse captured page response, not issue another fetch.")
+
+        snapshot = fetch_from_authenticated_page(CapturedOffersPage())
+        self.assertEqual(snapshot["rate"], "0.25")
+        self.assertTrue(snapshot["freshness_confirmed"])
+
     def test_newest_offer_within_15_minutes_confirms_freshness(self):
         offers = (
             parse_public_offer(raw_offer(self.now - timedelta(minutes=30))),
