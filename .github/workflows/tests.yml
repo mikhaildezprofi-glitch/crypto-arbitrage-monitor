@@ -13,44 +13,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Verify GitHub-hosted runner UTC clock against independent NTP servers
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import socket
-          import struct
-          import time
-
-          servers = ("time.cloudflare.com", "time.google.com", "pool.ntp.org")
-          offsets = []
-          for host in servers:
-              try:
-                  address = socket.getaddrinfo(host, 123, type=socket.SOCK_DGRAM)[0][4]
-                  request = bytearray(48)
-                  request[0] = 0x1B
-                  before = time.time()
-                  with socket.socket(socket.AF_INET if len(address) == 2 else socket.AF_INET6, socket.SOCK_DGRAM) as sock:
-                      sock.settimeout(3)
-                      sock.sendto(request, address)
-                      response, _ = sock.recvfrom(512)
-                  after = time.time()
-                  if len(response) < 48 or response[1] & 0x7 != 0:
-                      raise RuntimeError("invalid NTP response")
-                  seconds, fraction = struct.unpack("!II", response[40:48])
-                  server_time = seconds - 2208988800 + fraction / 2**32
-                  offset = server_time - ((before + after) / 2)
-                  offsets.append(offset)
-                  print(f"NTP_SERVER={host} OFFSET_SECONDS={offset:.3f} RTT_SECONDS={after-before:.3f}")
-              except Exception as exc:
-                  print(f"NTP_SERVER={host} STATUS=UNAVAILABLE REASON={type(exc).__name__}")
-          if len(offsets) < 2:
-              raise SystemExit("Fewer than two independent NTP servers responded.")
-          if max(abs(value) for value in offsets) > 5 or max(offsets) - min(offsets) > 2:
-              raise SystemExit("Runner clock differs from NTP consensus by more than allowed tolerance.")
-          print(f"RUNNER_NTP_SYNCHRONIZED=yes RESPONSES={len(offsets)}")
-          print(time.strftime("RUNNER_CLOCK_UTC=%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
-          PY
+      - name: Verify runner UTC clock against independent HTTPS time references
+        run: python3 scripts/check_runner_clock.py
       - name: Run unit tests
         env:
           PYTHONPATH: src
