@@ -198,6 +198,45 @@ def main() -> int:
         cdp.command("Page.enable")
         cdp.command("Runtime.enable")
         cdp.command("Network.enable")
+        # Capture the offers JSON from the page's own authenticated fetch. The
+        # response is cloned asynchronously; the original response is untouched.
+        cdp.command(
+            "Page.addScriptToEvaluateOnNewDocument",
+            {
+                "source": """(() => {
+                  if (window.__moneyStorageFetchCaptureInstalled) return;
+                  window.__moneyStorageFetchCaptureInstalled = true;
+                  const originalFetch = window.fetch;
+                  window.fetch = function(...args) {
+                    return originalFetch.apply(this, args).then(response => {
+                      try {
+                        const rawUrl = args[0] instanceof Request ? args[0].url : String(args[0]);
+                        const url = new URL(rawUrl, location.href);
+                        const expected = url.origin === "https://storage.money"
+                          && url.pathname === "/public_deals/fetch"
+                          && url.searchParams.get("offset") === "0"
+                          && url.searchParams.get("limit") === "20"
+                          && url.searchParams.get("from") === "ECR"
+                          && url.searchParams.get("to") === "USDT";
+                        if (expected && response.status === 200 && !window.__moneyStorageOffersCapture) {
+                          response.clone().text().then(text => {
+                            if (text.length <= 1000000) {
+                              window.__moneyStorageOffersCapture = {
+                                status: response.status,
+                                finalUrl: response.url,
+                                contentType: response.headers.get("content-type") || "",
+                                text
+                              };
+                            }
+                          }).catch(() => {});
+                        }
+                      } catch (_) {}
+                      return response;
+                    });
+                  };
+                })();"""
+            },
+        )
         # Reload once after Network.enable so the main-document HTTP status is
         # observable even when the initial navigation happened before CDP attach.
         cdp.command("Page.reload", {"ignoreCache": True})
