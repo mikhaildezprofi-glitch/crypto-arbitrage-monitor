@@ -51,6 +51,8 @@ class CDP:
         )
         self.next_id = 0
         self.main_frame_id: str | None = None
+        self.storage_document_status: int | None = None
+        self.storage_document_path: str | None = None
 
     def close(self) -> None:
         self.ws.close()
@@ -85,6 +87,9 @@ class CDP:
             mitigated = headers.get("cf-mitigated", "absent")
             server = headers.get("server", "absent")
             kind = params.get("type", "unknown").lower()
+            if host == "storage.money" and kind == "document":
+                self.storage_document_status = status
+                self.storage_document_path = parsed.path
             print(
                 "HTTP_DIAG host=%s path=%s status=%s type=%s server=%s "
                 "cf_ray=%s cf_mitigated=%s content_type=%s"
@@ -193,6 +198,10 @@ def main() -> int:
         cdp.command("Page.enable")
         cdp.command("Runtime.enable")
         cdp.command("Network.enable")
+        # Reload once after Network.enable so the main-document HTTP status is
+        # observable even when the initial navigation happened before CDP attach.
+        cdp.command("Page.reload", {"ignoreCache": True})
+        time.sleep(2)
         page = CDPPage(cdp)
 
         current_url, title, _ = page_state(cdp)
@@ -201,6 +210,7 @@ def main() -> int:
 
         deadline = time.monotonic() + DEADLINE_SECONDS
         saw_eid = False
+        login_fallback_attempted = False
         last_diag = 0.0
 
         while time.monotonic() < deadline:
@@ -235,6 +245,24 @@ def main() -> int:
                     print("BOT_OR_ACCESS_CHALLENGE_SUSPECTED=YES", flush=True)
                 if denied:
                     print("ACCESS_DENIED_PAGE_SUSPECTED=YES", flush=True)
+
+            if (
+                parsed.scheme == "https"
+                and host == "storage.money"
+                and parsed.path.rstrip("/") == "/deals"
+                and cdp.storage_document_path == parsed.path
+                and cdp.storage_document_status in (401, 403)
+                and not login_fallback_attempted
+            ):
+                login_fallback_attempted = True
+                print(
+                    "MONEY_STORAGE_LOGIN_REQUIRED document_http=%s; opening the provider's normal account route"
+                    % cdp.storage_document_status,
+                    flush=True,
+                )
+                cdp.command("Page.navigate", {"url": "https://storage.money/account"})
+                time.sleep(2)
+                continue
 
             if (
                 saw_eid
