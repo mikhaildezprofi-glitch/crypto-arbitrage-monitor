@@ -100,48 +100,25 @@ def fetch_from_authenticated_page(page) -> dict[str, Any]:
             "Money Storage browser and cloud-runner clocks differ by more than 5 seconds."
         )
 
+    # The Deals page itself requests this endpoint while rendering the offers tab.
+    # Reuse that authenticated response instead of issuing a second request that can
+    # trigger provider rate limits (HTTP 429).
     result = page.evaluate(
-        """async (url) => {
-          const response = await fetch(url, {
-            method: "GET",
-            headers: { "Accept": "application/json" },
-            credentials: "same-origin",
-            cache: "no-store",
-            redirect: "follow"
-          });
-          const finalUrl = new URL(response.url);
-          if (finalUrl.origin !== "https://storage.money") {
-            return { status: response.status, finalUrl: response.url, contentType: "", text: "", invalidOrigin: true };
+        \"\"\"async () => {
+          const deadline = Date.now() + 10000;
+          while (Date.now() < deadline) {
+            const captured = window.__moneyStorageOffersCapture;
+            if (captured) return captured;
+            await new Promise(resolve => setTimeout(resolve, 100));
           }
-          const declaredLength = Number(response.headers.get("content-length") || 0);
-          if (Number.isFinite(declaredLength) && declaredLength > 1000000) {
-            await response.body?.cancel();
-            return { status: response.status, finalUrl: response.url, contentType: "", text: "", tooLarge: true };
-          }
-          if (!response.body) {
-            return { status: response.status, finalUrl: response.url, contentType: "", text: "" };
-          }
-          const reader = response.body.getReader();
-          const chunks = [];
-          let total = 0;
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            total += value.byteLength;
-            if (total > 1000000) {
-              await reader.cancel();
-              return { status: response.status, finalUrl: response.url, contentType: "", text: "", tooLarge: true };
-            }
-            chunks.push(value);
-          }
-          const bytes = new Uint8Array(total);
-          let offset = 0;
-          for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
-          const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-          return { status: response.status, finalUrl: response.url, contentType: response.headers.get("content-type") || "", text };
-        }""",
-        API_URL,
+          return { notCaptured: true };
+        }\"\"\",
+        None,
     )
+    if result.get("notCaptured"):
+        raise RuntimeError(
+            "Money Storage Deals page did not expose its initial authenticated offers response."
+        )
     if result.get("invalidOrigin"):
         raise RuntimeError("Money Storage read redirected outside the approved origin.")
     if result.get("tooLarge"):
