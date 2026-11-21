@@ -13,6 +13,21 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Verify GitHub-hosted Ubuntu runner UTC clock synchronization
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v timedatectl >/dev/null 2>&1; then
+            echo "RUNNER_NTP_STATUS=UNAVAILABLE"
+            exit 1
+          fi
+          NTP_SYNC="$(timedatectl show --property=NTPSynchronized --value 2>/dev/null || true)"
+          echo "RUNNER_NTP_SYNCHRONIZED=$NTP_SYNC"
+          date -u +"RUNNER_CLOCK_UTC=%Y-%m-%dT%H:%M:%SZ"
+          if [ "$NTP_SYNC" != "yes" ]; then
+            echo "Runner clock synchronization is not confirmed."
+            exit 1
+          fi
       - name: Run unit tests
         env:
           PYTHONPATH: src
