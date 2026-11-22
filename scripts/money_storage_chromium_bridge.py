@@ -518,6 +518,13 @@ def main() -> int:
                 time.sleep(2)
                 continue
 
+            # Access-only phases must never fall through to the legacy quote reader.
+            # A page that fails the access predicate is a failed/unknown check, not
+            # permission to read the offers API.
+            if RETURN_ONLY or SESSION_CHECK:
+                time.sleep(2)
+                continue
+
             if storage_page == "deals":
                 try:
                     snapshot = None
