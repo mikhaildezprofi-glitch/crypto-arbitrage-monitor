@@ -105,19 +105,58 @@ def fetch_from_authenticated_page(page) -> dict[str, Any]:
     # trigger provider rate limits (HTTP 429).
     result = page.evaluate(
         """async () => {
-          const deadline = Date.now() + 10000;
+          const approved = url => {
+            try {
+              const u = new URL(url, location.href);
+              const q = u.searchParams;
+              return u.protocol === "https:"
+                && u.hostname === "storage.money"
+                && u.pathname === "/public_deals/fetch"
+                && q.getAll("offset").length === 1 && q.get("offset") === "0"
+                && q.getAll("limit").length === 1 && q.get("limit") === "20"
+                && q.getAll("from").length === 1 && q.get("from") === "ECR"
+                && q.getAll("to").length === 1 && q.get("to") === "USDT";
+            } catch (_) { return false; }
+          };
+          const deadline = Date.now() + 15000;
           while (Date.now() < deadline) {
-            const captured = window.__moneyStorageOffersCapture;
+            const captures = window.__moneyStorageOffersCaptures || [];
+            const captured = captures.find(item => item && approved(item.finalUrl || item.requestUrl));
             if (captured) return captured;
             await new Promise(resolve => setTimeout(resolve, 100));
           }
-          return { notCaptured: true };
+          const captures = window.__moneyStorageOffersCaptures || [];
+          return {
+            notCaptured: true,
+            observed: captures.slice(0, 12).map(item => {
+              try {
+                const u = new URL(item.finalUrl || item.requestUrl, location.href);
+                return {
+                  path: u.pathname,
+                  offset: u.searchParams.getAll("offset").slice(0, 2),
+                  limit: u.searchParams.getAll("limit").slice(0, 2),
+                  from: u.searchParams.getAll("from").slice(0, 2),
+                  to: u.searchParams.getAll("to").slice(0, 2),
+                  status: item.status
+                };
+              } catch (_) { return { path: "unparseable" }; }
+            })
+          };
         }""",
         None,
     )
     if result.get("notCaptured"):
+        observed = result.get("observed", [])
+        safe_summary = "; ".join(
+            "path=%s offset=%s limit=%s from=%s to=%s status=%s" % (
+                item.get("path", "?"), item.get("offset", []), item.get("limit", []),
+                item.get("from", []), item.get("to", []), item.get("status", "?")
+            )
+            for item in observed
+        )
         raise RuntimeError(
-            "Money Storage Deals page did not expose its initial authenticated offers response."
+            "Money Storage page did not expose the exact approved offers request. "
+            + (safe_summary[:500] if safe_summary else "No endpoint responses were captured.")
         )
     final_url = urlparse(result.get("finalUrl", ""))
     final_query = parse_qs(final_url.query)
