@@ -627,7 +627,7 @@ jobs:
           sudo apt-get -o Acquire::Retries=8 -o Acquire::https::Timeout=45 update
           sudo apt-get -y --no-install-recommends -o Acquire::Retries=8 install xvfb x11-utils gnupg
           python3 -m pip install --retries 5 --timeout 45 --break-system-packages playwright websocket-client
-          python3 -m playwright install chromium
+          python3 -m playwright install --with-deps chromium
           Xvfb :99 -screen 0 1440x900x24 -ac +extension RANDR >/tmp/session-check-xvfb.log 2>&1 &
           echo $! > /tmp/session-check-xvfb.pid
           for i in $(seq 1 30); do
