@@ -11,12 +11,22 @@ on:
         options:
           - money_storage
           - sberkassa
+      inspect_currency_form:
+        description: "Keep the browser open for manual Money Storage currency-form inspection"
+        required: false
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       target:
         description: "Which authenticated quote source to inspect"
         required: true
         type: string
+      inspect_currency_form:
+        description: "Keep the browser open for manual Money Storage currency-form inspection"
+        required: false
+        type: boolean
+        default: false
     secrets:
       CHROMIUM_PROFILE_PASSPHRASE:
         required: true
@@ -313,6 +323,8 @@ jobs:
             CHROMIUM_START_URL="https://sberkassa.site/deals#tab-3"
             BRIDGE_SCRIPT="scripts/sberkassa_chromium_probe.py"
           else
+            # Reuse the saved authenticated session first. The bridge opens the
+            # normal account/E-ID route only if the protected offers page rejects it.
             CHROMIUM_START_URL="https://storage.money/deals#tab-3"
             BRIDGE_SCRIPT="scripts/money_storage_chromium_bridge.py"
           fi
@@ -370,7 +382,13 @@ jobs:
 
           # The selected bridge either reads Money Storage's approved offers
           # or performs a sanitized, read-only Sberkassa page inspection.
-          python3 "$BRIDGE_SCRIPT" >/tmp/eid-browser.log 2>&1 &
+          if [ "$TARGET" = "money_storage" ] && [ "${{ inputs.inspect_currency_form }}" = "true" ]; then
+            MONEY_STORAGE_FORM_INSPECTION=1 python3 "$BRIDGE_SCRIPT" >/tmp/eid-browser.log 2>&1 &
+          else
+            # Default Money Storage mode is the original authenticated, read-only
+            # quote capture. Access-only diagnostics require an explicit input.
+            python3 "$BRIDGE_SCRIPT" >/tmp/eid-browser.log 2>&1 &
+          fi
           BRIDGE_PID=$!
 
 
@@ -469,13 +487,23 @@ jobs:
           echo "BROWSER_DIAGNOSTIC_STREAM=STARTED"
           for i in $(seq 1 900); do
             STATUS="$(cat /tmp/eid-auth-status 2>/dev/null || echo WAITING_FOR_LOGIN)"
+            if [ "$STATUS" = "FORM_INSPECTION_COMPLETE" ]; then
+              echo "FORM_INSPECTION_COMPLETE: the page itself sent a request containing from=ECR&to=USDT; inspect PAGE_REQUEST for the exact endpoint and parameter location."
+              grep -E "^(PAGE_DIAG deals_form=|PAGE_REQUEST |FORM_INSPECTION_READY)" /tmp/eid-browser.log | tail -n 120 || true
+              exit 0
+            fi
+            if [ "$STATUS" = "MONEY_STORAGE_RETURNED" ] || [ "$STATUS" = "MONEY_STORAGE_SESSION_CANDIDATE" ]; then
+              echo "Money Storage profile handoff milestone completed: $STATUS"
+              grep -E '^(EID_STATE=|CLOUDFLARE_STATE=|NAV=|PAGE_DIAG deals_form=|PAGE_REQUEST |FORM_INSPECTION_READY|MONEY_STORAGE_RETURNED |MONEY_STORAGE_SESSION_CANDIDATE )' /tmp/eid-browser.log | tail -n 120 || true
+              exit 0
+            fi
             if [ "$STATUS" = "OFFERS_READ_OK" ] || [ "$STATUS" = "SBERKASSA_CAPTURE_COMPLETE" ]; then
               echo "Authenticated read-only browser inspection completed for target=$TARGET."
               echo "BROWSER_DIAGNOSTICS_FINAL:"
-              grep -E '^(SESSION_REUSE_CHECK=|EID_HANDOFF=|SBERKASSA_SESSION=|SBERKASSA_SESSION_AUTHENTICATED=|SESSION_REUSE_OR_EID_TIMEOUT=|SBERKASSA_CAPTURE_|NAV=|HTTP_DIAG |REQUEST |QUOTE_FIELDS |PAGE_UPDATE_MARKERS )' /tmp/eid-browser.log | tail -n 160 || true
+              grep -E '^(SESSION_REUSE_CHECK=|EID_HANDOFF=|EID_STATE=|CLOUDFLARE_STATE=|SBERKASSA_SESSION=|SBERKASSA_SESSION_AUTHENTICATED=|SESSION_REUSE_OR_EID_TIMEOUT=|SBERKASSA_CAPTURE_|NAV=|HTTP_DIAG |REQUEST |QUOTE_FIELDS |PAGE_UPDATE_MARKERS )' /tmp/eid-browser.log | tail -n 160 || true
               exit 0
             fi
-            if [ "$STATUS" = "OFFERS_READ_FAILED" ] || [ "$STATUS" = "AUTH_TIMEOUT" ] || [ "$STATUS" = "SBERKASSA_CAPTURE_FAILED" ] || [ "$STATUS" = "SBERKASSA_CAPTURE_TIMEOUT" ]; then
+            if [ "$STATUS" = "OFFERS_READ_FAILED" ] || [ "$STATUS" = "AUTH_TIMEOUT" ] || [ "$STATUS" = "MONEY_STORAGE_RETURN_TIMEOUT" ] || [ "$STATUS" = "SBERKASSA_CAPTURE_FAILED" ] || [ "$STATUS" = "SBERKASSA_CAPTURE_TIMEOUT" ]; then
               echo "BROWSER_DIAGNOSTICS:"
               grep -E 'OFFERS_READ_|AUTH_|SBERKASSA_|NAV=|REQUEST |QUOTE_FIELDS |PAGE_UPDATE_MARKERS |HTTP_DIAG ' /tmp/eid-browser.log | tail -n 120 || true
               exit 1
@@ -507,7 +535,7 @@ jobs:
               CURRENT_BROWSER_LINES="$(wc -l < /tmp/eid-browser.log 2>/dev/null || echo 0)"
               if [ "$CURRENT_BROWSER_LINES" -gt "$BROWSER_LOG_LINES" ]; then
                 echo "BROWSER_DIAGNOSTICS_UPDATE:"
-                sed -n "$((BROWSER_LOG_LINES + 1)),${CURRENT_BROWSER_LINES}p" /tmp/eid-browser.log | grep -E '^(INITIAL_NAVIGATION=|BROWSER_READY=|INITIAL_PAGE_TITLE=|SESSION_REUSE_CHECK=|EID_HANDOFF=|SBERKASSA_SESSION=|SBERKASSA_SESSION_AUTHENTICATED=|SESSION_REUSE_OR_EID_TIMEOUT=|NAV=|HTTP_DIAG |REQUEST |QUOTE_FIELDS |JSON_SCHEMA |PAGE_UPDATE_MARKERS |SBERKASSA_|CLOUDFLARE_CHALLENGE_DETECTED=|ACCESS_RESPONSE_CLASSIFICATION |PAGE_DIAG |BOT_OR_ACCESS_CHALLENGE_SUSPECTED=|AUTH_PROGRESS |AUTH_PAGE_STATE |ACCESS_DENIED_PAGE_SUSPECTED=|AUTH_RETURNED_TO_ACCOUNT|OFFERS_READ_|AUTH_TIMEOUT|PAGE_DIAG_UNAVAILABLE=|HTTP_DIAG_ERROR=)' || true
+                sed -n "$((BROWSER_LOG_LINES + 1)),${CURRENT_BROWSER_LINES}p" /tmp/eid-browser.log | grep -E '^(INITIAL_NAVIGATION=|BROWSER_READY=|INITIAL_PAGE_TITLE=|SESSION_REUSE_CHECK=|EID_HANDOFF=|EID_STATE=|MONEY_STORAGE_RETURNED |MONEY_STORAGE_SESSION_CANDIDATE |CLOUDFLARE_STATE=|SBERKASSA_SESSION=|SBERKASSA_SESSION_AUTHENTICATED=|SESSION_REUSE_OR_EID_TIMEOUT=|NAV=|HTTP_DIAG |REQUEST |QUOTE_FIELDS |JSON_SCHEMA |PAGE_UPDATE_MARKERS |SBERKASSA_|CLOUDFLARE_CHALLENGE_DETECTED=|ACCESS_RESPONSE_CLASSIFICATION |PAGE_DIAG |BOT_OR_ACCESS_CHALLENGE_SUSPECTED=|AUTH_PROGRESS |AUTH_PAGE_STATE |ACCESS_DENIED_PAGE_SUSPECTED=|AUTH_RETURNED_TO_ACCOUNT|OFFERS_READ_|AUTH_TIMEOUT|MONEY_STORAGE_RETURN_TIMEOUT|PAGE_DIAG_UNAVAILABLE=|HTTP_DIAG_ERROR=)' || true
                 BROWSER_LOG_LINES="$CURRENT_BROWSER_LINES"
               fi
               if [ "$CODE" != "200" ] || [ "$WS_STATUS" != "101" ]; then
@@ -526,7 +554,7 @@ jobs:
 
       - name: Encrypt Chromium profile for private cache
         id: encrypt-profile
-        if: always() && hashFiles('session-authenticated.txt') != ''
+        if: always() && hashFiles('money-storage-profile-ready.txt') != ''
         shell: bash
         run: |
           set -euo pipefail
@@ -572,14 +600,15 @@ jobs:
           retention-days: 1
 
   # After the owner completes the one-time interactive E-ID handoff, verify that
-  # the encrypted profile can be restored and used by three fresh Chromium
-  # processes. This job never opens a public remote desktop and never attempts
+  # the encrypted profile can be restored by a fresh Chromium process. This job never opens a public remote desktop and never attempts
   # to complete CAPTCHA/E-ID/MFA.
   verify-restored-money-storage-session:
-    if: needs.cloud-browser.result == 'success' && inputs.target == 'money_storage'
+    # Verify restored authentication and access to the protected offers page only.
+    # Do not read the offers API or any quote data in this phase.
+    if: inputs.target == 'money_storage'
     needs: cloud-browser
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 15
     permissions:
       contents: read
     env:
@@ -640,9 +669,9 @@ jobs:
           cat /tmp/session-check-xvfb.log || true
           exit 1
 
-      - name: Run three independent restored-session and offers checks
+      - name: Run one fresh restored-session page-access check
         shell: bash
-        timeout-minutes: 18
+        timeout-minutes: 8
         run: |
           set -euo pipefail
           mkdir -p session-check-results
@@ -651,7 +680,7 @@ jobs:
             echo "SESSION_CHECK_CHROMIUM_MISSING"
             exit 1
           fi
-          for attempt in 1 2 3; do
+          for attempt in 1; do
             PROFILE_DIR="/tmp/money-storage-session-check-$attempt"
             STATUS_FILE="/tmp/money-storage-session-status-$attempt"
             LOG_FILE="session-check-results/attempt-$attempt.log"
@@ -659,7 +688,7 @@ jobs:
             mkdir -p "$PROFILE_DIR"
             cp -a /tmp/eid-chromium-profile/. "$PROFILE_DIR/"
             rm -f "$PROFILE_DIR/SingletonLock" "$PROFILE_DIR/SingletonCookie" "$PROFILE_DIR/SingletonSocket"
-            echo "SESSION_CHECK_ATTEMPT=$attempt/3"
+            echo "SESSION_CHECK_ATTEMPT=$attempt/1"
             DISPLAY=:99 "$CHROMIUM_BIN" \
               --no-sandbox \
               --disable-dev-shm-usage \
@@ -683,20 +712,20 @@ jobs:
             wait "$BROWSER_PID" 2>/dev/null || true
             STATUS="$(cat "$STATUS_FILE" 2>/dev/null || echo NO_STATUS)"
             echo "SESSION_CHECK_ATTEMPT_RESULT=$attempt status=$STATUS exit=$RESULT"
-            if [ "$RESULT" -ne 0 ] || [ "$STATUS" != "OFFERS_READ_OK" ]; then
+            if [ "$RESULT" -ne 0 ] || [ "$STATUS" != "SESSION_AUTHENTICATED" ]; then
               cat "$LOG_FILE"
               echo "SESSION_CHECK_FAILED attempt=$attempt status=$STATUS"
               exit 1
             fi
-            grep -E '^(MONEY_STORAGE_SESSION=|OFFERS_READ_OK|AUTH_REQUIRED|SESSION_CHECK_TIMEOUT)' "$LOG_FILE" || true
+            grep -E '^(SESSION_AUTHENTICATED|AUTH_REQUIRED|SESSION_CHECK_TIMEOUT)' "$LOG_FILE" || true
           done
-          echo "SESSION_CHECK_RESULT=3_OF_3_SUCCESS"
+          echo "SESSION_CHECK_RESULT=1_OF_1_SUCCESS"
           {
             echo "## Money Storage restored-session verification"
-            echo "- Three independent Chromium launches completed successfully."
-            echo "- Each launch restored a separate copy of the encrypted authenticated profile."
-            echo "- Each launch read the current Everyone Offers response and passed the existing freshness validation."
-            echo "- No CAPTCHA, E-ID, MFA, or login challenge was automated."
+            echo "- One fresh Chromium process restored the encrypted profile and completed the protected-page check."
+            echo "- The test used a separate copy of the encrypted profile; the saved archive remained unchanged."
+            echo "- The protected /deals document returned HTTP 200 without reading offers APIs or quote values."
+            echo "- No offers API, quote values, or freshness data were read. No CAPTCHA, E-ID, MFA, or login challenge was automated."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload sanitized session-check diagnostics

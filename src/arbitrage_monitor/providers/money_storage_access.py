@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 
 
 def classify_money_storage_page(url: str) -> str:
-    """Return the provider route without guessing authentication state."""
+    """Return the authenticated provider landing route without guessing auth state."""
     parsed = urlparse(url)
     if parsed.scheme != "https" or (parsed.hostname or "").lower() != "storage.money":
         return "external"
@@ -60,3 +60,26 @@ def classify_cloudflare_challenge(
         "enable javascript and cookies to continue",
     )
     return any(marker in normalized_body for marker in strong_markers)
+
+
+def is_money_storage_authenticated_offers_page(
+    url: str, *, status: int | None, title: str = "", body: str = ""
+) -> bool:
+    """Require a successful protected offers document, not merely a provider URL."""
+    return (
+        classify_money_storage_page(url) == "deals"
+        and status == 200
+        and bool((title or "").strip())
+        and len((body or "").strip()) >= 10
+        and not is_money_storage_auth_failure(status=status, title=title, body=body)
+    )
+
+
+def has_returned_to_money_storage(url: str, *, eid_handoff_seen: bool) -> bool:
+    """Return true for any HTTPS storage.money page reached after E-ID navigation."""
+    parsed = urlparse(url)
+    return (
+        eid_handoff_seen
+        and parsed.scheme == "https"
+        and (parsed.hostname or "").lower() == "storage.money"
+    )

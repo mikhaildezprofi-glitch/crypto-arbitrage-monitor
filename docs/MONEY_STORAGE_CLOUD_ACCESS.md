@@ -1,52 +1,44 @@
 # Money Storage cloud access decision
 
-## Status
+## Current status (2026-11-22)
 
-Live cloud polling is **blocked** until Money Storage provides a supported server-side read-access method.
+A **manual, one-shot read-only quote capture** is implemented in the owner-authenticated cloud Chromium workflow. Scheduled cloud polling remains **blocked** until Money Storage confirms an approved unattended server-side access method and the complete five-source route is validated.
 
-The repository contains a pure parser and quote builder plus a disabled direct-HTTPS adapter (`MoneyStorageQuoteProvider`). The adapter deliberately refuses to publish a quote because a direct request cannot verify the page's visible last-updated marker. Only the manually authenticated page bridge can supply the required page timestamp. The frontend JavaScript exposes the observed public-deals route:
+The normal browser workflow:
+- Opens `https://storage.money/deals#tab-3` in a temporary cloud Chromium session.
+- Leaves E-ID, CAPTCHA, MFA, Cloudflare and device-binding steps to the account owner.
+- After the E-ID callback lands on `/account`, returns to `/deals#tab-3`.
+- Passively captures the page's own same-origin Fetch/XHR response from `GET /public_deals/fetch`. It does not issue a second request, alter the original request, or export browser credentials.
+- Reads the captured response in memory and validates its exact origin, path, query, HTTP status, JSON envelope and currency direction.
+- A protected `result=ok` response confirms the browser session; quote freshness is checked separately.
 
-- `GET /public_deals/fetch`
-- Query fields used by the frontend: `offset`, `limit`, `from`, `to`
-- The frontend reads the offers from the response `data` field.
+### Confirmed frontend request
 
-Prior direct unauthenticated tests of this route returned HTTP 401. A subsequent repeat returned HTTP 429. These observations are not a basis for retrying, bypassing access controls, or treating the endpoint as a public cloud API. No official server-to-server API documentation or supported machine credential flow has been identified in the current research.
+```http
+GET https://storage.money/public_deals/fetch?offset=0&limit=20&from=ECR&to=USDT
+```
 
-## Required access before implementation
+The raw records use `src_currency=ECR` and `dst_currency=USDT`, corresponding to the displayed user direction USDT → ECR.
 
-Obtain from Money Storage support or official documentation:
+### Quote calculation and freshness
 
-1. Confirmation that automated server-side read access to public offers is supported.
-2. The official API base URL and exact query parameter semantics for the approved "Всем предлагают" tab and displayed USDT -> ECR direction.
-3. The supported authentication method for a server workload, if authentication is required.
-4. Rate limits and polling guidance, including whether a 15-minute interval is permitted.
+- Preserve the original response order and calculate the arithmetic mean of the first 20 correctly directed offers (or all matching offers if fewer than 20 are returned).
+- Use the provider's `create_time` values for freshness. The newest correctly parsed offer must be no older than 900 seconds at collection time; exactly 900 seconds is accepted. A future, missing or invalid timestamp does not confirm freshness.
+- Do not discard older offers from the first-20 mean merely because they are older than 15 minutes; freshness is established by the newest offer.
+- Do not deduct the displayed commission from this route step.
+- Reject HTTP 401/403/429, non-200 responses, malformed payloads, wrong direction, non-positive/non-finite rates, empty offers and stale data. Do not retry access-denied or rate-limited responses.
+- A failed or stale read is unavailable. Never reuse a previous quote as current.
 
-Do not use browser cookies, session tokens, OAuth authorization codes, browser storage, or copied authorization headers as cloud credentials. Do not spoof device identity, bypass MFA/CAPTCHA/device binding, or retry around HTTP 429.
+### Access boundary
 
-## Required quote behavior after access is approved
+The observed frontend endpoint is not proof of an approved server-to-server API. Previous unauthenticated direct requests returned HTTP 401 and later HTTP 429. The current implementation reuses only the request/response already produced by the owner's authenticated page in a manually supervised, one-shot workflow. It does not establish permission for unattended polling.
 
-- Request only the first page: `offset=0`, `limit=20`.
-- Parse only raw ECR/USDT records that represent the displayed USDT -> ECR offers.
-- Preserve response order and calculate the arithmetic mean of the first 20 available target-direction `rate` values.
-- If fewer than 20 matching offers are returned, average the available matching offers. If none are returned, mark the source unavailable.
-- Do not sum offer amounts, select a best offer, infer partial fills, or simulate an order.
-- The displayed commission is paid by the seller when accepting an offer in this direction; retain it as source metadata but do not deduct it from this route step.
-- Timestamp the resulting quote from the page's own visible last-updated marker, not from the scrape time or an individual offer's creation time. Require a parseable page marker no older than the 900-second Money Storage interval; missing, invalid, future, or stale page timestamps make the source unavailable.
-- Reject non-success HTTP responses, malformed payloads, wrong currency direction, non-positive/non-finite rates, and empty results.
-- Never substitute a previous quote after a failed poll.
+Do not copy cookies, session tokens, OAuth authorization codes, browser storage or authorization headers into cloud secrets, artifacts, logs, Telegram or repository files. Do not spoof device identity, bypass CAPTCHA/MFA/device binding, or retry around HTTP 429.
 
 ## Scheduling and persistence
 
-Do not enable a scheduled job while the endpoint cannot be accessed from the cloud. The provider deliberately makes one request per call and does not retry 401/429. A cron job that repeatedly receives access errors is not live quote monitoring. The `MONEY_STORAGE_FROM` and `MONEY_STORAGE_TO` filters are intentionally blank in `.env.example` until their exact values for the desired UI direction are confirmed.
+Do not enable scheduled collection yet. The hourly schedule remains disabled until Money Storage, BlackBit, Winance and both Sberkassa route steps are validated, and the shared collector, freshness gates, atomic update and stale-quote blocking are verified. No Telegram delivery is assumed to be configured.
 
-Once access is approved, implement a cloud polling worker at 900-second intervals, persist the latest quote and observation timestamp, expose explicit source health/error state, and feed only fresh quotes into the route collector. Keep credentials in the cloud provider's secret store and out of repository files, Telegram messages, and logs.
-
-## Acceptance checks
-
-- A cloud-run integration test can retrieve the first page using the officially supported access method.
-- Unit tests cover the first-20 arithmetic mean, fewer-than-20 behavior, empty results, wrong pair, malformed payload, HTTP/auth errors, and timestamping.
-- An unsuccessful poll leaves the source unavailable; it does not publish a stale quote as fresh.
-- The full route remains unavailable whenever this required source is unavailable or stale.
 
 ## Transport milestone (2026-11-18)
 

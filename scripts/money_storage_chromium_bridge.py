@@ -1,9 +1,8 @@
-"""Human-operated Chromium session bridge for the Money Storage E-ID handoff.
+"""Human-operated Chromium bridge for Money Storage E-ID and read-only quote capture.
 
-Chromium is launched as a normal visible desktop application by the workflow.
-This helper attaches to its local DevTools Protocol endpoint only to observe
-navigation and, after the user completes E-ID, read the approved same-origin
-Money Storage endpoint from that already-authenticated tab.
+Normal mode observes the page's own authenticated offers request and validates
+the captured response. Return-only, form-inspection, and isolated session-check
+modes remain explicit access-diagnostic modes.
 
 It does not automate clicks, solve challenges, export cookies, or persist
 browser credentials.
@@ -16,7 +15,7 @@ import sys
 import time
 import urllib.request
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import websocket
 
@@ -34,11 +33,15 @@ from arbitrage_monitor.providers.money_storage_access import (
     classify_cloudflare_challenge,
     classify_money_storage_page,
     is_money_storage_auth_failure,
+    is_money_storage_authenticated_offers_page,
+    has_returned_to_money_storage,
 )
 
 DEBUG_ENDPOINT = "http://127.0.0.1:9222/json/list"
 STATUS_FILE = Path(os.environ.get("MONEY_STORAGE_STATUS_FILE", "/tmp/eid-auth-status"))
 SESSION_CHECK = os.environ.get("MONEY_STORAGE_SESSION_CHECK") == "1"
+RETURN_ONLY = os.environ.get("MONEY_STORAGE_RETURN_ONLY") == "1"
+FORM_INSPECTION = os.environ.get("MONEY_STORAGE_FORM_INSPECTION") == "1"
 DEADLINE_SECONDS = 180 if SESSION_CHECK else 1800
 
 
@@ -60,6 +63,7 @@ class CDP:
         self.storage_document_status: int | None = None
         self.storage_document_path: str | None = None
         self.current_document_cf_challenge = False
+        self.saw_eid_navigation = False
 
     def close(self) -> None:
         self.ws.close()
@@ -68,18 +72,81 @@ class CDP:
         method = message.get("method", "")
         params = message.get("params", {})
 
-        if method == "Page.frameNavigated":
+        if method == "Network.requestWillBeSent" and FORM_INSPECTION:
+            request = params.get("request", {})
+            parsed = urlparse(request.get("url", ""))
+            request_type = str(params.get("type", "unknown")).lower()
+            if (
+                parsed.hostname == "storage.money"
+                and (parsed.path == "/public_deals/fetch" or request_type in ("xhr", "fetch"))
+            ):
+                query = parse_qs(parsed.query)
+                body = request.get("postData", "")
+                body_fields = {}
+                if body:
+                    try:
+                        decoded = json.loads(body)
+                        if isinstance(decoded, dict):
+                            body_fields = decoded
+                    except (TypeError, ValueError):
+                        try:
+                            body_fields = parse_qs(body)
+                        except Exception:
+                            body_fields = {}
+                def field_value(name: str) -> str:
+                    value = query.get(name, body_fields.get(name, [""]))
+                    if isinstance(value, list):
+                        value = value[0] if value else ""
+                    return str(value).strip().upper()[:16]
+                source = field_value("from")
+                target = field_value("to")
+                print(
+                    "PAGE_REQUEST host=storage.money path=%s type=%s method=%s from=%s to=%s pair_location=%s"
+                    % (
+                        parsed.path,
+                        request_type,
+                        request.get("method", "unknown"),
+                        source or "absent",
+                        target or "absent",
+                        "query" if query.get("from") or query.get("to") else ("body" if body_fields else "none"),
+                    ),
+                    flush=True,
+                )
+                if source == "ECR" and target == "USDT":
+                    STATUS_FILE.write_text("FORM_INSPECTION_COMPLETE", encoding="utf-8")
+
+        elif method == "Page.frameNavigated":
             frame = params.get("frame", {})
             if not frame.get("parentId"):
                 self.main_frame_id = frame.get("id")
                 self.current_document_cf_challenge = False
-                location = safe_location(frame.get("url", ""))
+                frame_url = frame.get("url", "")
+                frame_host = (urlparse(frame_url).hostname or "").lower()
+                if frame_host == "e-id.cards" or frame_host.endswith(".e-id.cards"):
+                    self.saw_eid_navigation = True
+                location = safe_location(frame_url)
                 print(f"NAV={location}", flush=True)
 
         elif method == "Network.responseReceived":
             response = params.get("response", {})
             parsed = urlparse(response.get("url", ""))
             host = (parsed.hostname or "").lower()
+            if FORM_INSPECTION and host == "storage.money" and (
+                parsed.path == "/public_deals/fetch"
+                or params.get("type", "").lower() in ("xhr", "fetch")
+            ):
+                headers = {str(k).lower(): str(v) for k, v in response.get("headers", {}).items()}
+                print(
+                    "PAGE_RESPONSE path=%s status=%s type=%s content_type=%s request_id=%s"
+                    % (
+                        parsed.path,
+                        int(response.get("status", 0)),
+                        params.get("type", "unknown").lower(),
+                        headers.get("content-type", "absent").split(";")[0],
+                        str(params.get("requestId", ""))[:32],
+                    ),
+                    flush=True,
+                )
             if not (
                 host == "storage.money"
                 or host.endswith(".storage.money")
@@ -208,47 +275,54 @@ def page_state(cdp: CDP) -> tuple[str, str, str]:
 
 
 def deals_form_diagnostics(cdp: CDP) -> dict:
-    """Return only visible Deals currency-control metadata; never read arbitrary form values."""
-    return cdp.evaluate(
-        """() => {
-          const visible = el => {
-            const style = getComputedStyle(el);
-            const rect = el.getBoundingClientRect();
-            return style.display !== "none" && style.visibility !== "hidden"
+    """Return visible, non-secret currency-form metadata without changing the page."""
+    result = cdp.evaluate(
+        """(() => {
+          const visible = element => {
+            const style = getComputedStyle(element);
+            const rect = element.getBoundingClientRect();
+            return style.visibility !== "hidden" && style.display !== "none"
               && rect.width > 0 && rect.height > 0;
           };
-          const clean = value => String(value || "").replace(/\\s+/g, " ").trim().slice(0, 100);
-          const controls = Array.from(document.querySelectorAll("select,[role=combobox],input"))
-            .filter(visible)
-            .slice(0, 40)
-            .map((el, index) => {
-              const labels = Array.from(document.querySelectorAll("label"))
-                .filter(label => label.htmlFor && label.htmlFor === el.id)
-                .map(label => clean(label.innerText));
-              const parentText = clean(el.closest(".form-group,.form-row,.field,.input-group,.ts-wrapper")?.innerText
-                || el.parentElement?.parentElement?.innerText || "");
-              const options = el.tagName === "SELECT"
-                ? Array.from(el.options).slice(0, 80).map(option => ({
-                    value: clean(option.value), text: clean(option.textContent),
-                    selected: !!option.selected
-                  }))
-                : [];
-              return {
-                index, tag: el.tagName.toLowerCase(), id: clean(el.id),
-                name: clean(el.getAttribute("name")),
-                role: clean(el.getAttribute("role")),
-                ariaLabel: clean(el.getAttribute("aria-label")),
-                placeholder: clean(el.getAttribute("placeholder")),
-                labels, context: parentText, options
+          const clean = value => String(value || "").replace(/\\s+/g, " ").trim().slice(0, 120);
+          const fields = Array.from(document.querySelectorAll("select, [role=combobox], input"))
+            .filter(visible).slice(0, 40).map(element => {
+              const item = {
+                tag: element.tagName.toLowerCase(),
+                id: clean(element.id),
+                name: clean(element.getAttribute("name")),
+                role: clean(element.getAttribute("role")),
+                ariaLabel: clean(element.getAttribute("aria-label")),
+                type: clean(element.getAttribute("type")),
+                placeholder: clean(element.getAttribute("placeholder"))
               };
+              if (element.tagName === "SELECT") {
+                item.selectedText = clean(element.selectedOptions?.[0]?.textContent);
+                item.selectedValue = clean(element.value);
+                item.options = Array.from(element.options).slice(0, 30).map(option => ({
+                  text: clean(option.textContent),
+                  value: clean(option.value),
+                  selected: option.selected
+                }));
+              }
+              return item;
             });
-          return {
-            url: location.pathname + location.hash,
-            title: clean(document.title),
-            controls
-          };
-        }"""
+          const currencyHint = /(USDT|ECR|ERUB|CNY|RUB|USD|EUR|валют|currency|give|receive|отда|получ)/i;
+          const buttons = Array.from(document.querySelectorAll("button, [role=button], [role=option]"))
+            .filter(visible).map(element => ({
+              text: clean(element.innerText || element.textContent),
+              ariaLabel: clean(element.getAttribute("aria-label")),
+              title: clean(element.getAttribute("title"))
+            }))
+            .filter(item => currencyHint.test(item.text + " " + item.ariaLabel + " " + item.title))
+            .slice(0, 40);
+          return { fields, currencyControls: buttons };
+        })()"""
     )
+    if not isinstance(result, dict):
+        result = {"unavailable": True}
+    print("PAGE_DIAG deals_form=" + json.dumps(result, ensure_ascii=False, sort_keys=True), flush=True)
+    return result
 
 
 def main() -> int:
@@ -260,109 +334,99 @@ def main() -> int:
         cdp.command("Network.enable")
         # Capture the offers JSON from the page's own authenticated fetch. The
         # response is cloned asynchronously; the original response is untouched.
-        cdp.command(
-            "Page.addScriptToEvaluateOnNewDocument",
-            {
-                "source": """(() => {
-                  if (window.__moneyStorageFetchCaptureInstalled) return;
-                  window.__moneyStorageFetchCaptureInstalled = true;
-                  window.__moneyStorageOffersCaptures = [];
-                  const rememberCapture = item => {
-                    const captures = window.__moneyStorageOffersCaptures;
-                    captures.push(item);
-                    if (captures.length > 12) captures.shift();
-                  };
-                  const originalFetch = window.fetch;
-                  window.fetch = function(...args) {
-                    return originalFetch.apply(this, args).then(response => {
-                      try {
-                        const rawUrl = args[0] instanceof Request ? args[0].url : String(args[0]);
-                        const url = new URL(rawUrl, location.href);
-                        // Capture the provider endpoint response first, then let the Python
-                        // reader validate the exact query string and HTTP status.
-                        const expected = url.origin === "https://storage.money"
-                          && url.pathname === "/public_deals/fetch";
-                        if (expected) {
-                          response.clone().text().then(text => {
-                            if (text.length <= 1000000) {
-                              rememberCapture({
-                                status: response.status,
-                                requestUrl: url.href,
-                                finalUrl: response.url,
-                                contentType: response.headers.get("content-type") || "",
-                                text
-                              });
-                            } else {
-                              rememberCapture({ tooLarge: true, requestUrl: url.href, finalUrl: response.url });
+        if not SESSION_CHECK and not RETURN_ONLY and not FORM_INSPECTION:
+            cdp.command(
+                "Page.addScriptToEvaluateOnNewDocument",
+                {
+                    "source": """(() => {
+                      if (window.__moneyStorageFetchCaptureInstalled) return;
+                      window.__moneyStorageFetchCaptureInstalled = true;
+                      window.__moneyStorageOffersCaptures = [];
+                      const rememberCapture = item => {
+                        const captures = window.__moneyStorageOffersCaptures;
+                        captures.push(item);
+                        if (captures.length > 12) captures.shift();
+                      };
+                      const originalFetch = window.fetch;
+                      window.fetch = function(...args) {
+                        return originalFetch.apply(this, args).then(response => {
+                          try {
+                            const rawUrl = args[0] instanceof Request ? args[0].url : String(args[0]);
+                            const url = new URL(rawUrl, location.href);
+                            // Capture the provider endpoint response first, then let the Python
+                            // reader validate the exact query string and HTTP status.
+                            const expected = url.origin === "https://storage.money"
+                              && url.pathname === "/public_deals/fetch";
+                            if (expected) {
+                              response.clone().text().then(text => {
+                                if (text.length <= 1000000) {
+                                  rememberCapture({
+                                    status: response.status,
+                                    requestUrl: url.href,
+                                    finalUrl: response.url,
+                                    contentType: response.headers.get("content-type") || "",
+                                    text
+                                  });
+                                } else {
+                                  rememberCapture({ tooLarge: true, requestUrl: url.href, finalUrl: response.url });
+                                }
+                              }).catch(() => {});
                             }
-                          }).catch(() => {});
-                        }
-                      } catch (_) {}
-                      return response;
-                    });
-                  };
-                  // Some page bundles use XMLHttpRequest rather than fetch.
-                  // Observe its completed response too, without changing the request.
-                  const xhrOpen = XMLHttpRequest.prototype.open;
-                  const xhrSend = XMLHttpRequest.prototype.send;
-                  XMLHttpRequest.prototype.open = function(method, url, ...rest) {
-                    this.__moneyStorageRequestUrl = new URL(String(url), location.href).href;
-                    return xhrOpen.call(this, method, url, ...rest);
-                  };
-                  XMLHttpRequest.prototype.send = function(...args) {
-                    this.addEventListener("load", function() {
-                      try {
-                        const url = new URL(this.responseURL || this.__moneyStorageRequestUrl, location.href);
-                        const expected = url.origin === "https://storage.money"
-                          && url.pathname === "/public_deals/fetch";
-                        if (!expected) return;
-                        let text = "";
-                        if (this.responseType === "" || this.responseType === "text") {
-                          text = this.responseText;
-                        } else if (this.responseType === "json") {
-                          text = JSON.stringify(this.response);
-                        } else {
-                          return;
-                        }
-                        if (typeof text !== "string") return;
-                        if (text.length > 1000000) {
-                          rememberCapture({
-                            tooLarge: true,
-                            requestUrl: this.__moneyStorageRequestUrl,
-                            finalUrl: this.responseURL || this.__moneyStorageRequestUrl
-                          });
-                          return;
-                        }
-                        rememberCapture({
-                          status: this.status,
-                          requestUrl: this.__moneyStorageRequestUrl,
-                          finalUrl: this.responseURL || this.__moneyStorageRequestUrl,
-                          contentType: this.getResponseHeader("content-type") || "",
-                          text
+                          } catch (_) {}
+                          return response;
                         });
-                      } catch (_) {}
-                    }, { once: true });
-                    return xhrSend.apply(this, args);
-                  };
-                })();"""
-            },
-        )
-        # Inspect the already-open page before deciding to reload. An unconditional
-        # reload here can reset an active Cloudflare challenge and create a loop.
+                      };
+                      // Some page bundles use XMLHttpRequest rather than fetch.
+                      // Observe its completed response too, without changing the request.
+                      const xhrOpen = XMLHttpRequest.prototype.open;
+                      const xhrSend = XMLHttpRequest.prototype.send;
+                      XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+                        this.__moneyStorageRequestUrl = new URL(String(url), location.href).href;
+                        return xhrOpen.call(this, method, url, ...rest);
+                      };
+                      XMLHttpRequest.prototype.send = function(...args) {
+                        this.addEventListener("load", function() {
+                          try {
+                            const url = new URL(this.responseURL || this.__moneyStorageRequestUrl, location.href);
+                            const expected = url.origin === "https://storage.money"
+                              && url.pathname === "/public_deals/fetch";
+                            if (!expected) return;
+                            let text = "";
+                            if (this.responseType === "" || this.responseType === "text") {
+                              text = this.responseText;
+                            } else if (this.responseType === "json") {
+                              text = JSON.stringify(this.response);
+                            } else {
+                              return;
+                            }
+                            if (typeof text !== "string") return;
+                            if (text.length > 1000000) {
+                              rememberCapture({
+                                tooLarge: true,
+                                requestUrl: this.__moneyStorageRequestUrl,
+                                finalUrl: this.responseURL || this.__moneyStorageRequestUrl
+                              });
+                              return;
+                            }
+                            rememberCapture({
+                              status: this.status,
+                              requestUrl: this.__moneyStorageRequestUrl,
+                              finalUrl: this.responseURL || this.__moneyStorageRequestUrl,
+                              contentType: this.getResponseHeader("content-type") || "",
+                              text
+                            });
+                          } catch (_) {}
+                        }, { once: true });
+                        return xhrSend.apply(this, args);
+                      };
+                    })();"""
+                },
+            )
+        # Reload once after Network.enable so the main-document HTTP status is
+        # observable even when the initial navigation happened before CDP attach.
+        cdp.command("Page.reload", {"ignoreCache": True})
+        time.sleep(2)
         page = CDPPage(cdp)
-        initial_url, initial_title, initial_body = page_state(cdp)
-        initial_parsed = urlparse(initial_url)
-        initial_challenge = classify_cloudflare_challenge(
-            host=(initial_parsed.hostname or "").lower(),
-            path=initial_parsed.path,
-            body=initial_body,
-            response_challenge=cdp.current_document_cf_challenge,
-        )
-        capture_reload_done = False
-        if not initial_challenge and classify_money_storage_page(initial_url) == "deals":
-            cdp.command("Page.reload", {"ignoreCache": True})
-            capture_reload_done = True
-            time.sleep(2)
 
         current_url, title, _ = page_state(cdp)
         print(f"BROWSER_READY=standalone Chromium; page={safe_location(current_url)}", flush=True)
@@ -372,41 +436,42 @@ def main() -> int:
         saw_eid = False
         eid_state_logged = False
         cloudflare_state: bool | None = None
-        account_navigation_requested = False
         login_fallback_attempted = False
+        post_eid_navigation_attempted = False
         last_diag = 0.0
-        deals_form_logged = False
 
         while time.monotonic() < deadline:
             now = time.monotonic()
             current_url, title, body = page_state(cdp)
             parsed = urlparse(current_url)
             host = (parsed.hostname or "").lower()
+            saw_eid = saw_eid or cdp.saw_eid_navigation
             storage_page = classify_money_storage_page(current_url)
 
-            # Capture safe form metadata as soon as the Deals document is visible,
-            # independently of the authentication classifier and offers-reader path.
-            # This also lets us distinguish a public/login shell from an authenticated page.
-            if (
-                host == "storage.money"
-                and parsed.path.rstrip("/") == "/deals"
-                and not deals_form_logged
-            ):
-                deals_form_logged = True
-                try:
-                    time.sleep(1)
-                    controls = deals_form_diagnostics(cdp)
-                    print(
-                        "PAGE_DIAG deals_form=" + json.dumps(
-                            controls, ensure_ascii=False, separators=(",", ":")
-                        )[:12000],
-                        flush=True,
-                    )
-                except Exception as exc:
-                    print(
-                        "PAGE_DIAG deals_form_unavailable=%s" % type(exc).__name__,
-                        flush=True,
-                    )
+            # Return-only diagnostics stop at the navigation milestone.
+            # Normal mode must continue to the protected Deals page and read the
+            # page-originated offers response before declaring authentication.
+            if RETURN_ONLY and not SESSION_CHECK and not FORM_INSPECTION and has_returned_to_money_storage(current_url, eid_handoff_seen=saw_eid):
+                document_status = (
+                    cdp.storage_document_status
+                    if cdp.storage_document_path == parsed.path else None
+                )
+                returned_marker = Path(os.environ["GITHUB_WORKSPACE"]) / "money-storage-returned.txt"
+                returned_marker.write_text("returned_to_storage_money\n", encoding="utf-8")
+                profile_ready = Path(os.environ["GITHUB_WORKSPACE"]) / "money-storage-profile-ready.txt"
+                profile_ready.write_text("profile_ready\n", encoding="utf-8")
+                STATUS_FILE.write_text("MONEY_STORAGE_RETURNED", encoding="utf-8")
+                print(
+                    "MONEY_STORAGE_RETURNED url=%s status=%s"
+                    % (safe_location(current_url), document_status if document_status is not None else "not-observed"),
+                    flush=True,
+                )
+                with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+                    summary.write("\\n## Money Storage E-ID return check\\n")
+                    summary.write("- Browser returned from E-ID to an HTTPS page on storage.money.\\n")
+                    summary.write("- No account endpoint, protected API, or offers page was required.\\n")
+                    summary.write("- This confirms navigation only, not authenticated session validity.\\n")
+                return 0
 
             challenge = classify_cloudflare_challenge(
                 host=host,
@@ -431,28 +496,6 @@ def main() -> int:
             if cloudflare_state is True:
                 print("CLOUDFLARE_STATE=CHALLENGE_CLEARED", flush=True)
             cloudflare_state = False
-
-            # A page reached after the normal E-ID/Cloudflare flow may already
-            # have made its own offers request. Wait for that capture first;
-            # reload at most once, and only when no response was captured.
-            if storage_page == "deals" and not capture_reload_done:
-                capture_count = cdp.evaluate(
-                    "(window.__moneyStorageOffersCaptures || []).length",
-                    await_promise=False,
-                )
-                if not capture_count:
-                    time.sleep(2)
-                    capture_count = cdp.evaluate(
-                        "(window.__moneyStorageOffersCaptures || []).length",
-                        await_promise=False,
-                    )
-                if not capture_count:
-                    print("OFFERS_CAPTURE=NOT_SEEN; performing one controlled page reload", flush=True)
-                    cdp.command("Page.reload", {"ignoreCache": True})
-                    capture_reload_done = True
-                    time.sleep(2)
-                    continue
-                capture_reload_done = True
 
             if host == "e-id.cards" or host.endswith(".e-id.cards"):
                 saw_eid = True
@@ -501,6 +544,84 @@ def main() -> int:
                 print("AUTH_REQUIRED: restored profile reached a provider login route", flush=True)
                 return 2
 
+            # The E-ID callback commonly lands on /account. Once that normal
+            # callback page has loaded without an auth-failure marker, return to
+            # the offers tab so its own frontend can issue the authenticated
+            # public_deals/fetch request captured by the normal reader.
+            if (
+                not SESSION_CHECK
+                and not RETURN_ONLY
+                and not FORM_INSPECTION
+                and saw_eid
+                and host == "storage.money"
+                and storage_page == "account"
+                and not post_eid_navigation_attempted
+            ):
+                post_eid_navigation_attempted = True
+                print("EID_RETURN=ACCOUNT_CONFIRMED; opening the Everyone Offers tab", flush=True)
+                cdp.command("Page.navigate", {"url": "https://storage.money/deals#tab-3"})
+                time.sleep(2)
+                continue
+
+            if FORM_INSPECTION and host == "storage.money" and storage_page == "deals":
+                document_status = (
+                    cdp.storage_document_status
+                    if cdp.storage_document_path == parsed.path else None
+                )
+                if is_money_storage_authenticated_offers_page(
+                    current_url, status=document_status, title=title, body=body
+                ):
+                    if STATUS_FILE.read_text(encoding="utf-8") != "FORM_INSPECTION_READY":
+                        deals_form_diagnostics(cdp)
+                        STATUS_FILE.write_text("FORM_INSPECTION_READY", encoding="utf-8")
+                        print("FORM_INSPECTION_READY: use the visible browser to select USDT → ECR", flush=True)
+                    time.sleep(1)
+                    continue
+
+            if RETURN_ONLY and host == "storage.money" and storage_page == "deals":
+                document_status = (
+                    cdp.storage_document_status
+                    if cdp.storage_document_path == parsed.path else None
+                )
+                if is_money_storage_authenticated_offers_page(
+                    current_url, status=document_status, title=title, body=body
+                ):
+                    deals_form_diagnostics(cdp)
+                    STATUS_FILE.write_text("MONEY_STORAGE_SESSION_CANDIDATE", encoding="utf-8")
+                    profile_ready = Path(os.environ["GITHUB_WORKSPACE"]) / "money-storage-profile-ready.txt"
+                    profile_ready.write_text("profile_ready\n", encoding="utf-8")
+                    print(
+                        "MONEY_STORAGE_SESSION_CANDIDATE route=storage.money/deals document_http=200",
+                        flush=True,
+                    )
+                    with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+                        summary.write("\n## Money Storage existing-session candidate\n")
+                        summary.write("- The current browser can open the protected /deals document.\n")
+                        summary.write("- The encrypted profile will be saved for independent restoration verification.\n")
+                        summary.write("- This is not yet the restored-session verification result.\n")
+                        summary.write("- No offers API or quote values were read.\n")
+                    return 0
+
+            if SESSION_CHECK and host == "storage.money" and storage_page == "deals":
+                document_status = (
+                    cdp.storage_document_status
+                    if cdp.storage_document_path == parsed.path else None
+                )
+                if is_money_storage_authenticated_offers_page(
+                    current_url, status=document_status, title=title, body=body
+                ):
+                    STATUS_FILE.write_text("SESSION_AUTHENTICATED", encoding="utf-8")
+                    print(
+                        "SESSION_AUTHENTICATED route=storage.money/deals document_http=200",
+                        flush=True,
+                    )
+                    with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+                        summary.write("\\n## Money Storage restored-session check\\n")
+                        summary.write("- The encrypted profile was restored in a fresh Chromium process.\\n")
+                        summary.write("- The protected /deals document returned HTTP 200 without a login/session-expired marker.\\n")
+                        summary.write("- No offers API, quote values, or freshness data were read.\\n")
+                    return 0
+
             if now - last_diag >= 20:
                 last_diag = now
                 challenge = any(
@@ -547,29 +668,10 @@ def main() -> int:
                 time.sleep(2)
                 continue
 
-            if storage_page == "account":
-                if not account_navigation_requested:
-                    print(
-                        "AUTH_RETURN_ROUTE=ACCOUNT; opening the requested offers tab",
-                        flush=True,
-                    )
-                    cdp.command("Page.navigate", {"url": "https://storage.money/deals#tab-3"})
-                    account_navigation_requested = True
-                time.sleep(2)
-                continue
-            account_navigation_requested = False
-
-            if (
-                saw_eid
-                and host == "storage.money"
-                and storage_page == "other"
-                and parsed.path.rstrip("/") not in ("/login", "/auth", "/signin")
-            ):
-                print(
-                    "AUTH_RETURN_ROUTE=OTHER_STORAGE_PAGE; opening the requested offers tab",
-                    flush=True,
-                )
-                cdp.command("Page.navigate", {"url": "https://storage.money/deals#tab-3"})
+            # Access-only phases must never fall through to the legacy quote reader.
+            # A page that fails the access predicate is a failed/unknown check, not
+            # permission to read the offers API.
+            if RETURN_ONLY or SESSION_CHECK or FORM_INSPECTION:
                 time.sleep(2)
                 continue
 
@@ -579,6 +681,9 @@ def main() -> int:
                     for attempt in range(1, 4):
                         try:
                             snapshot = fetch_from_authenticated_page(page)
+                            Path(os.environ["GITHUB_WORKSPACE"], "money-storage-profile-ready.txt").write_text(
+                                "profile_ready\n", encoding="utf-8"
+                            )
                             break
                         except TransientMoneyStorageReadError as exc:
                             print(
@@ -637,6 +742,14 @@ def main() -> int:
                     )
                     return 0
                 except Exception as exc:
+                    # The reader writes this marker only after the protected
+                    # offers endpoint returned HTTP 200 with result=ok. Preserve
+                    # that authenticated profile even if quote freshness fails.
+                    authenticated_marker = Path(os.environ["GITHUB_WORKSPACE"]) / "session-authenticated.txt"
+                    if authenticated_marker.is_file():
+                        Path(os.environ["GITHUB_WORKSPACE"], "money-storage-profile-ready.txt").write_text(
+                            "profile_ready\n", encoding="utf-8"
+                        )
                     STATUS_FILE.write_text("OFFERS_READ_FAILED", encoding="utf-8")
                     print(
                         "OFFERS_READ_FAILED=%s reason=%s"
@@ -647,9 +760,9 @@ def main() -> int:
 
             time.sleep(2)
 
-        final_status = "SESSION_CHECK_TIMEOUT" if SESSION_CHECK else "AUTH_TIMEOUT"
+        final_status = "SESSION_CHECK_TIMEOUT" if SESSION_CHECK else "MONEY_STORAGE_RETURN_TIMEOUT"
         STATUS_FILE.write_text(final_status, encoding="utf-8")
-        print(f"{final_status}: Chromium did not complete the expected Money Storage read", flush=True)
+        print(f"{final_status}: Chromium did not return from E-ID to storage.money", flush=True)
         return 1
     finally:
         cdp.close()
