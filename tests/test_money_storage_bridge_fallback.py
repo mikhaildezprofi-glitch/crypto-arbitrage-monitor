@@ -25,7 +25,7 @@ class MoneyStorageBridgeFallbackTests(unittest.TestCase):
         self.assertIn('SESSION_CHECK = os.environ.get("MONEY_STORAGE_SESSION_CHECK") == "1"', source)
         self.assertIn("DEADLINE_SECONDS = 180 if SESSION_CHECK else 1800", source)
         self.assertIn('STATUS_FILE.write_text("AUTH_REQUIRED"', source)
-        self.assertIn('final_status = "SESSION_CHECK_TIMEOUT" if SESSION_CHECK else "AUTH_TIMEOUT"', source)
+        self.assertIn('final_status = "SESSION_CHECK_TIMEOUT" if SESSION_CHECK else "MONEY_STORAGE_RETURN_TIMEOUT"', source)
 
     def test_unauthorized_deals_fallback_precedes_offer_page_read(self):
         root = Path(__file__).resolve().parents[1]
