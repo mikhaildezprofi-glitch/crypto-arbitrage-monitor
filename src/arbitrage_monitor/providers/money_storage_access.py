@@ -69,6 +69,8 @@ def is_money_storage_authenticated_offers_page(
     return (
         classify_money_storage_page(url) == "deals"
         and status == 200
+        and bool((title or "").strip())
+        and len((body or "").strip()) >= 10
         and not is_money_storage_auth_failure(status=status, title=title, body=body)
     )
 
