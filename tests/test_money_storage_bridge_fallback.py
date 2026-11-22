@@ -27,6 +27,14 @@ class MoneyStorageBridgeFallbackTests(unittest.TestCase):
         self.assertIn('STATUS_FILE.write_text("AUTH_REQUIRED"', source)
         self.assertIn('final_status = "SESSION_CHECK_TIMEOUT" if SESSION_CHECK else "MONEY_STORAGE_RETURN_TIMEOUT"', source)
 
+    def test_access_only_modes_never_fall_through_to_quote_reader(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "scripts" / "money_storage_chromium_bridge.py").read_text(encoding="utf-8")
+        guard = source.index("if RETURN_ONLY or SESSION_CHECK:")
+        offer_read = source.index("snapshot = fetch_from_authenticated_page(page)")
+        self.assertLess(guard, offer_read)
+        self.assertIn("time.sleep(2)\\n                continue", source[guard:offer_read])
+
     def test_unauthorized_deals_fallback_precedes_offer_page_read(self):
         root = Path(__file__).resolve().parents[1]
         source = (root / "scripts" / "money_storage_chromium_bridge.py").read_text(encoding="utf-8")
