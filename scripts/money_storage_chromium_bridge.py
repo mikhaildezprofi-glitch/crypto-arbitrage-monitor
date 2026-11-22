@@ -214,8 +214,6 @@ def main() -> int:
                         const url = new URL(rawUrl, location.href);
                         // Capture the provider endpoint response first, then let the Python
                         // reader validate the exact query string and HTTP status.
-                        // This avoids silently missing a legitimate page request
-                        // when the provider changes parameter ordering or encoding.
                         const expected = url.origin === "https://storage.money"
                           && url.pathname === "/public_deals/fetch";
                         if (expected && !window.__moneyStorageOffersCapture) {
@@ -227,12 +225,52 @@ def main() -> int:
                                 contentType: response.headers.get("content-type") || "",
                                 text
                               };
+                            } else {
+                              window.__moneyStorageOffersCapture = { tooLarge: true };
                             }
                           }).catch(() => {});
                         }
                       } catch (_) {}
                       return response;
                     });
+                  };
+                  // Some page bundles use XMLHttpRequest rather than fetch.
+                  // Observe its completed response too, without changing the request.
+                  const xhrOpen = XMLHttpRequest.prototype.open;
+                  const xhrSend = XMLHttpRequest.prototype.send;
+                  XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+                    this.__moneyStorageRequestUrl = new URL(String(url), location.href).href;
+                    return xhrOpen.call(this, method, url, ...rest);
+                  };
+                  XMLHttpRequest.prototype.send = function(...args) {
+                    this.addEventListener("load", function() {
+                      try {
+                        const url = new URL(this.responseURL || this.__moneyStorageRequestUrl, location.href);
+                        const expected = url.origin === "https://storage.money"
+                          && url.pathname === "/public_deals/fetch";
+                        if (!expected || window.__moneyStorageOffersCapture) return;
+                        let text = "";
+                        if (this.responseType === "" || this.responseType === "text") {
+                          text = this.responseText;
+                        } else if (this.responseType === "json") {
+                          text = JSON.stringify(this.response);
+                        } else {
+                          return;
+                        }
+                        if (typeof text !== "string") return;
+                        if (text.length > 1000000) {
+                          window.__moneyStorageOffersCapture = { tooLarge: true };
+                          return;
+                        }
+                        window.__moneyStorageOffersCapture = {
+                          status: this.status,
+                          finalUrl: this.responseURL || this.__moneyStorageRequestUrl,
+                          contentType: this.getResponseHeader("content-type") || "",
+                          text
+                        };
+                      } catch (_) {}
+                    }, { once: true });
+                    return xhrSend.apply(this, args);
                   };
                 })();"""
             },
