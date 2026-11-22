@@ -434,6 +434,7 @@ def main() -> int:
         eid_state_logged = False
         cloudflare_state: bool | None = None
         login_fallback_attempted = False
+        post_eid_navigation_attempted = False
         last_diag = 0.0
 
         while time.monotonic() < deadline:
@@ -539,6 +540,25 @@ def main() -> int:
                 STATUS_FILE.write_text("AUTH_REQUIRED", encoding="utf-8")
                 print("AUTH_REQUIRED: restored profile reached a provider login route", flush=True)
                 return 2
+
+            # The E-ID callback commonly lands on /account. Once that normal
+            # callback page has loaded without an auth-failure marker, return to
+            # the offers tab so its own frontend can issue the authenticated
+            # public_deals/fetch request captured by the normal reader.
+            if (
+                not SESSION_CHECK
+                and not RETURN_ONLY
+                and not FORM_INSPECTION
+                and saw_eid
+                and host == "storage.money"
+                and storage_page == "account"
+                and not post_eid_navigation_attempted
+            ):
+                post_eid_navigation_attempted = True
+                print("EID_RETURN=ACCOUNT_CONFIRMED; opening the Everyone Offers tab", flush=True)
+                cdp.command("Page.navigate", {"url": "https://storage.money/deals#tab-3"})
+                time.sleep(2)
+                continue
 
             if FORM_INSPECTION and host == "storage.money" and storage_page == "deals":
                 document_status = (
