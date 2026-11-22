@@ -73,6 +73,36 @@ class MoneyStorageOfferFreshnessTests(unittest.TestCase):
         self.assertEqual(snapshot["rate"], "0.25")
         self.assertTrue(snapshot["freshness_confirmed"])
 
+    def test_reader_rejects_captured_response_with_wrong_offer_query(self):
+        now = datetime.now(timezone.utc)
+        payload = {
+            "result": "ok",
+            "data": [raw_offer(now - timedelta(minutes=2), "0.25")],
+        }
+
+        class WrongQueryPage:
+            url = "https://storage.money/deals#tab-3"
+
+            def evaluate(self, script, argument=None):
+                if script.strip() == "() => Date.now()":
+                    return datetime.now(timezone.utc).timestamp() * 1000
+                if "__moneyStorageOffersCaptures" in script:
+                    self.selection_script = script
+                    return {
+                        "status": 200,
+                        "finalUrl": "https://storage.money/public_deals/fetch?offset=0&limit=20&from=USDT&to=ECR",
+                        "contentType": "application/json",
+                        "text": json.dumps(payload),
+                    }
+                raise AssertionError("Unexpected browser evaluation.")
+
+        page = WrongQueryPage()
+        with self.assertRaisesRegex(RuntimeError, "did not match the approved offers endpoint"):
+            fetch_from_authenticated_page(page)
+        self.assertIn('q.get("from") === "ECR"', page.selection_script)
+        self.assertIn('q.get("to") === "USDT"', page.selection_script)
+        self.assertIn('captures.find(item => item && approved', page.selection_script)
+
     def test_newest_offer_within_15_minutes_confirms_freshness(self):
         offers = (
             parse_public_offer(raw_offer(self.now - timedelta(minutes=30))),
