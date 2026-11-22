@@ -121,7 +121,7 @@ def fetch_from_authenticated_page(page) -> dict[str, Any]:
           const deadline = Date.now() + 15000;
           while (Date.now() < deadline) {
             const captures = window.__moneyStorageOffersCaptures || [];
-            const captured = captures.find(item => item && approved(item.finalUrl || item.requestUrl));
+            const captured = captures.find(item => item && (approved(item.finalUrl) || approved(item.requestUrl)));
             if (captured) return captured;
             await new Promise(resolve => setTimeout(resolve, 100));
           }
