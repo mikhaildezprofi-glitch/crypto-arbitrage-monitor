@@ -99,9 +99,9 @@ All arithmetic is denominated in USDT. Do not label USDT as exact USD without a 
 
 - PR #7: open; encrypted Chromium profile persistence.
 - PR #8: open Draft; Sberkassa diagnostics and freshness rules.
-- PR #9: open Draft; Money Storage authenticated page-response capture and E-ID return handling.
-- PR #9 is stacked on the PR #8 branch and currently reports `mergeable=false`; its base branch ref is behind the current PR #8 head. Do not merge until the branch stack is reconciled and CI is green.
-- Latest PR #9 head at this snapshot: `55c793e792f1c7b3907c65ca52608fda6d94177e`.
+- PR #9: open Draft; original Money Storage E-ID/session work. Its branch diverged from the current PR #8 head and is superseded by PR #10 for integration review.
+- PR #10: open Draft; integration branch based directly on the current PR #8 head `f13c8f0b09e11cf3888828cf2920c274e058409f`, with the PR #9 Money Storage changes ported and the precise Cloudflare classifier/top-level document fixes retained.
+- PR #10 head at this snapshot: `0d2e45b499ab4219900196d824c10c475accf320`; it is mergeable but not merged. Do not merge until live source validation and CI are complete.
 - The repository `main` branch still contains stale README wording that conflicts with the newer Money Storage `create_time` freshness rule.
 - No hourly production schedule is enabled.
 - The existing `four-step-quote-test.yml` is a manual diagnostic and intentionally does not calculate final USDT, profit, or ROI. It omits the fifth source.
@@ -131,3 +131,13 @@ All arithmetic is denominated in USDT. Do not label USDT as exact USD without a 
 The repository is private. GitHub documents included compute usage for private-repository Actions and bills usage beyond the included allowance; standard runners in public repositories are free. The current interactive browser workflow has long timeouts, VNC/tunnel setup, browser installation, and a separate restored-session verification job. Running that design 18 times daily is not a safe assumption under the free-only requirement.
 
 The scheduled design must therefore be a separate, minimal headless read-only job that restores an already authenticated encrypted profile, performs no VNC/tunnel or interactive login, does not run the separate session-verification job every hour, and fails closed when the session is rejected. Measure actual minutes before enabling the 18-run/day schedule. Do not add a paid fallback.
+
+
+## Additional verification recorded on 2026-11-23
+
+- Money Storage browser run `45057434501` restored and decrypted the encrypted Chromium profile successfully, but the protected account route returned HTTP 401 repeatedly. The bridge entered the ordinary `storage.money/login` route and E-ID login page. The E-ID page showed a Cloudflare challenge-platform request and required a fresh interactive sign-in. No authenticated offers response was captured; no quote artifact or new encrypted profile was saved. This is a confirmed session rejection, not an OAuth success.
+- This run proves that the current saved profile is not sufficient for unattended Money Storage access at that point in time. It does not justify retrying the same E-ID flow repeatedly or bypassing Cloudflare.
+- A replacement integration branch was created from the current PR #8 head and the PR #9-specific files were ported as one integration commit. PR #10 is the review surface; PR #9 remains open but superseded.
+- The latest PR #10 test workflow run `45073521252` failed before any job step was allocated (GitHub reports an empty step list and no runner ID). This is not evidence of a unit-test assertion failure. Earlier PR #9 head `55c793e792f1c7b3907c65ca52608fda6d94177e` did complete all 121 unit tests successfully in run `45058948246`. The newer classifier changes still require a real CI execution on an allocated runner.
+- The PR #10 branch has an updated README reflecting the agreed Money Storage `create_time` freshness rule, explicit fifth-source blocker, session-reuse limits, and disabled schedule.
+- The five-source collector data model exists, but the production workflow remains a four-source diagnostic. The Sberkassa `/exchange` probe records candidate fields only; no provider is allowed to turn those candidates into a valid RUB -> USDT quote yet.
