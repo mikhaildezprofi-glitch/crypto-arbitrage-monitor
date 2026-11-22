@@ -59,3 +59,14 @@ def classify_cloudflare_challenge(
     if any(marker in normalized_body for marker in markers):
         return True
     return normalized_host.startswith("challenges.cloudflare.com")
+
+
+
+def has_returned_to_money_storage(url: str, *, eid_handoff_seen: bool) -> bool:
+    """Return true for any HTTPS storage.money page reached after E-ID navigation."""
+    parsed = urlparse(url)
+    return (
+        eid_handoff_seen
+        and parsed.scheme == "https"
+        and (parsed.hostname or "").lower() == "storage.money"
+    )
