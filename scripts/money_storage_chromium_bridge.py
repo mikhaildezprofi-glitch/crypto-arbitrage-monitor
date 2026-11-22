@@ -16,7 +16,7 @@ import sys
 import time
 import urllib.request
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import websocket
 
@@ -76,19 +76,45 @@ class CDP:
         if method == "Network.requestWillBeSent" and FORM_INSPECTION:
             request = params.get("request", {})
             parsed = urlparse(request.get("url", ""))
-            if parsed.hostname == "storage.money" and parsed.path == "/public_deals/fetch":
-                from urllib.parse import parse_qs
+            request_type = str(params.get("type", "unknown")).lower()
+            if (
+                parsed.hostname == "storage.money"
+                and (parsed.path == "/public_deals/fetch" or request_type in ("xhr", "fetch"))
+            ):
                 query = parse_qs(parsed.query)
-                source = query.get("from", [""])[0].upper()
-                target = query.get("to", [""])[0].upper()
-                if source and target:
-                    print(
-                        "PAGE_REQUEST endpoint=public_deals/fetch method=%s from=%s to=%s"
-                        % (request.get("method", "unknown"), source, target),
-                        flush=True,
-                    )
-                    if source == "ECR" and target == "USDT":
-                        STATUS_FILE.write_text("FORM_INSPECTION_COMPLETE", encoding="utf-8")
+                body = request.get("postData", "")
+                body_fields = {}
+                if body:
+                    try:
+                        decoded = json.loads(body)
+                        if isinstance(decoded, dict):
+                            body_fields = decoded
+                    except (TypeError, ValueError):
+                        try:
+                            body_fields = parse_qs(body)
+                        except Exception:
+                            body_fields = {}
+                def field_value(name: str) -> str:
+                    value = query.get(name, body_fields.get(name, [""]))
+                    if isinstance(value, list):
+                        value = value[0] if value else ""
+                    return str(value).strip().upper()[:16]
+                source = field_value("from")
+                target = field_value("to")
+                print(
+                    "PAGE_REQUEST host=storage.money path=%s type=%s method=%s from=%s to=%s pair_location=%s"
+                    % (
+                        parsed.path,
+                        request_type,
+                        request.get("method", "unknown"),
+                        source or "absent",
+                        target or "absent",
+                        "query" if query.get("from") or query.get("to") else ("body" if body_fields else "none"),
+                    ),
+                    flush=True,
+                )
+                if parsed.path == "/public_deals/fetch" and source == "ECR" and target == "USDT":
+                    STATUS_FILE.write_text("FORM_INSPECTION_COMPLETE", encoding="utf-8")
 
         elif method == "Page.frameNavigated":
             frame = params.get("frame", {})
@@ -106,6 +132,22 @@ class CDP:
             response = params.get("response", {})
             parsed = urlparse(response.get("url", ""))
             host = (parsed.hostname or "").lower()
+            if FORM_INSPECTION and host == "storage.money" and (
+                parsed.path == "/public_deals/fetch"
+                or params.get("type", "").lower() in ("xhr", "fetch")
+            ):
+                headers = {str(k).lower(): str(v) for k, v in response.get("headers", {}).items()}
+                print(
+                    "PAGE_RESPONSE path=%s status=%s type=%s content_type=%s request_id=%s"
+                    % (
+                        parsed.path,
+                        int(response.get("status", 0)),
+                        params.get("type", "unknown").lower(),
+                        headers.get("content-type", "absent").split(";")[0],
+                        str(params.get("requestId", ""))[:32],
+                    ),
+                    flush=True,
+                )
             if not (
                 host == "storage.money"
                 or host.endswith(".storage.money")
