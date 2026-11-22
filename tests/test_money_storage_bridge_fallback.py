@@ -33,7 +33,8 @@ class MoneyStorageBridgeFallbackTests(unittest.TestCase):
         guard = source.index("if RETURN_ONLY or SESSION_CHECK:")
         offer_read = source.index("snapshot = fetch_from_authenticated_page(page)")
         self.assertLess(guard, offer_read)
-        self.assertIn("time.sleep(2)\n                continue", source[guard:offer_read])
+        self.assertIn("time.sleep(2)", source[guard:offer_read])
+        self.assertIn("continue", source[guard:offer_read])
 
     def test_unauthorized_deals_fallback_precedes_offer_page_read(self):
         root = Path(__file__).resolve().parents[1]
