@@ -207,6 +207,12 @@ def main() -> int:
                 "source": """(() => {
                   if (window.__moneyStorageFetchCaptureInstalled) return;
                   window.__moneyStorageFetchCaptureInstalled = true;
+                  window.__moneyStorageOffersCaptures = [];
+                  const rememberCapture = item => {
+                    const captures = window.__moneyStorageOffersCaptures;
+                    captures.push(item);
+                    if (captures.length > 12) captures.shift();
+                  };
                   const originalFetch = window.fetch;
                   window.fetch = function(...args) {
                     return originalFetch.apply(this, args).then(response => {
@@ -217,17 +223,18 @@ def main() -> int:
                         // reader validate the exact query string and HTTP status.
                         const expected = url.origin === "https://storage.money"
                           && url.pathname === "/public_deals/fetch";
-                        if (expected && !window.__moneyStorageOffersCapture) {
+                        if (expected) {
                           response.clone().text().then(text => {
                             if (text.length <= 1000000) {
-                              window.__moneyStorageOffersCapture = {
+                              rememberCapture({
                                 status: response.status,
+                                requestUrl: url.href,
                                 finalUrl: response.url,
                                 contentType: response.headers.get("content-type") || "",
                                 text
-                              };
+                              });
                             } else {
-                              window.__moneyStorageOffersCapture = { tooLarge: true };
+                              rememberCapture({ tooLarge: true, requestUrl: url.href, finalUrl: response.url });
                             }
                           }).catch(() => {});
                         }
@@ -249,7 +256,7 @@ def main() -> int:
                         const url = new URL(this.responseURL || this.__moneyStorageRequestUrl, location.href);
                         const expected = url.origin === "https://storage.money"
                           && url.pathname === "/public_deals/fetch";
-                        if (!expected || window.__moneyStorageOffersCapture) return;
+                        if (!expected) return;
                         let text = "";
                         if (this.responseType === "" || this.responseType === "text") {
                           text = this.responseText;
@@ -260,15 +267,20 @@ def main() -> int:
                         }
                         if (typeof text !== "string") return;
                         if (text.length > 1000000) {
-                          window.__moneyStorageOffersCapture = { tooLarge: true };
+                          rememberCapture({
+                            tooLarge: true,
+                            requestUrl: this.__moneyStorageRequestUrl,
+                            finalUrl: this.responseURL || this.__moneyStorageRequestUrl
+                          });
                           return;
                         }
-                        window.__moneyStorageOffersCapture = {
+                        rememberCapture({
                           status: this.status,
+                          requestUrl: this.__moneyStorageRequestUrl,
                           finalUrl: this.responseURL || this.__moneyStorageRequestUrl,
                           contentType: this.getResponseHeader("content-type") || "",
                           text
-                        };
+                        });
                       } catch (_) {}
                     }, { once: true });
                     return xhrSend.apply(this, args);
