@@ -70,7 +70,7 @@ class MoneyStorageBridgeFallbackTests(unittest.TestCase):
         self.assertIn('method == "Network.requestWillBeSent" and FORM_INSPECTION', source)
         self.assertIn('parsed.path == "/public_deals/fetch"', source)
         self.assertIn('request.get("postData", "")', source)
-        self.assertIn('body_fields = json.loads(body)', source)
+        self.assertIn('decoded = json.loads(body)', source)
         self.assertIn('PAGE_REQUEST host=storage.money path=%s', source)
         self.assertIn('PAGE_RESPONSE path=%s status=%s', source)
         self.assertIn('source == "ECR" and target == "USDT"', source)
