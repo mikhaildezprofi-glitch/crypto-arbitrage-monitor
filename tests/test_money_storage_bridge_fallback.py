@@ -48,6 +48,16 @@ class MoneyStorageBridgeFallbackTests(unittest.TestCase):
         )
         self.assertIn("snapshot = fetch_from_authenticated_page(page)", source)
         self.assertIn("MONEY_STORAGE_SESSION=AUTHENTICATED_AFTER_PROTECTED_READ", source)
+        self.assertIn('storage_page == "account"', source)
+        self.assertIn('EID_RETURN=ACCOUNT_CONFIRMED; opening the Everyone Offers tab', source)
+        self.assertIn('money-storage-profile-ready.txt', source)
+
+    def test_default_workflow_mode_uses_quote_reader_not_return_only(self):
+        root = Path(__file__).resolve().parents[1]
+        workflow = (root / ".github" / "workflows" / "browserless-eid-handoff-stable.yml").read_text(encoding="utf-8")
+        self.assertIn('MONEY_STORAGE_FORM_INSPECTION=1 python3 "$BRIDGE_SCRIPT"', workflow)
+        self.assertIn('Default Money Storage mode is the original authenticated, read-only', workflow)
+        self.assertNotIn('MONEY_STORAGE_RETURN_ONLY=1 python3 "$BRIDGE_SCRIPT"', workflow)
 
     def test_return_only_logs_visible_currency_form_metadata(self):
         root = Path(__file__).resolve().parents[1]
