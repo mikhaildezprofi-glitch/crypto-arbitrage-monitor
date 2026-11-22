@@ -19,6 +19,19 @@ def classify_money_storage_page(url: str) -> str:
     return "other"
 
 
+def is_money_storage_auth_failure(*, status: int | None, title: str = "", body: str = "") -> bool:
+    """Identify an expired/rejected provider session from HTTP or visible page text."""
+    if status in (401, 403):
+        return True
+    text = f"{title} {body}".lower()
+    return any(marker in text for marker in (
+        "session timed out",
+        "you must log in",
+        "please log in",
+        "unauthenticated",
+    ))
+
+
 def classify_cloudflare_challenge(
     *,
     host: str,
