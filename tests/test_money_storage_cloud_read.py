@@ -56,7 +56,7 @@ class MoneyStorageOfferFreshnessTests(unittest.TestCase):
             url = "https://storage.money/deals#tab-3"
 
             def evaluate(self, script, argument=None):
-                if "Date.now()" in script:
+                if script.strip() == "() => Date.now()":
                     return datetime.now(timezone.utc).timestamp() * 1000
                 if "__moneyStorageOffersCapture" in script:
                     return {
