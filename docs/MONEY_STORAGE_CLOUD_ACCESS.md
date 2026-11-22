@@ -299,3 +299,18 @@ It does **not** prove that the route is officially supported for unattended serv
 The authenticated standalone-Chromium run has now read the `Всем предлагают` tab in the same manually authenticated session and published a normalized artifact containing 20 offers. Its arithmetic mean was independently checked against the 20 row rates. This confirms the selected UI source and current response shape for this capture.
 
 The selected tab and first-20 row set are now confirmed for a one-shot manually authenticated cloud-browser read. Do not enable unattended scheduled server-side polling until Money Storage confirms that access method, request frequency, and rate limits are permitted. The `.env.example` filter values describe the captured frontend request only; they are not authorization or proof of production cloud access.
+
+## Official E-ID handoff automation (2026-11-23)
+
+The cloud Chromium bridge now attempts the following bounded, provider-native sequence:
+
+1. Restore the encrypted Chromium profile and open the protected Deals page.
+2. If the restored session is rejected, navigate once to the official `https://storage.money/login` page.
+3. On that page, inspect visible anchors and follow only a link whose visible label identifies E-ID and whose resolved destination is HTTPS on `e-id.cards` (or its subdomain). Link discovery is retried for a bounded period while the page finishes rendering.
+4. Leave identity verification, CAPTCHA, MFA, camera checks, and any device-binding confirmation to the account owner in the same remote browser.
+5. After the provider returns to `storage.money`, continue to the Everyone Offers page and require a successful protected offers response before declaring the session authenticated.
+6. Encrypt and save the refreshed browser profile only after the protected endpoint has confirmed an authenticated response.
+
+The bridge does not construct OAuth URLs, infer client parameters, read or export cookies, copy session tokens, automate identity answers, or bypass security challenges. If the official E-ID link cannot be identified, the bridge remains on the provider login page and reports that the normal sign-in action needs owner attention.
+
+A successful return navigation alone is not proof of authentication. The profile is considered reusable only after the protected offers endpoint returns a valid authenticated payload. If E-ID/CAPTCHA/MFA/device binding requires owner interaction, that interaction remains necessary; all surrounding navigation, verification, capture, and encrypted profile persistence are automated.
