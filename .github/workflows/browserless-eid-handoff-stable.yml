@@ -323,7 +323,9 @@ jobs:
             CHROMIUM_START_URL="https://sberkassa.site/deals#tab-3"
             BRIDGE_SCRIPT="scripts/sberkassa_chromium_probe.py"
           else
-            # Start at Money Storage's observed E-ID authorization entry point. After the owner\n            # completes any required E-ID/CAPTCHA/MFA step, the bridge returns to /deals#tab-3.\n            CHROMIUM_START_URL="https://storage.money/oauth/authorize/eid"
+            # Start at Money Storage's observed E-ID authorization entry point. After the owner
+            # completes any required E-ID/CAPTCHA/MFA step, the bridge returns to /deals#tab-3.
+            CHROMIUM_START_URL="https://storage.money/oauth/authorize/eid"
             BRIDGE_SCRIPT="scripts/money_storage_chromium_bridge.py"
           fi
           echo "BROWSER_TARGET=$TARGET"
