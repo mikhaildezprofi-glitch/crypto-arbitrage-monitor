@@ -22,9 +22,9 @@ class MoneyStorageBridgeFallbackTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         source = (root / "scripts" / "money_storage_chromium_bridge.py").read_text(encoding="utf-8")
         self.assertIn('SESSION_CHECK = os.environ.get("MONEY_STORAGE_SESSION_CHECK") == "1"', source)
-        self.assertIn("DEADLINE_SECONDS = 180 if SESSION_CHECK else 1800", source)
+        self.assertIn("DEADLINE_SECONDS = 180 if SESSION_CHECK or NONINTERACTIVE else 1800", source)
         self.assertIn('STATUS_FILE.write_text("AUTH_REQUIRED"', source)
-        self.assertIn('final_status = "SESSION_CHECK_TIMEOUT" if SESSION_CHECK else "MONEY_STORAGE_RETURN_TIMEOUT"', source)
+        self.assertIn('final_status = "SESSION_CHECK_TIMEOUT" if SESSION_CHECK else ("AUTH_REQUIRED" if NONINTERACTIVE else "MONEY_STORAGE_RETURN_TIMEOUT")', source)
 
     def test_access_only_modes_never_fall_through_to_quote_reader(self):
         root = Path(__file__).resolve().parents[1]
@@ -113,6 +113,20 @@ class MoneyStorageBridgeFallbackTests(unittest.TestCase):
         self.assertIn('STATUS_FILE.write_text("FORM_INSPECTION_COMPLETE"', source)
         self.assertIn("if RETURN_ONLY or SESSION_CHECK or FORM_INSPECTION:", source)
         self.assertIn("if not SESSION_CHECK and not RETURN_ONLY and not FORM_INSPECTION:", source)
+
+
+    def test_bridge_uses_only_the_official_visible_eid_login_link(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "scripts" / "money_storage_chromium_bridge.py").read_text(encoding="utf-8")
+        ast.parse(source)
+        self.assertIn("def click_official_eid_action(cdp: CDP)", source)
+        self.assertIn('document.querySelectorAll("a[href]")', source)
+        self.assertIn('target.protocol === "https:"', source)
+        self.assertIn('host === "e-id.cards" || host.endsWith(".e-id.cards")', source)
+        self.assertIn("EID_HANDOFF=OFFICIAL_LOGIN_ACTION_OPENED", source)
+        self.assertIn('Page.navigate", {"url": "https://storage.money/login"}', source)
+        self.assertIn('and storage_page == "login"', source)
+
 
 
 if __name__ == "__main__":
