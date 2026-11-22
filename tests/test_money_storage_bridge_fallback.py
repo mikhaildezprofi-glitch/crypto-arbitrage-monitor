@@ -30,7 +30,7 @@ class MoneyStorageBridgeFallbackTests(unittest.TestCase):
     def test_access_only_modes_never_fall_through_to_quote_reader(self):
         root = Path(__file__).resolve().parents[1]
         source = (root / "scripts" / "money_storage_chromium_bridge.py").read_text(encoding="utf-8")
-        guard = source.index("if RETURN_ONLY or SESSION_CHECK:")
+        guard = source.index("if RETURN_ONLY or SESSION_CHECK or FORM_INSPECTION:")
         capture_guard = source.index("if not SESSION_CHECK and not RETURN_ONLY:")
         capture_install = source.index('"Page.addScriptToEvaluateOnNewDocument"')
         self.assertLess(capture_guard, capture_install)
