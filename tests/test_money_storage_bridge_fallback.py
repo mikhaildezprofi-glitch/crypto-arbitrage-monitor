@@ -39,6 +39,16 @@ class MoneyStorageBridgeFallbackTests(unittest.TestCase):
         self.assertIn("time.sleep(2)", source[guard:offer_read])
         self.assertIn("continue", source[guard:offer_read])
 
+    def test_normal_mode_continues_after_eid_return_to_read_protected_offers(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "scripts" / "money_storage_chromium_bridge.py").read_text(encoding="utf-8")
+        self.assertIn(
+            "if RETURN_ONLY and not SESSION_CHECK and not FORM_INSPECTION and has_returned_to_money_storage",
+            source,
+        )
+        self.assertIn("snapshot = fetch_from_authenticated_page(page)", source)
+        self.assertIn("MONEY_STORAGE_SESSION=AUTHENTICATED_AFTER_PROTECTED_READ", source)
+
     def test_return_only_logs_visible_currency_form_metadata(self):
         root = Path(__file__).resolve().parents[1]
         source = (root / "scripts" / "money_storage_chromium_bridge.py").read_text(encoding="utf-8")
