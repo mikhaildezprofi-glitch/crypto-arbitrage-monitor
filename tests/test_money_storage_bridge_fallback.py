@@ -69,11 +69,14 @@ class MoneyStorageBridgeFallbackTests(unittest.TestCase):
         self.assertIn('FORM_INSPECTION = os.environ.get("MONEY_STORAGE_FORM_INSPECTION") == "1"', source)
         self.assertIn('method == "Network.requestWillBeSent" and FORM_INSPECTION', source)
         self.assertIn('parsed.path == "/public_deals/fetch"', source)
+        self.assertIn('request.get("postData", "")', source)
+        self.assertIn('body_fields = json.loads(body)', source)
+        self.assertIn('PAGE_REQUEST host=storage.money path=%s', source)
+        self.assertIn('PAGE_RESPONSE path=%s status=%s', source)
         self.assertIn('source == "ECR" and target == "USDT"', source)
         self.assertIn('STATUS_FILE.write_text("FORM_INSPECTION_COMPLETE"', source)
         self.assertIn('if RETURN_ONLY or SESSION_CHECK or FORM_INSPECTION:', source)
         self.assertIn('if not SESSION_CHECK and not RETURN_ONLY and not FORM_INSPECTION:', source)
-        self.assertNotIn('request.get("postData")', source)
 
 if __name__ == "__main__":
     unittest.main()
