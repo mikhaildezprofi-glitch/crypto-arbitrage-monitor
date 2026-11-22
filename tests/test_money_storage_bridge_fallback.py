@@ -31,6 +31,9 @@ class MoneyStorageBridgeFallbackTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         source = (root / "scripts" / "money_storage_chromium_bridge.py").read_text(encoding="utf-8")
         guard = source.index("if RETURN_ONLY or SESSION_CHECK:")
+        capture_guard = source.index("if not SESSION_CHECK and not RETURN_ONLY:")
+        capture_install = source.index('"Page.addScriptToEvaluateOnNewDocument"')
+        self.assertLess(capture_guard, capture_install)
         offer_read = source.index("snapshot = fetch_from_authenticated_page(page)")
         self.assertLess(guard, offer_read)
         self.assertIn("time.sleep(2)", source[guard:offer_read])
