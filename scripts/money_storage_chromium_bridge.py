@@ -326,6 +326,35 @@ def deals_form_diagnostics(cdp: CDP) -> dict:
     return result
 
 
+def click_official_eid_action(cdp: CDP) -> dict:
+    """Open only a visible Money Storage link that explicitly targets e-id.cards."""
+    result = cdp.evaluate(
+        """(() => {
+          const visible = element => {
+            const style = getComputedStyle(element);
+            const rect = element.getBoundingClientRect();
+            return style.visibility !== "hidden" && style.display !== "none"
+              && rect.width > 0 && rect.height > 0;
+          };
+          const links = Array.from(document.querySelectorAll("a[href]")).filter(visible);
+          for (const link of links) {
+            const label = String(link.innerText || link.textContent || "")
+              .replace(/\\s+/g, " ").trim().slice(0, 120);
+            let target;
+            try { target = new URL(link.href, location.href); } catch (_) { continue; }
+            const host = target.hostname.toLowerCase();
+            const officialHost = host === "e-id.cards" || host.endsWith(".e-id.cards");
+            if (/e[\\s-]?id/i.test(label) && target.protocol === "https:" && officialHost) {
+              link.click();
+              return { clicked: true, label, host, path: target.pathname };
+            }
+          }
+          return { clicked: false };
+        })()"""
+    )
+    return result if isinstance(result, dict) else {"clicked": False}
+
+
 def main() -> int:
     STATUS_FILE.write_text("WAITING_FOR_LOGIN", encoding="utf-8")
     cdp = connect_to_chromium()
@@ -438,6 +467,8 @@ def main() -> int:
         eid_state_logged = False
         cloudflare_state: bool | None = None
         login_fallback_attempted = False
+        login_route_attempted = False
+        eid_login_action_attempted = False
         post_eid_navigation_attempted = False
         last_diag = 0.0
 
@@ -508,6 +539,31 @@ def main() -> int:
                     print("AUTH_REQUIRED: restored profile was redirected to E-ID; interactive sign-in is not available in this run", flush=True)
                     return 2
 
+            # Follow only a visible E-ID link whose resolved HTTPS destination
+            # is the official e-id.cards host. Identity verification remains
+            # inside the provider's own browser flow.
+            if (
+                host == "storage.money"
+                and storage_page == "login"
+                and not SESSION_CHECK
+                and not NONINTERACTIVE
+                and not RETURN_ONLY
+                and not FORM_INSPECTION
+            ):
+                if not eid_login_action_attempted:
+                    eid_login_action_attempted = True
+                    handoff = click_official_eid_action(cdp)
+                    if handoff.get("clicked"):
+                        print(
+                            "EID_HANDOFF=OFFICIAL_LOGIN_ACTION_OPENED host=%s path=%s"
+                            % (handoff.get("host", "e-id.cards"), handoff.get("path", "/")),
+                            flush=True,
+                        )
+                    else:
+                        print("EID_HANDOFF=OFFICIAL_LOGIN_LINK_NOT_FOUND; waiting on provider login page", flush=True)
+                time.sleep(2)
+                continue
+
             # A provider route or URL alone never proves authentication. Reject
             # explicit HTTP/session-timeout evidence before attempting route handoff.
             document_status = (
@@ -526,13 +582,13 @@ def main() -> int:
                     STATUS_FILE.write_text("AUTH_REQUIRED", encoding="utf-8")
                     print("AUTH_REQUIRED: restored profile is not authenticated", flush=True)
                     return 2
-                # On the first rejected Deals document, offer the provider's
-                # ordinary account route once. If that route is also rejected,
-                # remain there for manual sign-in instead of bouncing back.
-                if storage_page == "deals" and not login_fallback_attempted:
-                    login_fallback_attempted = True
-                    print("AUTH_HANDOFF=OPENING_PROVIDER_ACCOUNT_ROUTE", flush=True)
-                    cdp.command("Page.navigate", {"url": "https://storage.money/account"})
+                # Move to the provider's official login page once. The next
+                # loop may open its visible E-ID link; it never fabricates an
+                # OAuth URL or interacts with identity verification itself.
+                if storage_page in ("deals", "account") and not login_route_attempted:
+                    login_route_attempted = True
+                    print("AUTH_HANDOFF=OPENING_PROVIDER_LOGIN_ROUTE", flush=True)
+                    cdp.command("Page.navigate", {"url": "https://storage.money/login"})
                     time.sleep(2)
                     continue
                 time.sleep(2)
