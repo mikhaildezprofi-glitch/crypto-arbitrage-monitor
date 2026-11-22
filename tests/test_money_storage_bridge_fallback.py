@@ -57,6 +57,56 @@ class MoneyStorageBridgeFallbackTests(unittest.TestCase):
         workflow = (root / ".github" / "workflows" / "browserless-eid-handoff-stable.yml").read_text(encoding="utf-8")
         self.assertIn('MONEY_STORAGE_FORM_INSPECTION=1 python3 "$BRIDGE_SCRIPT"', workflow)
         self.assertIn('CHROMIUM_START_URL="https://storage.money/oauth/authorize/eid"', workflow)
+        self.assertRegex(
+            workflow,
+            r'(?m)^\s*CHROMIUM_START_URL="https://storage\.money/oauth/authorize/eid"
+        self.assertIn('Default Money Storage mode is the original authenticated, read-only', workflow)
+        self.assertNotIn('MONEY_STORAGE_RETURN_ONLY=1 python3 "$BRIDGE_SCRIPT"', workflow)
+
+    def test_return_only_logs_visible_currency_form_metadata(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "scripts" / "money_storage_chromium_bridge.py").read_text(encoding="utf-8")
+        ast.parse(source)
+        diagnostic = source.index("def deals_form_diagnostics")
+        candidate = source.index('STATUS_FILE.write_text("MONEY_STORAGE_SESSION_CANDIDATE"')
+        self.assertLess(diagnostic, candidate)
+        self.assertIn('querySelectorAll("select, [role=combobox], input")', source)
+        self.assertIn("selectedText", source)
+        self.assertIn("selectedValue", source)
+        self.assertNotIn("item.value = element.value", source)
+        self.assertIn('print("PAGE_DIAG deals_form="', source)
+        self.assertIn("currencyHint", source)
+        self.assertIn("currencyControls", source)
+
+    def test_unauthorized_deals_fallback_precedes_offer_page_read(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "scripts" / "money_storage_chromium_bridge.py").read_text(encoding="utf-8")
+        fallback = source.index("MONEY_STORAGE_LOGIN_REQUIRED")
+        offer_read = source.index("snapshot = fetch_from_authenticated_page(page)")
+        self.assertLess(fallback, offer_read)
+
+
+    def test_form_inspection_observes_only_page_originated_pair_request(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "scripts" / "money_storage_chromium_bridge.py").read_text(encoding="utf-8")
+        ast.parse(source)
+        self.assertIn('FORM_INSPECTION = os.environ.get("MONEY_STORAGE_FORM_INSPECTION") == "1"', source)
+        self.assertIn('method == "Network.requestWillBeSent" and FORM_INSPECTION', source)
+        self.assertIn('parsed.path == "/public_deals/fetch"', source)
+        self.assertIn('request.get("postData", "")', source)
+        self.assertIn('decoded = json.loads(body)', source)
+        self.assertIn('PAGE_REQUEST host=storage.money path=%s', source)
+        self.assertIn('PAGE_RESPONSE path=%s status=%s', source)
+        self.assertIn('source == "ECR" and target == "USDT"', source)
+        self.assertIn('STATUS_FILE.write_text("FORM_INSPECTION_COMPLETE"', source)
+        self.assertIn('if RETURN_ONLY or SESSION_CHECK or FORM_INSPECTION:', source)
+        self.assertIn('if not SESSION_CHECK and not RETURN_ONLY and not FORM_INSPECTION:', source)
+
+if __name__ == "__main__":
+    unittest.main()
+,
+        )
+        self.assertNotIn(r'\n            CHROMIUM_START_URL=', workflow)
         self.assertIn('Default Money Storage mode is the original authenticated, read-only', workflow)
         self.assertNotIn('MONEY_STORAGE_RETURN_ONLY=1 python3 "$BRIDGE_SCRIPT"', workflow)
 
