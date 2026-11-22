@@ -1,9 +1,8 @@
-"""Human-operated Chromium bridge for Money Storage E-ID and session checks.
+"""Human-operated Chromium bridge for Money Storage E-ID and read-only quote capture.
 
-The return-only mode records the first E-ID return or a candidate existing
-session without reading offers. The isolated session-check mode verifies
-protected offers-page access without calling the offers API. The legacy
-read-only quote path remains separate and is not used by this workflow.
+Normal mode observes the page's own authenticated offers request and validates
+the captured response. Return-only, form-inspection, and isolated session-check
+modes remain explicit access-diagnostic modes.
 
 It does not automate clicks, solve challenges, export cookies, or persist
 browser credentials.
@@ -445,10 +444,10 @@ def main() -> int:
             saw_eid = saw_eid or cdp.saw_eid_navigation
             storage_page = classify_money_storage_page(current_url)
 
-            # Phase 1 ends as soon as the browser returns from E-ID to any
-            # HTTPS page on storage.money. This is only a navigation milestone:
-            # it does not claim that the provider session is authenticated.
-            if not SESSION_CHECK and not FORM_INSPECTION and has_returned_to_money_storage(current_url, eid_handoff_seen=saw_eid):
+            # Return-only diagnostics stop at the navigation milestone.
+            # Normal mode must continue to the protected Deals page and read the
+            # page-originated offers response before declaring authentication.
+            if RETURN_ONLY and not SESSION_CHECK and not FORM_INSPECTION and has_returned_to_money_storage(current_url, eid_handoff_seen=saw_eid):
                 document_status = (
                     cdp.storage_document_status
                     if cdp.storage_document_path == parsed.path else None
