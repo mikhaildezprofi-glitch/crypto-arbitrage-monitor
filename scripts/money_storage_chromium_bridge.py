@@ -95,7 +95,10 @@ class CDP:
             mitigated = headers.get("cf-mitigated", "absent")
             server = headers.get("server", "absent")
             kind = params.get("type", "unknown").lower()
-            if kind == "document" and (
+            # Only a challenge response for the top-level document can mark
+            # the current page as challenged. Turnstile iframe requests must
+            # not leave a sticky page-level challenge flag after the widget clears.
+            if kind == "document" and params.get("frameId") == self.main_frame_id and (
                 mitigated.lower() == "challenge"
                 or "/cdn-cgi/challenge-platform/" in parsed.path
             ):
