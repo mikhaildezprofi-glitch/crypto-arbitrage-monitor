@@ -34,6 +34,7 @@ from arbitrage_monitor.providers.money_storage_access import (
     classify_cloudflare_challenge,
     classify_money_storage_page,
     is_money_storage_auth_failure,
+    has_returned_to_money_storage,
 )
 
 DEBUG_ENDPOINT = "http://127.0.0.1:9222/json/list"
@@ -334,7 +335,7 @@ def main() -> int:
             # Phase 1 ends as soon as the browser returns from E-ID to any
             # HTTPS page on storage.money. This is only a navigation milestone:
             # it does not claim that the provider session is authenticated.
-            if saw_eid and host == "storage.money" and parsed.scheme == "https":
+            if has_returned_to_money_storage(current_url, eid_handoff_seen=saw_eid):
                 document_status = (
                     cdp.storage_document_status
                     if cdp.storage_document_path == parsed.path else None
