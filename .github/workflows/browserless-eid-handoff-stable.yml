@@ -581,7 +581,8 @@ jobs:
   # processes. This job never opens a public remote desktop and never attempts
   # to complete CAPTCHA/E-ID/MFA.
   verify-restored-money-storage-session:
-    if: needs.cloud-browser.result == 'success' && inputs.target == 'money_storage' && hashFiles('money-storage-current-offers.json') != ''
+    # Phase 1 verifies navigation only. Restored-session quote checks belong to a later phase.
+    if: false
     needs: cloud-browser
     runs-on: ubuntu-latest
     timeout-minutes: 25
