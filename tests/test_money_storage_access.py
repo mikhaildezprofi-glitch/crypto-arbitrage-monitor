@@ -63,6 +63,11 @@ class MoneyStorageAuthenticatedOffersPageTests(unittest.TestCase):
             body="Session timed out. You must log in to the main page.",
         ))
 
+    def test_blank_document_does_not_confirm_session(self):
+        self.assertFalse(is_money_storage_authenticated_offers_page(
+            "https://storage.money/deals#tab-3", status=200, title="Deals", body=" "
+        ))
+
     def test_other_provider_route_does_not_confirm_offers_access(self):
         self.assertFalse(is_money_storage_authenticated_offers_page(
             "https://storage.money/account", status=200
