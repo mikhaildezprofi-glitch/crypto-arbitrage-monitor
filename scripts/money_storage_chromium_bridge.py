@@ -406,7 +406,7 @@ def main() -> int:
             # Phase 1 ends as soon as the browser returns from E-ID to any
             # HTTPS page on storage.money. This is only a navigation milestone:
             # it does not claim that the provider session is authenticated.
-            if not SESSION_CHECK and has_returned_to_money_storage(current_url, eid_handoff_seen=saw_eid):
+            if not SESSION_CHECK and not FORM_INSPECTION and has_returned_to_money_storage(current_url, eid_handoff_seen=saw_eid):
                 document_status = (
                     cdp.storage_document_status
                     if cdp.storage_document_path == parsed.path else None
