@@ -212,6 +212,54 @@ def page_state(cdp: CDP) -> tuple[str, str, str]:
     return value.get("url", ""), value.get("title", ""), value.get("body", "")
 
 
+def deals_form_diagnostics(cdp: CDP) -> dict:
+    """Return visible, non-secret currency-form metadata without changing the page."""
+    result = cdp.evaluate(
+        """(() => {
+          const visible = element => {
+            const style = getComputedStyle(element);
+            const rect = element.getBoundingClientRect();
+            return style.visibility !== "hidden" && style.display !== "none"
+              && rect.width > 0 && rect.height > 0;
+          };
+          const clean = value => String(value || "").replace(/\\s+/g, " ").trim().slice(0, 120);
+          const fields = Array.from(document.querySelectorAll("select, [role=combobox], input"))
+            .filter(visible).slice(0, 40).map(element => {
+              const item = {
+                tag: element.tagName.toLowerCase(),
+                id: clean(element.id),
+                name: clean(element.getAttribute("name")),
+                role: clean(element.getAttribute("role")),
+                ariaLabel: clean(element.getAttribute("aria-label")),
+                type: clean(element.getAttribute("type")),
+                placeholder: clean(element.getAttribute("placeholder"))
+              };
+              if (element.tagName === "SELECT") {
+                item.selectedText = clean(element.selectedOptions?.[0]?.textContent);
+                item.selectedValue = clean(element.value);
+                item.options = Array.from(element.options).slice(0, 30).map(option => ({
+                  text: clean(option.textContent),
+                  value: clean(option.value),
+                  selected: option.selected
+                }));
+              }
+              return item;
+            });
+          const buttons = Array.from(document.querySelectorAll("button, [role=button]"))
+            .filter(visible).slice(0, 40).map(element => ({
+              text: clean(element.innerText || element.textContent),
+              ariaLabel: clean(element.getAttribute("aria-label")),
+              title: clean(element.getAttribute("title"))
+            }));
+          return { fields, buttons };
+        })()"""
+    )
+    if not isinstance(result, dict):
+        result = {"unavailable": True}
+    print("PAGE_DIAG deals_form=" + json.dumps(result, ensure_ascii=False, sort_keys=True), flush=True)
+    return result
+
+
 def main() -> int:
     STATUS_FILE.write_text("WAITING_FOR_LOGIN", encoding="utf-8")
     cdp = connect_to_chromium()
@@ -438,6 +486,7 @@ def main() -> int:
                 if is_money_storage_authenticated_offers_page(
                     current_url, status=document_status, title=title, body=body
                 ):
+                    deals_form_diagnostics(cdp)
                     STATUS_FILE.write_text("MONEY_STORAGE_SESSION_CANDIDATE", encoding="utf-8")
                     profile_ready = Path(os.environ["GITHUB_WORKSPACE"]) / "money-storage-profile-ready.txt"
                     profile_ready.write_text("profile_ready\n", encoding="utf-8")
