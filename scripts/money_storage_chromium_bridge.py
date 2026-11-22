@@ -1,9 +1,9 @@
-"""Human-operated Chromium session bridge for the Money Storage E-ID handoff.
+"""Human-operated Chromium bridge for Money Storage E-ID and session checks.
 
-Chromium is launched as a normal visible desktop application by the workflow.
-This helper attaches to its local DevTools Protocol endpoint only to observe
-navigation and, after the user completes E-ID, read the approved same-origin
-Money Storage endpoint from that already-authenticated tab.
+The return-only mode records the first E-ID return or a candidate existing
+session without reading offers. The isolated session-check mode verifies
+protected offers-page access without calling the offers API. The legacy
+read-only quote path remains separate and is not used by this workflow.
 
 It does not automate clicks, solve challenges, export cookies, or persist
 browser credentials.
@@ -41,6 +41,7 @@ from arbitrage_monitor.providers.money_storage_access import (
 DEBUG_ENDPOINT = "http://127.0.0.1:9222/json/list"
 STATUS_FILE = Path(os.environ.get("MONEY_STORAGE_STATUS_FILE", "/tmp/eid-auth-status"))
 SESSION_CHECK = os.environ.get("MONEY_STORAGE_SESSION_CHECK") == "1"
+RETURN_ONLY = os.environ.get("MONEY_STORAGE_RETURN_ONLY") == "1"
 DEADLINE_SECONDS = 180 if SESSION_CHECK else 1800
 
 
@@ -342,6 +343,8 @@ def main() -> int:
                 )
                 returned_marker = Path(os.environ["GITHUB_WORKSPACE"]) / "money-storage-returned.txt"
                 returned_marker.write_text("returned_to_storage_money\n", encoding="utf-8")
+                profile_ready = Path(os.environ["GITHUB_WORKSPACE"]) / "money-storage-profile-ready.txt"
+                profile_ready.write_text("profile_ready\n", encoding="utf-8")
                 STATUS_FILE.write_text("MONEY_STORAGE_RETURNED", encoding="utf-8")
                 print(
                     "MONEY_STORAGE_RETURNED url=%s status=%s"
@@ -425,6 +428,29 @@ def main() -> int:
                 STATUS_FILE.write_text("AUTH_REQUIRED", encoding="utf-8")
                 print("AUTH_REQUIRED: restored profile reached a provider login route", flush=True)
                 return 2
+
+            if RETURN_ONLY and host == "storage.money" and storage_page == "deals":
+                document_status = (
+                    cdp.storage_document_status
+                    if cdp.storage_document_path == parsed.path else None
+                )
+                if is_money_storage_authenticated_offers_page(
+                    current_url, status=document_status, title=title, body=body
+                ):
+                    STATUS_FILE.write_text("MONEY_STORAGE_SESSION_CANDIDATE", encoding="utf-8")
+                    profile_ready = Path(os.environ["GITHUB_WORKSPACE"]) / "money-storage-profile-ready.txt"
+                    profile_ready.write_text("profile_ready\n", encoding="utf-8")
+                    print(
+                        "MONEY_STORAGE_SESSION_CANDIDATE route=storage.money/deals document_http=200",
+                        flush=True,
+                    )
+                    with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+                        summary.write("\n## Money Storage existing-session candidate\n")
+                        summary.write("- The current browser can open the protected /deals document.\n")
+                        summary.write("- The encrypted profile will be saved for independent restoration verification.\n")
+                        summary.write("- This is not yet the restored-session verification result.\n")
+                        summary.write("- No offers API or quote values were read.\n")
+                    return 0
 
             if SESSION_CHECK and host == "storage.money" and storage_page == "deals":
                 document_status = (
