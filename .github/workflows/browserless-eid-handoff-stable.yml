@@ -469,6 +469,11 @@ jobs:
           echo "BROWSER_DIAGNOSTIC_STREAM=STARTED"
           for i in $(seq 1 900); do
             STATUS="$(cat /tmp/eid-auth-status 2>/dev/null || echo WAITING_FOR_LOGIN)"
+            if [ "$STATUS" = "MONEY_STORAGE_RETURNED" ]; then
+              echo "Money Storage E-ID return milestone completed."
+              grep -E '^(EID_STATE=|CLOUDFLARE_STATE=|NAV=|MONEY_STORAGE_RETURNED )' /tmp/eid-browser.log | tail -n 120 || true
+              exit 0
+            fi
             if [ "$STATUS" = "OFFERS_READ_OK" ] || [ "$STATUS" = "SBERKASSA_CAPTURE_COMPLETE" ]; then
               echo "Authenticated read-only browser inspection completed for target=$TARGET."
               echo "BROWSER_DIAGNOSTICS_FINAL:"
@@ -507,7 +512,7 @@ jobs:
               CURRENT_BROWSER_LINES="$(wc -l < /tmp/eid-browser.log 2>/dev/null || echo 0)"
               if [ "$CURRENT_BROWSER_LINES" -gt "$BROWSER_LOG_LINES" ]; then
                 echo "BROWSER_DIAGNOSTICS_UPDATE:"
-                sed -n "$((BROWSER_LOG_LINES + 1)),${CURRENT_BROWSER_LINES}p" /tmp/eid-browser.log | grep -E '^(INITIAL_NAVIGATION=|BROWSER_READY=|INITIAL_PAGE_TITLE=|SESSION_REUSE_CHECK=|EID_HANDOFF=|EID_STATE=|CLOUDFLARE_STATE=|SBERKASSA_SESSION=|SBERKASSA_SESSION_AUTHENTICATED=|SESSION_REUSE_OR_EID_TIMEOUT=|NAV=|HTTP_DIAG |REQUEST |QUOTE_FIELDS |JSON_SCHEMA |PAGE_UPDATE_MARKERS |SBERKASSA_|CLOUDFLARE_CHALLENGE_DETECTED=|ACCESS_RESPONSE_CLASSIFICATION |PAGE_DIAG |BOT_OR_ACCESS_CHALLENGE_SUSPECTED=|AUTH_PROGRESS |AUTH_PAGE_STATE |ACCESS_DENIED_PAGE_SUSPECTED=|AUTH_RETURNED_TO_ACCOUNT|OFFERS_READ_|AUTH_TIMEOUT|PAGE_DIAG_UNAVAILABLE=|HTTP_DIAG_ERROR=)' || true
+                sed -n "$((BROWSER_LOG_LINES + 1)),${CURRENT_BROWSER_LINES}p" /tmp/eid-browser.log | grep -E '^(INITIAL_NAVIGATION=|BROWSER_READY=|INITIAL_PAGE_TITLE=|SESSION_REUSE_CHECK=|EID_HANDOFF=|EID_STATE=|MONEY_STORAGE_RETURNED |CLOUDFLARE_STATE=|SBERKASSA_SESSION=|SBERKASSA_SESSION_AUTHENTICATED=|SESSION_REUSE_OR_EID_TIMEOUT=|NAV=|HTTP_DIAG |REQUEST |QUOTE_FIELDS |JSON_SCHEMA |PAGE_UPDATE_MARKERS |SBERKASSA_|CLOUDFLARE_CHALLENGE_DETECTED=|ACCESS_RESPONSE_CLASSIFICATION |PAGE_DIAG |BOT_OR_ACCESS_CHALLENGE_SUSPECTED=|AUTH_PROGRESS |AUTH_PAGE_STATE |ACCESS_DENIED_PAGE_SUSPECTED=|AUTH_RETURNED_TO_ACCOUNT|OFFERS_READ_|AUTH_TIMEOUT|PAGE_DIAG_UNAVAILABLE=|HTTP_DIAG_ERROR=)' || true
                 BROWSER_LOG_LINES="$CURRENT_BROWSER_LINES"
               fi
               if [ "$CODE" != "200" ] || [ "$WS_STATUS" != "101" ]; then
@@ -526,7 +531,7 @@ jobs:
 
       - name: Encrypt Chromium profile for private cache
         id: encrypt-profile
-        if: always() && hashFiles('session-authenticated.txt') != ''
+        if: always() && hashFiles('money-storage-returned.txt') != ''
         shell: bash
         run: |
           set -euo pipefail
@@ -576,7 +581,7 @@ jobs:
   # processes. This job never opens a public remote desktop and never attempts
   # to complete CAPTCHA/E-ID/MFA.
   verify-restored-money-storage-session:
-    if: needs.cloud-browser.result == 'success' && inputs.target == 'money_storage'
+    if: needs.cloud-browser.result == 'success' && inputs.target == 'money_storage' && hashFiles('money-storage-current-offers.json') != ''
     needs: cloud-browser
     runs-on: ubuntu-latest
     timeout-minutes: 25
