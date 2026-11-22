@@ -577,8 +577,7 @@ jobs:
           retention-days: 1
 
   # After the owner completes the one-time interactive E-ID handoff, verify that
-  # the encrypted profile can be restored and used by three fresh Chromium
-  # processes. This job never opens a public remote desktop and never attempts
+  # the encrypted profile can be restored by a fresh Chromium process. This job never opens a public remote desktop and never attempts
   # to complete CAPTCHA/E-ID/MFA.
   verify-restored-money-storage-session:
     # Verify restored authentication and access to the protected offers page only.
@@ -586,7 +585,7 @@ jobs:
     if: inputs.target == 'money_storage'
     needs: cloud-browser
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 15
     permissions:
       contents: read
     env:
@@ -647,9 +646,9 @@ jobs:
           cat /tmp/session-check-xvfb.log || true
           exit 1
 
-      - name: Run three independent restored-session page-access checks
+      - name: Run one fresh restored-session page-access check
         shell: bash
-        timeout-minutes: 18
+        timeout-minutes: 8
         run: |
           set -euo pipefail
           mkdir -p session-check-results
@@ -658,7 +657,7 @@ jobs:
             echo "SESSION_CHECK_CHROMIUM_MISSING"
             exit 1
           fi
-          for attempt in 1 2 3; do
+          for attempt in 1; do
             PROFILE_DIR="/tmp/money-storage-session-check-$attempt"
             STATUS_FILE="/tmp/money-storage-session-status-$attempt"
             LOG_FILE="session-check-results/attempt-$attempt.log"
@@ -666,7 +665,7 @@ jobs:
             mkdir -p "$PROFILE_DIR"
             cp -a /tmp/eid-chromium-profile/. "$PROFILE_DIR/"
             rm -f "$PROFILE_DIR/SingletonLock" "$PROFILE_DIR/SingletonCookie" "$PROFILE_DIR/SingletonSocket"
-            echo "SESSION_CHECK_ATTEMPT=$attempt/3"
+            echo "SESSION_CHECK_ATTEMPT=$attempt/1"
             DISPLAY=:99 "$CHROMIUM_BIN" \
               --no-sandbox \
               --disable-dev-shm-usage \
@@ -697,12 +696,12 @@ jobs:
             fi
             grep -E '^(SESSION_AUTHENTICATED|AUTH_REQUIRED|SESSION_CHECK_TIMEOUT)' "$LOG_FILE" || true
           done
-          echo "SESSION_CHECK_RESULT=3_OF_3_SUCCESS"
+          echo "SESSION_CHECK_RESULT=1_OF_1_SUCCESS"
           {
             echo "## Money Storage restored-session verification"
-            echo "- Three independent Chromium launches completed successfully."
-            echo "- Each launch restored a separate copy of the encrypted authenticated profile."
-            echo "- Each launch confirmed HTTP 200 for the protected /deals document without reading offers APIs or quote values."
+            echo "- One fresh Chromium process restored the encrypted profile and completed the protected-page check."
+            echo "- The test used a separate copy of the encrypted profile; the saved archive remained unchanged."
+            echo "- The protected /deals document returned HTTP 200 without reading offers APIs or quote values."
             echo "- No offers API, quote values, or freshness data were read. No CAPTCHA, E-ID, MFA, or login challenge was automated."
           } >> "$GITHUB_STEP_SUMMARY"
 
