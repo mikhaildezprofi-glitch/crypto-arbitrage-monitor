@@ -320,7 +320,6 @@ def main() -> int:
         saw_eid = False
         eid_state_logged = False
         cloudflare_state: bool | None = None
-        account_navigation_requested = False
         login_fallback_attempted = False
         last_diag = 0.0
 
@@ -472,32 +471,6 @@ def main() -> int:
                 time.sleep(2)
                 continue
 
-            if storage_page == "account":
-                if not account_navigation_requested:
-                    print(
-                        "AUTH_RETURN_ROUTE=ACCOUNT; opening the requested offers tab",
-                        flush=True,
-                    )
-                    cdp.command("Page.navigate", {"url": "https://storage.money/deals#tab-3"})
-                    account_navigation_requested = True
-                time.sleep(2)
-                continue
-            account_navigation_requested = False
-
-            if (
-                saw_eid
-                and host == "storage.money"
-                and storage_page == "other"
-                and parsed.path.rstrip("/") not in ("/login", "/auth", "/signin")
-            ):
-                print(
-                    "AUTH_RETURN_ROUTE=OTHER_STORAGE_PAGE; opening the requested offers tab",
-                    flush=True,
-                )
-                cdp.command("Page.navigate", {"url": "https://storage.money/deals#tab-3"})
-                time.sleep(2)
-                continue
-
             if storage_page == "deals":
                 try:
                     snapshot = None
@@ -572,9 +545,9 @@ def main() -> int:
 
             time.sleep(2)
 
-        final_status = "SESSION_CHECK_TIMEOUT" if SESSION_CHECK else "AUTH_TIMEOUT"
+        final_status = "SESSION_CHECK_TIMEOUT" if SESSION_CHECK else "MONEY_STORAGE_RETURN_TIMEOUT"
         STATUS_FILE.write_text(final_status, encoding="utf-8")
-        print(f"{final_status}: Chromium did not complete the expected Money Storage read", flush=True)
+        print(f"{final_status}: Chromium did not return from E-ID to storage.money", flush=True)
         return 1
     finally:
         cdp.close()
