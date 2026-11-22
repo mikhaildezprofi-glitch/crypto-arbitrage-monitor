@@ -56,11 +56,12 @@ class MoneyStorageBridgeFallbackTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         workflow = (root / ".github" / "workflows" / "browserless-eid-handoff-stable.yml").read_text(encoding="utf-8")
         self.assertIn('MONEY_STORAGE_FORM_INSPECTION=1 python3 "$BRIDGE_SCRIPT"', workflow)
-        self.assertIn('CHROMIUM_START_URL="https://storage.money/oauth/authorize/eid"', workflow)
+        self.assertIn('CHROMIUM_START_URL="https://storage.money/deals#tab-3"', workflow)
         self.assertRegex(
             workflow,
-            r'(?m)^\s*CHROMIUM_START_URL="https://storage\.money/oauth/authorize/eid"
-        self.assertIn('Default Money Storage mode is the original authenticated, read-only', workflow)
+            r'(?m)^\s*CHROMIUM_START_URL="https://storage\.money/deals#tab-3"$',
+        )
+        self.assertIn("Reuse the saved authenticated session first", workflow)
         self.assertNotIn('MONEY_STORAGE_RETURN_ONLY=1 python3 "$BRIDGE_SCRIPT"', workflow)
 
     def test_return_only_logs_visible_currency_form_metadata(self):
