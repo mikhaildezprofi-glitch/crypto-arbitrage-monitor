@@ -51,6 +51,8 @@ class MoneyStorageBridgeFallbackTests(unittest.TestCase):
         self.assertIn("selectedValue", source)
         self.assertNotIn("item.value = element.value", source)
         self.assertIn('print("PAGE_DIAG deals_form="', source)
+        self.assertIn("currencyHint", source)
+        self.assertIn("currencyControls", source)
 
     def test_unauthorized_deals_fallback_precedes_offer_page_read(self):
         root = Path(__file__).resolve().parents[1]
