@@ -64,3 +64,17 @@ class MoneyStorageBridgeFallbackTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_form_inspection_observes_only_page_originated_pair_request(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "scripts" / "money_storage_chromium_bridge.py").read_text(encoding="utf-8")
+        ast.parse(source)
+        self.assertIn('FORM_INSPECTION = os.environ.get("MONEY_STORAGE_FORM_INSPECTION") == "1"', source)
+        self.assertIn('method == "Network.requestWillBeSent" and FORM_INSPECTION', source)
+        self.assertIn('parsed.path == "/public_deals/fetch"', source)
+        self.assertIn('source == "ECR" and target == "USDT"', source)
+        self.assertIn('STATUS_FILE.write_text("FORM_INSPECTION_COMPLETE"', source)
+        self.assertIn('if RETURN_ONLY or SESSION_CHECK or FORM_INSPECTION:', source)
+        self.assertIn('if not SESSION_CHECK and not RETURN_ONLY and not FORM_INSPECTION:', source)
+        self.assertNotIn('request.get("postData")', source)
+
