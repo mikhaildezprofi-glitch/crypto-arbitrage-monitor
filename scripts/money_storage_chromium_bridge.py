@@ -469,6 +469,8 @@ def main() -> int:
         login_fallback_attempted = False
         login_route_attempted = False
         eid_login_action_attempted = False
+        eid_login_link_probe_count = 0
+        last_eid_login_link_probe = 0.0
         post_eid_navigation_attempted = False
         last_diag = 0.0
 
@@ -550,17 +552,27 @@ def main() -> int:
                 and not RETURN_ONLY
                 and not FORM_INSPECTION
             ):
-                if not eid_login_action_attempted:
-                    eid_login_action_attempted = True
+                if (
+                    not eid_login_action_attempted
+                    and eid_login_link_probe_count < 12
+                    and now - last_eid_login_link_probe >= 5
+                ):
+                    last_eid_login_link_probe = now
+                    eid_login_link_probe_count += 1
                     handoff = click_official_eid_action(cdp)
                     if handoff.get("clicked"):
+                        eid_login_action_attempted = True
                         print(
                             "EID_HANDOFF=OFFICIAL_LOGIN_ACTION_OPENED host=%s path=%s"
                             % (handoff.get("host", "e-id.cards"), handoff.get("path", "/")),
                             flush=True,
                         )
-                    else:
-                        print("EID_HANDOFF=OFFICIAL_LOGIN_LINK_NOT_FOUND; waiting on provider login page", flush=True)
+                    elif eid_login_link_probe_count in (1, 12):
+                        print(
+                            "EID_HANDOFF=OFFICIAL_LOGIN_LINK_NOT_FOUND probe=%s/12; waiting on provider login page"
+                            % eid_login_link_probe_count,
+                            flush=True,
+                        )
                 time.sleep(2)
                 continue
 
