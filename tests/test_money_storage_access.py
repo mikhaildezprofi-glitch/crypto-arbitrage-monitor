@@ -4,6 +4,7 @@ from arbitrage_monitor.providers.money_storage_access import (
     classify_cloudflare_challenge,
     classify_money_storage_page,
     is_money_storage_auth_failure,
+    has_returned_to_money_storage,
 )
 
 
@@ -37,6 +38,33 @@ class MoneyStoragePageClassificationTests(unittest.TestCase):
             classify_money_storage_page("https://e-id.cards/login"),
             "external",
         )
+
+
+class MoneyStorageReturnMilestoneTests(unittest.TestCase):
+    def test_any_storage_money_page_counts_after_eid(self):
+        for url in (
+            "https://storage.money/",
+            "https://storage.money/account",
+            "https://storage.money/deals#tab-3",
+            "https://storage.money/any/other/path?step=return",
+        ):
+            with self.subTest(url=url):
+                self.assertTrue(has_returned_to_money_storage(url, eid_handoff_seen=True))
+
+    def test_external_eid_page_does_not_count_as_return(self):
+        self.assertFalse(has_returned_to_money_storage(
+            "https://e-id.cards/login", eid_handoff_seen=True
+        ))
+
+    def test_initial_storage_page_before_eid_does_not_count_as_return(self):
+        self.assertFalse(has_returned_to_money_storage(
+            "https://storage.money/deals#tab-3", eid_handoff_seen=False
+        ))
+
+    def test_non_https_storage_url_does_not_count_as_return(self):
+        self.assertFalse(has_returned_to_money_storage(
+            "http://storage.money/", eid_handoff_seen=True
+        ))
 
 
 class CloudflareChallengeClassificationTests(unittest.TestCase):
