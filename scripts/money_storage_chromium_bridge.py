@@ -113,7 +113,7 @@ class CDP:
                     ),
                     flush=True,
                 )
-                if parsed.path == "/public_deals/fetch" and source == "ECR" and target == "USDT":
+                if source == "ECR" and target == "USDT":
                     STATUS_FILE.write_text("FORM_INSPECTION_COMPLETE", encoding="utf-8")
 
         elif method == "Page.frameNavigated":
