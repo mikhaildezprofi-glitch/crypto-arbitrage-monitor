@@ -3,6 +3,7 @@ import unittest
 from arbitrage_monitor.providers.money_storage_access import (
     classify_cloudflare_challenge,
     classify_money_storage_page,
+    is_money_storage_auth_failure,
 )
 
 
@@ -84,6 +85,27 @@ class CloudflareChallengeClassificationTests(unittest.TestCase):
                 body="Everyone offers",
             )
         )
+
+
+class MoneyStorageAuthenticationFailureTests(unittest.TestCase):
+    def test_http_401_is_auth_failure(self):
+        self.assertTrue(is_money_storage_auth_failure(status=401))
+
+    def test_http_403_is_auth_failure(self):
+        self.assertTrue(is_money_storage_auth_failure(status=403))
+
+    def test_session_timeout_body_is_auth_failure_even_with_http_200(self):
+        self.assertTrue(is_money_storage_auth_failure(
+            status=200, title="Money Storage", body="Session timed out. You must log in to the main page."
+        ))
+
+    def test_normal_account_page_is_not_auth_failure(self):
+        self.assertFalse(is_money_storage_auth_failure(
+            status=200, title="Account", body="Account settings"
+        ))
+
+    def test_missing_status_and_normal_body_is_not_auth_failure(self):
+        self.assertFalse(is_money_storage_auth_failure(status=None, title="", body="") )
 
 
 if __name__ == "__main__":
