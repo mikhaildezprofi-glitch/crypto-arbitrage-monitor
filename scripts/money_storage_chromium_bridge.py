@@ -34,6 +34,7 @@ from arbitrage_monitor.providers.money_storage_access import (
     classify_cloudflare_challenge,
     classify_money_storage_page,
     is_money_storage_auth_failure,
+    is_money_storage_authenticated_offers_page,
     has_returned_to_money_storage,
 )
 
@@ -334,7 +335,7 @@ def main() -> int:
             # Phase 1 ends as soon as the browser returns from E-ID to any
             # HTTPS page on storage.money. This is only a navigation milestone:
             # it does not claim that the provider session is authenticated.
-            if has_returned_to_money_storage(current_url, eid_handoff_seen=saw_eid):
+            if not SESSION_CHECK and has_returned_to_money_storage(current_url, eid_handoff_seen=saw_eid):
                 document_status = (
                     cdp.storage_document_status
                     if cdp.storage_document_path == parsed.path else None
@@ -424,6 +425,26 @@ def main() -> int:
                 STATUS_FILE.write_text("AUTH_REQUIRED", encoding="utf-8")
                 print("AUTH_REQUIRED: restored profile reached a provider login route", flush=True)
                 return 2
+
+            if SESSION_CHECK and host == "storage.money" and storage_page == "deals":
+                document_status = (
+                    cdp.storage_document_status
+                    if cdp.storage_document_path == parsed.path else None
+                )
+                if is_money_storage_authenticated_offers_page(
+                    current_url, status=document_status, title=title, body=body
+                ):
+                    STATUS_FILE.write_text("SESSION_AUTHENTICATED", encoding="utf-8")
+                    print(
+                        "SESSION_AUTHENTICATED route=storage.money/deals document_http=200",
+                        flush=True,
+                    )
+                    with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+                        summary.write("\\n## Money Storage restored-session check\\n")
+                        summary.write("- The encrypted profile was restored in a fresh Chromium process.\\n")
+                        summary.write("- The protected /deals document returned HTTP 200 without a login/session-expired marker.\\n")
+                        summary.write("- No offers API, quote values, or freshness data were read.\\n")
+                    return 0
 
             if now - last_diag >= 20:
                 last_diag = now
