@@ -60,6 +60,7 @@ class CDP:
         self.storage_document_status: int | None = None
         self.storage_document_path: str | None = None
         self.current_document_cf_challenge = False
+        self.saw_eid_navigation = False
 
     def close(self) -> None:
         self.ws.close()
@@ -73,7 +74,11 @@ class CDP:
             if not frame.get("parentId"):
                 self.main_frame_id = frame.get("id")
                 self.current_document_cf_challenge = False
-                location = safe_location(frame.get("url", ""))
+                frame_url = frame.get("url", "")
+                frame_host = (urlparse(frame_url).hostname or "").lower()
+                if frame_host == "e-id.cards" or frame_host.endswith(".e-id.cards"):
+                    self.saw_eid_navigation = True
+                location = safe_location(frame_url)
                 print(f"NAV={location}", flush=True)
 
         elif method == "Network.responseReceived":
@@ -323,7 +328,32 @@ def main() -> int:
             current_url, title, body = page_state(cdp)
             parsed = urlparse(current_url)
             host = (parsed.hostname or "").lower()
+            saw_eid = saw_eid or cdp.saw_eid_navigation
             storage_page = classify_money_storage_page(current_url)
+
+            # Phase 1 ends as soon as the browser returns from E-ID to any
+            # HTTPS page on storage.money. This is only a navigation milestone:
+            # it does not claim that the provider session is authenticated.
+            if saw_eid and host == "storage.money" and parsed.scheme == "https":
+                document_status = (
+                    cdp.storage_document_status
+                    if cdp.storage_document_path == parsed.path else None
+                )
+                returned_marker = Path(os.environ["GITHUB_WORKSPACE"]) / "money-storage-returned.txt"
+                returned_marker.write_text("returned_to_storage_money\n", encoding="utf-8")
+                STATUS_FILE.write_text("MONEY_STORAGE_RETURNED", encoding="utf-8")
+                print(
+                    "MONEY_STORAGE_RETURNED url=%s status=%s"
+                    % (safe_location(current_url), document_status if document_status is not None else "not-observed"),
+                    flush=True,
+                )
+                with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+                    summary.write("\\n## Money Storage E-ID return check\\n")
+                    summary.write("- Browser returned from E-ID to an HTTPS page on storage.money.\\n")
+                    summary.write("- No account endpoint, protected API, or offers page was required.\\n")
+                    summary.write("- This confirms navigation only, not authenticated session validity.\\n")
+                return 0
+
             challenge = classify_cloudflare_challenge(
                 host=host,
                 path=parsed.path,
