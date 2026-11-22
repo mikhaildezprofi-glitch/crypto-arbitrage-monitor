@@ -245,13 +245,16 @@ def deals_form_diagnostics(cdp: CDP) -> dict:
               }
               return item;
             });
-          const buttons = Array.from(document.querySelectorAll("button, [role=button]"))
-            .filter(visible).slice(0, 40).map(element => ({
+          const currencyHint = /(USDT|ECR|ERUB|CNY|RUB|USD|EUR|валют|currency|give|receive|отда|получ)/i;
+          const buttons = Array.from(document.querySelectorAll("button, [role=button], [role=option]"))
+            .filter(visible).map(element => ({
               text: clean(element.innerText || element.textContent),
               ariaLabel: clean(element.getAttribute("aria-label")),
               title: clean(element.getAttribute("title"))
-            }));
-          return { fields, buttons };
+            }))
+            .filter(item => currencyHint.test(item.text + " " + item.ariaLabel + " " + item.title))
+            .slice(0, 40);
+          return { fields, currencyControls: buttons };
         })()"""
     )
     if not isinstance(result, dict):
