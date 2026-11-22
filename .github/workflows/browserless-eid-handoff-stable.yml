@@ -11,12 +11,22 @@ on:
         options:
           - money_storage
           - sberkassa
+      inspect_currency_form:
+        description: "Keep the browser open for manual Money Storage currency-form inspection"
+        required: false
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       target:
         description: "Which authenticated quote source to inspect"
         required: true
         type: string
+      inspect_currency_form:
+        description: "Keep the browser open for manual Money Storage currency-form inspection"
+        required: false
+        type: boolean
+        default: false
     secrets:
       CHROMIUM_PROFILE_PASSPHRASE:
         required: true
@@ -370,7 +380,9 @@ jobs:
 
           # The selected bridge either reads Money Storage's approved offers
           # or performs a sanitized, read-only Sberkassa page inspection.
-          if [ "$TARGET" = "money_storage" ]; then
+          if [ "$TARGET" = "money_storage" ] && [ "${{ inputs.inspect_currency_form }}" = "true" ]; then
+            MONEY_STORAGE_FORM_INSPECTION=1 python3 "$BRIDGE_SCRIPT" >/tmp/eid-browser.log 2>&1 &
+          elif [ "$TARGET" = "money_storage" ]; then
             MONEY_STORAGE_RETURN_ONLY=1 python3 "$BRIDGE_SCRIPT" >/tmp/eid-browser.log 2>&1 &
           else
             python3 "$BRIDGE_SCRIPT" >/tmp/eid-browser.log 2>&1 &
@@ -473,9 +485,14 @@ jobs:
           echo "BROWSER_DIAGNOSTIC_STREAM=STARTED"
           for i in $(seq 1 900); do
             STATUS="$(cat /tmp/eid-auth-status 2>/dev/null || echo WAITING_FOR_LOGIN)"
+            if [ "$STATUS" = "FORM_INSPECTION_COMPLETE" ]; then
+              echo "FORM_INSPECTION_COMPLETE: the page itself requested from=ECR&to=USDT."
+              grep -E "^(PAGE_DIAG deals_form=|PAGE_REQUEST |FORM_INSPECTION_READY)" /tmp/eid-browser.log | tail -n 120 || true
+              exit 0
+            fi
             if [ "$STATUS" = "MONEY_STORAGE_RETURNED" ] || [ "$STATUS" = "MONEY_STORAGE_SESSION_CANDIDATE" ]; then
               echo "Money Storage profile handoff milestone completed: $STATUS"
-              grep -E '^(EID_STATE=|CLOUDFLARE_STATE=|NAV=|PAGE_DIAG deals_form=|MONEY_STORAGE_RETURNED |MONEY_STORAGE_SESSION_CANDIDATE )' /tmp/eid-browser.log | tail -n 120 || true
+              grep -E '^(EID_STATE=|CLOUDFLARE_STATE=|NAV=|PAGE_DIAG deals_form=|PAGE_REQUEST |FORM_INSPECTION_READY|MONEY_STORAGE_RETURNED |MONEY_STORAGE_SESSION_CANDIDATE )' /tmp/eid-browser.log | tail -n 120 || true
               exit 0
             fi
             if [ "$STATUS" = "OFFERS_READ_OK" ] || [ "$STATUS" = "SBERKASSA_CAPTURE_COMPLETE" ]; then
