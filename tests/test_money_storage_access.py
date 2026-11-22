@@ -139,6 +139,33 @@ class CloudflareChallengeClassificationTests(unittest.TestCase):
             )
         )
 
+    def test_cloudflare_branding_alone_is_not_a_challenge(self):
+        self.assertFalse(
+            classify_cloudflare_challenge(
+                host="storage.money",
+                path="/deals",
+                body="Protected by Cloudflare. Site security and performance.",
+            )
+        )
+
+    def test_captcha_word_alone_is_not_a_challenge(self):
+        self.assertFalse(
+            classify_cloudflare_challenge(
+                host="storage.money",
+                path="/deals",
+                body="This service supports captcha settings in the account.",
+            )
+        )
+
+    def test_challenges_cloudflare_subdomain_is_detected(self):
+        self.assertTrue(
+            classify_cloudflare_challenge(
+                host="challenges.cloudflare.com",
+                path="/turnstile",
+                body="",
+            )
+        )
+
     def test_normal_offers_page_is_not_a_challenge(self):
         self.assertFalse(
             classify_cloudflare_challenge(
