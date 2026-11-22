@@ -486,7 +486,7 @@ jobs:
           for i in $(seq 1 900); do
             STATUS="$(cat /tmp/eid-auth-status 2>/dev/null || echo WAITING_FOR_LOGIN)"
             if [ "$STATUS" = "FORM_INSPECTION_COMPLETE" ]; then
-              echo "FORM_INSPECTION_COMPLETE: the page itself requested from=ECR&to=USDT."
+              echo "FORM_INSPECTION_COMPLETE: the page itself sent a request containing from=ECR&to=USDT; inspect PAGE_REQUEST for the exact endpoint and parameter location."
               grep -E "^(PAGE_DIAG deals_form=|PAGE_REQUEST |FORM_INSPECTION_READY)" /tmp/eid-browser.log | tail -n 120 || true
               exit 0
             fi
