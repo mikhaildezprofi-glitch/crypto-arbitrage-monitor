@@ -376,9 +376,15 @@ def main() -> int:
                     STATUS_FILE.write_text("AUTH_REQUIRED", encoding="utf-8")
                     print("AUTH_REQUIRED: restored profile is not authenticated", flush=True)
                     return 2
-                # Keep the visible browser on the provider page. The user can
-                # complete its ordinary login/E-ID flow; do not bounce between
-                # /account and /deals while the session is rejected.
+                # On the first rejected Deals document, offer the provider's
+                # ordinary account route once. If that route is also rejected,
+                # remain there for manual sign-in instead of bouncing back.
+                if storage_page == "deals" and not login_fallback_attempted:
+                    login_fallback_attempted = True
+                    print("AUTH_HANDOFF=OPENING_PROVIDER_ACCOUNT_ROUTE", flush=True)
+                    cdp.command("Page.navigate", {"url": "https://storage.money/account"})
+                    time.sleep(2)
+                    continue
                 time.sleep(2)
                 continue
 
