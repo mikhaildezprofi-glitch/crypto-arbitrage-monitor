@@ -3,7 +3,7 @@ name: tests
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, feat/money-storage-eid-cloudflare-state-machine-20261122]
   pull_request:
 
 jobs:
