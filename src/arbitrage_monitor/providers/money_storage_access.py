@@ -39,7 +39,7 @@ def classify_cloudflare_challenge(
     body: str,
     response_challenge: bool = False,
 ) -> bool:
-    """Detect a visible Cloudflare challenge independently of E-ID routing."""
+    """Detect an actual challenge, not ordinary mentions of Cloudflare."""
     normalized_host = (host or "").lower()
     normalized_path = (path or "").lower()
     normalized_body = (body or "").lower()
@@ -47,19 +47,19 @@ def classify_cloudflare_challenge(
         return True
     if "/cdn-cgi/challenge-platform/" in normalized_path:
         return True
-    markers = (
+    if normalized_host == "challenges.cloudflare.com" or normalized_host.endswith(".challenges.cloudflare.com"):
+        return True
+    strong_markers = (
         "cf-turnstile",
         "turnstile",
         "checking your browser",
         "verify you are human",
         "attention required",
-        "cloudflare",
-        "captcha",
+        "just a moment",
+        "performing security verification",
+        "enable javascript and cookies to continue",
     )
-    if any(marker in normalized_body for marker in markers):
-        return True
-    return normalized_host.startswith("challenges.cloudflare.com")
-
+    return any(marker in normalized_body for marker in strong_markers)
 
 
 def is_money_storage_authenticated_offers_page(
