@@ -4,6 +4,7 @@ from arbitrage_monitor.providers.money_storage_access import (
     classify_cloudflare_challenge,
     classify_money_storage_page,
     is_money_storage_auth_failure,
+    is_money_storage_authenticated_offers_page,
     has_returned_to_money_storage,
 )
 
@@ -38,6 +39,34 @@ class MoneyStoragePageClassificationTests(unittest.TestCase):
             classify_money_storage_page("https://e-id.cards/login"),
             "external",
         )
+
+
+class MoneyStorageAuthenticatedOffersPageTests(unittest.TestCase):
+    def test_protected_offers_document_http_200_confirms_session(self):
+        self.assertTrue(is_money_storage_authenticated_offers_page(
+            "https://storage.money/deals#tab-3",
+            status=200,
+            title="Deals",
+            body="Everyone offers",
+        ))
+
+    def test_http_401_does_not_confirm_session(self):
+        self.assertFalse(is_money_storage_authenticated_offers_page(
+            "https://storage.money/deals#tab-3", status=401
+        ))
+
+    def test_login_marker_does_not_confirm_session(self):
+        self.assertFalse(is_money_storage_authenticated_offers_page(
+            "https://storage.money/deals#tab-3",
+            status=200,
+            title="Money Storage",
+            body="Session timed out. You must log in to the main page.",
+        ))
+
+    def test_other_provider_route_does_not_confirm_offers_access(self):
+        self.assertFalse(is_money_storage_authenticated_offers_page(
+            "https://storage.money/account", status=200
+        ))
 
 
 class MoneyStorageReturnMilestoneTests(unittest.TestCase):
