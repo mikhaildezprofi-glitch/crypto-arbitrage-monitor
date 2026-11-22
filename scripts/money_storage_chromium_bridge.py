@@ -503,9 +503,9 @@ def main() -> int:
                 if not eid_state_logged:
                     print("EID_STATE=AUTHENTICATION_REQUIRED; waiting for user sign-in", flush=True)
                     eid_state_logged = True
-                if SESSION_CHECK:
+                if SESSION_CHECK or NONINTERACTIVE:
                     STATUS_FILE.write_text("AUTH_REQUIRED", encoding="utf-8")
-                    print("AUTH_REQUIRED: restored profile was redirected to E-ID; manual confirmation is required", flush=True)
+                    print("AUTH_REQUIRED: restored profile was redirected to E-ID; interactive sign-in is not available in this run", flush=True)
                     return 2
 
             # A provider route or URL alone never proves authentication. Reject
@@ -522,7 +522,7 @@ def main() -> int:
                     % (document_status if document_status is not None else "page-marker", parsed.path),
                     flush=True,
                 )
-                if SESSION_CHECK:
+                if SESSION_CHECK or NONINTERACTIVE:
                     STATUS_FILE.write_text("AUTH_REQUIRED", encoding="utf-8")
                     print("AUTH_REQUIRED: restored profile is not authenticated", flush=True)
                     return 2
@@ -662,7 +662,7 @@ def main() -> int:
                     % cdp.storage_document_status,
                     flush=True,
                 )
-                if SESSION_CHECK:
+                if SESSION_CHECK or NONINTERACTIVE:
                     STATUS_FILE.write_text("AUTH_REQUIRED", encoding="utf-8")
                     print("AUTH_REQUIRED: Money Storage rejected the restored session", flush=True)
                     return 2
