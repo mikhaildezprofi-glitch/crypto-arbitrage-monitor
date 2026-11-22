@@ -207,6 +207,50 @@ def page_state(cdp: CDP) -> tuple[str, str, str]:
     return value.get("url", ""), value.get("title", ""), value.get("body", "")
 
 
+def deals_form_diagnostics(cdp: CDP) -> dict:
+    """Return only visible Deals currency-control metadata; never read arbitrary form values."""
+    return cdp.evaluate(
+        """() => {
+          const visible = el => {
+            const style = getComputedStyle(el);
+            const rect = el.getBoundingClientRect();
+            return style.display !== "none" && style.visibility !== "hidden"
+              && rect.width > 0 && rect.height > 0;
+          };
+          const clean = value => String(value || "").replace(/\\s+/g, " ").trim().slice(0, 100);
+          const controls = Array.from(document.querySelectorAll("select,[role=combobox],input"))
+            .filter(visible)
+            .slice(0, 40)
+            .map((el, index) => {
+              const labels = Array.from(document.querySelectorAll("label"))
+                .filter(label => label.htmlFor && label.htmlFor === el.id)
+                .map(label => clean(label.innerText));
+              const parentText = clean(el.closest(".form-group,.form-row,.field,.input-group,.ts-wrapper")?.innerText
+                || el.parentElement?.parentElement?.innerText || "");
+              const options = el.tagName === "SELECT"
+                ? Array.from(el.options).slice(0, 80).map(option => ({
+                    value: clean(option.value), text: clean(option.textContent),
+                    selected: !!option.selected
+                  }))
+                : [];
+              return {
+                index, tag: el.tagName.toLowerCase(), id: clean(el.id),
+                name: clean(el.getAttribute("name")),
+                role: clean(el.getAttribute("role")),
+                ariaLabel: clean(el.getAttribute("aria-label")),
+                placeholder: clean(el.getAttribute("placeholder")),
+                labels, context: parentText, options
+              };
+            });
+          return {
+            url: location.pathname + location.hash,
+            title: clean(document.title),
+            controls
+          };
+        }"""
+    )
+
+
 def main() -> int:
     STATUS_FILE.write_text("WAITING_FOR_LOGIN", encoding="utf-8")
     cdp = connect_to_chromium()
@@ -331,6 +375,7 @@ def main() -> int:
         account_navigation_requested = False
         login_fallback_attempted = False
         last_diag = 0.0
+        deals_form_logged = False
 
         while time.monotonic() < deadline:
             now = time.monotonic()
@@ -504,6 +549,21 @@ def main() -> int:
                 continue
 
             if storage_page == "deals":
+                if not deals_form_logged:
+                    deals_form_logged = True
+                    try:
+                        controls = deals_form_diagnostics(cdp)
+                        print(
+                            "PAGE_DIAG deals_form=" + json.dumps(
+                                controls, ensure_ascii=False, separators=(",", ":")
+                            )[:12000],
+                            flush=True,
+                        )
+                    except Exception as exc:
+                        print(
+                            "PAGE_DIAG deals_form_unavailable=%s" % type(exc).__name__,
+                            flush=True,
+                        )
                 try:
                     snapshot = None
                     for attempt in range(1, 4):
