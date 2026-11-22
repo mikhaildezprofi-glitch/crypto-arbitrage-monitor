@@ -383,6 +383,31 @@ def main() -> int:
             parsed = urlparse(current_url)
             host = (parsed.hostname or "").lower()
             storage_page = classify_money_storage_page(current_url)
+
+            # Capture safe form metadata as soon as the Deals document is visible,
+            # independently of the authentication classifier and offers-reader path.
+            # This also lets us distinguish a public/login shell from an authenticated page.
+            if (
+                host == "storage.money"
+                and parsed.path.rstrip("/") == "/deals"
+                and not deals_form_logged
+            ):
+                deals_form_logged = True
+                try:
+                    time.sleep(1)
+                    controls = deals_form_diagnostics(cdp)
+                    print(
+                        "PAGE_DIAG deals_form=" + json.dumps(
+                            controls, ensure_ascii=False, separators=(",", ":")
+                        )[:12000],
+                        flush=True,
+                    )
+                except Exception as exc:
+                    print(
+                        "PAGE_DIAG deals_form_unavailable=%s" % type(exc).__name__,
+                        flush=True,
+                    )
+
             challenge = classify_cloudflare_challenge(
                 host=host,
                 path=parsed.path,
@@ -549,21 +574,6 @@ def main() -> int:
                 continue
 
             if storage_page == "deals":
-                if not deals_form_logged:
-                    deals_form_logged = True
-                    try:
-                        controls = deals_form_diagnostics(cdp)
-                        print(
-                            "PAGE_DIAG deals_form=" + json.dumps(
-                                controls, ensure_ascii=False, separators=(",", ":")
-                            )[:12000],
-                            flush=True,
-                        )
-                    except Exception as exc:
-                        print(
-                            "PAGE_DIAG deals_form_unavailable=%s" % type(exc).__name__,
-                            flush=True,
-                        )
                 try:
                     snapshot = None
                     for attempt in range(1, 4):
