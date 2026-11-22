@@ -62,6 +62,17 @@ def classify_cloudflare_challenge(
 
 
 
+def is_money_storage_authenticated_offers_page(
+    url: str, *, status: int | None, title: str = "", body: str = ""
+) -> bool:
+    """Require a successful protected offers document, not merely a provider URL."""
+    return (
+        classify_money_storage_page(url) == "deals"
+        and status == 200
+        and not is_money_storage_auth_failure(status=status, title=title, body=body)
+    )
+
+
 def has_returned_to_money_storage(url: str, *, eid_handoff_seen: bool) -> bool:
     """Return true for any HTTPS storage.money page reached after E-ID navigation."""
     parsed = urlparse(url)
