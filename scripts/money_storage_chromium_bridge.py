@@ -30,6 +30,11 @@ from scripts.money_storage_cloud_read import (
     fetch_from_authenticated_page,
     write_normalized_snapshot,
 )
+from arbitrage_monitor.providers.money_storage_access import (
+    classify_cloudflare_challenge,
+    classify_money_storage_page,
+    is_money_storage_auth_failure,
+)
 
 DEBUG_ENDPOINT = "http://127.0.0.1:9222/json/list"
 STATUS_FILE = Path(os.environ.get("MONEY_STORAGE_STATUS_FILE", "/tmp/eid-auth-status"))
@@ -54,6 +59,7 @@ class CDP:
         self.main_frame_id: str | None = None
         self.storage_document_status: int | None = None
         self.storage_document_path: str | None = None
+        self.current_document_cf_challenge = False
 
     def close(self) -> None:
         self.ws.close()
@@ -66,6 +72,7 @@ class CDP:
             frame = params.get("frame", {})
             if not frame.get("parentId"):
                 self.main_frame_id = frame.get("id")
+                self.current_document_cf_challenge = False
                 location = safe_location(frame.get("url", ""))
                 print(f"NAV={location}", flush=True)
 
@@ -88,6 +95,11 @@ class CDP:
             mitigated = headers.get("cf-mitigated", "absent")
             server = headers.get("server", "absent")
             kind = params.get("type", "unknown").lower()
+            if kind == "document" and (
+                mitigated.lower() == "challenge"
+                or "/cdn-cgi/challenge-platform/" in parsed.path
+            ):
+                self.current_document_cf_challenge = True
             if host == "storage.money" and kind == "document":
                 self.storage_document_status = status
                 self.storage_document_path = parsed.path
@@ -288,11 +300,22 @@ def main() -> int:
                 })();"""
             },
         )
-        # Reload once after Network.enable so the main-document HTTP status is
-        # observable even when the initial navigation happened before CDP attach.
-        cdp.command("Page.reload", {"ignoreCache": True})
-        time.sleep(2)
+        # Inspect the already-open page before deciding to reload. An unconditional
+        # reload here can reset an active Cloudflare challenge and create a loop.
         page = CDPPage(cdp)
+        initial_url, initial_title, initial_body = page_state(cdp)
+        initial_parsed = urlparse(initial_url)
+        initial_challenge = classify_cloudflare_challenge(
+            host=(initial_parsed.hostname or "").lower(),
+            path=initial_parsed.path,
+            body=initial_body,
+            response_challenge=cdp.current_document_cf_challenge,
+        )
+        capture_reload_done = False
+        if not initial_challenge and classify_money_storage_page(initial_url) == "deals":
+            cdp.command("Page.reload", {"ignoreCache": True})
+            capture_reload_done = True
+            time.sleep(2)
 
         current_url, title, _ = page_state(cdp)
         print(f"BROWSER_READY=standalone Chromium; page={safe_location(current_url)}", flush=True)
@@ -300,6 +323,9 @@ def main() -> int:
 
         deadline = time.monotonic() + DEADLINE_SECONDS
         saw_eid = False
+        eid_state_logged = False
+        cloudflare_state: bool | None = None
+        account_navigation_requested = False
         login_fallback_attempted = False
         last_diag = 0.0
 
@@ -308,17 +334,98 @@ def main() -> int:
             current_url, title, body = page_state(cdp)
             parsed = urlparse(current_url)
             host = (parsed.hostname or "").lower()
+            storage_page = classify_money_storage_page(current_url)
+            challenge = classify_cloudflare_challenge(
+                host=host,
+                path=parsed.path,
+                body=body,
+                response_challenge=cdp.current_document_cf_challenge,
+            )
+
+            # Cloudflare is an independent access gate, not an E-ID state.
+            # The user may encounter it before E-ID, after E-ID, both times,
+            # or not at all. Never navigate away while its challenge is active.
+            if challenge:
+                if cloudflare_state is not True:
+                    print("CLOUDFLARE_STATE=CHALLENGE_REQUIRED; waiting for the normal browser check", flush=True)
+                cloudflare_state = True
+                if SESSION_CHECK:
+                    STATUS_FILE.write_text("AUTH_REQUIRED", encoding="utf-8")
+                    print("AUTH_REQUIRED: restored profile requires an interactive Cloudflare check", flush=True)
+                    return 2
+                time.sleep(2)
+                continue
+            if cloudflare_state is True:
+                print("CLOUDFLARE_STATE=CHALLENGE_CLEARED", flush=True)
+            cloudflare_state = False
+
+            # A page reached after the normal E-ID/Cloudflare flow may already
+            # have made its own offers request. Wait for that capture first;
+            # reload at most once, and only when no response was captured.
+            if storage_page == "deals" and not capture_reload_done:
+                capture_count = cdp.evaluate(
+                    "(window.__moneyStorageOffersCaptures || []).length",
+                    await_promise=False,
+                )
+                if not capture_count:
+                    time.sleep(2)
+                    capture_count = cdp.evaluate(
+                        "(window.__moneyStorageOffersCaptures || []).length",
+                        await_promise=False,
+                    )
+                if not capture_count:
+                    print("OFFERS_CAPTURE=NOT_SEEN; performing one controlled page reload", flush=True)
+                    cdp.command("Page.reload", {"ignoreCache": True})
+                    capture_reload_done = True
+                    time.sleep(2)
+                    continue
+                capture_reload_done = True
 
             if host == "e-id.cards" or host.endswith(".e-id.cards"):
                 saw_eid = True
+                if not eid_state_logged:
+                    print("EID_STATE=AUTHENTICATION_REQUIRED; waiting for user sign-in", flush=True)
+                    eid_state_logged = True
                 if SESSION_CHECK:
                     STATUS_FILE.write_text("AUTH_REQUIRED", encoding="utf-8")
                     print("AUTH_REQUIRED: restored profile was redirected to E-ID; manual confirmation is required", flush=True)
                     return 2
 
-            if SESSION_CHECK and host == "storage.money" and parsed.path.rstrip("/") in ("/account", "/login", "/auth", "/signin"):
+            # A provider route or URL alone never proves authentication. Reject
+            # explicit HTTP/session-timeout evidence before attempting route handoff.
+            document_status = (
+                cdp.storage_document_status
+                if cdp.storage_document_path == parsed.path else None
+            )
+            if host == "storage.money" and is_money_storage_auth_failure(
+                status=document_status, title=title, body=body
+            ):
+                print(
+                    "MONEY_STORAGE_AUTH_REQUIRED=YES status=%s path=%s; waiting for normal sign-in"
+                    % (document_status if document_status is not None else "page-marker", parsed.path),
+                    flush=True,
+                )
+                if SESSION_CHECK:
+                    STATUS_FILE.write_text("AUTH_REQUIRED", encoding="utf-8")
+                    print("AUTH_REQUIRED: restored profile is not authenticated", flush=True)
+                    return 2
+                # On the first rejected Deals document, offer the provider's
+                # ordinary account route once. If that route is also rejected,
+                # remain there for manual sign-in instead of bouncing back.
+                if storage_page == "deals" and not login_fallback_attempted:
+                    login_fallback_attempted = True
+                    print("AUTH_HANDOFF=OPENING_PROVIDER_ACCOUNT_ROUTE", flush=True)
+                    cdp.command("Page.navigate", {"url": "https://storage.money/account"})
+                    time.sleep(2)
+                    continue
+                time.sleep(2)
+                continue
+
+            # /account is a valid post-E-ID landing page only when it is not
+            # rejected and does not display an expired-session marker.
+            if SESSION_CHECK and storage_page == "login":
                 STATUS_FILE.write_text("AUTH_REQUIRED", encoding="utf-8")
-                print("AUTH_REQUIRED: restored profile reached the provider login/account route", flush=True)
+                print("AUTH_REQUIRED: restored profile reached a provider login route", flush=True)
                 return 2
 
             if now - last_diag >= 20:
@@ -367,28 +474,33 @@ def main() -> int:
                 time.sleep(2)
                 continue
 
+            if storage_page == "account":
+                if not account_navigation_requested:
+                    print(
+                        "AUTH_RETURN_ROUTE=ACCOUNT; opening the requested offers tab",
+                        flush=True,
+                    )
+                    cdp.command("Page.navigate", {"url": "https://storage.money/deals#tab-3"})
+                    account_navigation_requested = True
+                time.sleep(2)
+                continue
+            account_navigation_requested = False
+
             if (
                 saw_eid
-                and parsed.scheme == "https"
                 and host == "storage.money"
-                and parsed.path.rstrip("/") == "/account"
+                and storage_page == "other"
+                and parsed.path.rstrip("/") not in ("/login", "/auth", "/signin")
             ):
-                print("AUTH_RETURNED_TO_ACCOUNT", flush=True)
+                print(
+                    "AUTH_RETURN_ROUTE=OTHER_STORAGE_PAGE; opening the requested offers tab",
+                    flush=True,
+                )
                 cdp.command("Page.navigate", {"url": "https://storage.money/deals#tab-3"})
                 time.sleep(2)
                 continue
 
-            if (
-                parsed.scheme == "https"
-                and host == "storage.money"
-                and parsed.path.rstrip("/") == "/deals"
-                and parsed.fragment == "tab-3"
-            ):
-                print(
-                    "MONEY_STORAGE_SESSION=%s"
-                    % ("AUTHENTICATED_AFTER_EID" if saw_eid else "RESTORED_PROFILE_REUSED"),
-                    flush=True,
-                )
+            if storage_page == "deals":
                 try:
                     snapshot = None
                     for attempt in range(1, 4):
@@ -433,6 +545,17 @@ def main() -> int:
                         summary.write(f"- Средний курс USDT → ECR: {snapshot['rate']} ECR за 1 USDT\\n")
                         summary.write(f"- Время UTC: {snapshot['observed_at']}\\n")
                         summary.write("- Комиссия не учитывалась; история не сохранялась.\\n")
+                    # Only the protected endpoint response plus validated payload
+                    # establishes a successful read. The URL is not an auth signal.
+                    print(
+                        "AUTH_RETURN_ROUTE=%s"
+                        % ("DIRECT_DEALS" if saw_eid else "SESSION_REUSED"),
+                        flush=True,
+                    )
+                    print(
+                        "MONEY_STORAGE_SESSION=AUTHENTICATED_AFTER_PROTECTED_READ",
+                        flush=True,
+                    )
                     STATUS_FILE.write_text("OFFERS_READ_OK", encoding="utf-8")
                     print(
                         "OFFERS_READ_OK count=%s rate=%s"
