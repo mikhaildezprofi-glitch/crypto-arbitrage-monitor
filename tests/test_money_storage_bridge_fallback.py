@@ -38,6 +38,18 @@ class MoneyStorageBridgeFallbackTests(unittest.TestCase):
         self.assertIn("time.sleep(2)", source[guard:offer_read])
         self.assertIn("continue", source[guard:offer_read])
 
+    def test_noninteractive_mode_reads_valid_session_but_fails_closed_on_auth_challenge(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "scripts" / "money_storage_chromium_bridge.py").read_text(encoding="utf-8")
+        ast.parse(source)
+        self.assertIn('NONINTERACTIVE = os.environ.get("MONEY_STORAGE_NONINTERACTIVE") == "1"', source)
+        self.assertIn("DEADLINE_SECONDS = 180 if SESSION_CHECK or NONINTERACTIVE else 1800", source)
+        self.assertIn("if SESSION_CHECK or NONINTERACTIVE:", source)
+        self.assertIn("not NONINTERACTIVE", source)
+        self.assertIn("AUTH_REQUIRED", source)
+        self.assertIn("if not SESSION_CHECK and not RETURN_ONLY and not FORM_INSPECTION:", source)
+        self.assertIn("snapshot = fetch_from_authenticated_page(page)", source)
+
     def test_normal_mode_continues_after_eid_return_to_read_protected_offers(self):
         root = Path(__file__).resolve().parents[1]
         source = (root / "scripts" / "money_storage_chromium_bridge.py").read_text(encoding="utf-8")
