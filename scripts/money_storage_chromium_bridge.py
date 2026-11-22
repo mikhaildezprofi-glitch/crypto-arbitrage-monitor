@@ -32,8 +32,9 @@ from scripts.money_storage_cloud_read import (
 )
 
 DEBUG_ENDPOINT = "http://127.0.0.1:9222/json/list"
-STATUS_FILE = Path("/tmp/eid-auth-status")
-DEADLINE_SECONDS = 1800
+STATUS_FILE = Path(os.environ.get("MONEY_STORAGE_STATUS_FILE", "/tmp/eid-auth-status"))
+SESSION_CHECK = os.environ.get("MONEY_STORAGE_SESSION_CHECK") == "1"
+DEADLINE_SECONDS = 180 if SESSION_CHECK else 1800
 
 
 def safe_location(value: str) -> str:
@@ -298,6 +299,15 @@ def main() -> int:
 
             if host == "e-id.cards" or host.endswith(".e-id.cards"):
                 saw_eid = True
+                if SESSION_CHECK:
+                    STATUS_FILE.write_text("AUTH_REQUIRED", encoding="utf-8")
+                    print("AUTH_REQUIRED: restored profile was redirected to E-ID; manual confirmation is required", flush=True)
+                    return 2
+
+            if SESSION_CHECK and host == "storage.money" and parsed.path.rstrip("/") in ("/account", "/login", "/auth", "/signin"):
+                STATUS_FILE.write_text("AUTH_REQUIRED", encoding="utf-8")
+                print("AUTH_REQUIRED: restored profile reached the provider login/account route", flush=True)
+                return 2
 
             if now - last_diag >= 20:
                 last_diag = now
@@ -337,6 +347,10 @@ def main() -> int:
                     % cdp.storage_document_status,
                     flush=True,
                 )
+                if SESSION_CHECK:
+                    STATUS_FILE.write_text("AUTH_REQUIRED", encoding="utf-8")
+                    print("AUTH_REQUIRED: Money Storage rejected the restored session", flush=True)
+                    return 2
                 cdp.command("Page.navigate", {"url": "https://storage.money/account"})
                 time.sleep(2)
                 continue
@@ -384,6 +398,10 @@ def main() -> int:
                                 "HTTP 401", "HTTP 403", "redirected outside the approved origin",
                                 "response was not JSON",
                             )):
+                                if SESSION_CHECK:
+                                    STATUS_FILE.write_text("AUTH_REQUIRED", encoding="utf-8")
+                                    print("AUTH_REQUIRED: protected offers endpoint rejected the restored session", flush=True)
+                                    return 2
                                 print("MONEY_STORAGE_AUTH_REQUIRED=YES; waiting for normal E-ID flow", flush=True)
                                 snapshot = None
                                 break
@@ -421,8 +439,9 @@ def main() -> int:
 
             time.sleep(2)
 
-        STATUS_FILE.write_text("AUTH_TIMEOUT", encoding="utf-8")
-        print("AUTH_TIMEOUT: Chromium did not return to Money Storage account", flush=True)
+        final_status = "SESSION_CHECK_TIMEOUT" if SESSION_CHECK else "AUTH_TIMEOUT"
+        STATUS_FILE.write_text(final_status, encoding="utf-8")
+        print(f"{final_status}: Chromium did not complete the expected Money Storage read", flush=True)
         return 1
     finally:
         cdp.close()
