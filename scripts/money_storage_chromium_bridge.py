@@ -221,93 +221,94 @@ def main() -> int:
         cdp.command("Network.enable")
         # Capture the offers JSON from the page's own authenticated fetch. The
         # response is cloned asynchronously; the original response is untouched.
-        cdp.command(
-            "Page.addScriptToEvaluateOnNewDocument",
-            {
-                "source": """(() => {
-                  if (window.__moneyStorageFetchCaptureInstalled) return;
-                  window.__moneyStorageFetchCaptureInstalled = true;
-                  window.__moneyStorageOffersCaptures = [];
-                  const rememberCapture = item => {
-                    const captures = window.__moneyStorageOffersCaptures;
-                    captures.push(item);
-                    if (captures.length > 12) captures.shift();
-                  };
-                  const originalFetch = window.fetch;
-                  window.fetch = function(...args) {
-                    return originalFetch.apply(this, args).then(response => {
-                      try {
-                        const rawUrl = args[0] instanceof Request ? args[0].url : String(args[0]);
-                        const url = new URL(rawUrl, location.href);
-                        // Capture the provider endpoint response first, then let the Python
-                        // reader validate the exact query string and HTTP status.
-                        const expected = url.origin === "https://storage.money"
-                          && url.pathname === "/public_deals/fetch";
-                        if (expected) {
-                          response.clone().text().then(text => {
-                            if (text.length <= 1000000) {
-                              rememberCapture({
-                                status: response.status,
-                                requestUrl: url.href,
-                                finalUrl: response.url,
-                                contentType: response.headers.get("content-type") || "",
-                                text
-                              });
-                            } else {
-                              rememberCapture({ tooLarge: true, requestUrl: url.href, finalUrl: response.url });
+        if not SESSION_CHECK and not RETURN_ONLY:
+            cdp.command(
+                "Page.addScriptToEvaluateOnNewDocument",
+                {
+                    "source": """(() => {
+                      if (window.__moneyStorageFetchCaptureInstalled) return;
+                      window.__moneyStorageFetchCaptureInstalled = true;
+                      window.__moneyStorageOffersCaptures = [];
+                      const rememberCapture = item => {
+                        const captures = window.__moneyStorageOffersCaptures;
+                        captures.push(item);
+                        if (captures.length > 12) captures.shift();
+                      };
+                      const originalFetch = window.fetch;
+                      window.fetch = function(...args) {
+                        return originalFetch.apply(this, args).then(response => {
+                          try {
+                            const rawUrl = args[0] instanceof Request ? args[0].url : String(args[0]);
+                            const url = new URL(rawUrl, location.href);
+                            // Capture the provider endpoint response first, then let the Python
+                            // reader validate the exact query string and HTTP status.
+                            const expected = url.origin === "https://storage.money"
+                              && url.pathname === "/public_deals/fetch";
+                            if (expected) {
+                              response.clone().text().then(text => {
+                                if (text.length <= 1000000) {
+                                  rememberCapture({
+                                    status: response.status,
+                                    requestUrl: url.href,
+                                    finalUrl: response.url,
+                                    contentType: response.headers.get("content-type") || "",
+                                    text
+                                  });
+                                } else {
+                                  rememberCapture({ tooLarge: true, requestUrl: url.href, finalUrl: response.url });
+                                }
+                              }).catch(() => {});
                             }
-                          }).catch(() => {});
-                        }
-                      } catch (_) {}
-                      return response;
-                    });
-                  };
-                  // Some page bundles use XMLHttpRequest rather than fetch.
-                  // Observe its completed response too, without changing the request.
-                  const xhrOpen = XMLHttpRequest.prototype.open;
-                  const xhrSend = XMLHttpRequest.prototype.send;
-                  XMLHttpRequest.prototype.open = function(method, url, ...rest) {
-                    this.__moneyStorageRequestUrl = new URL(String(url), location.href).href;
-                    return xhrOpen.call(this, method, url, ...rest);
-                  };
-                  XMLHttpRequest.prototype.send = function(...args) {
-                    this.addEventListener("load", function() {
-                      try {
-                        const url = new URL(this.responseURL || this.__moneyStorageRequestUrl, location.href);
-                        const expected = url.origin === "https://storage.money"
-                          && url.pathname === "/public_deals/fetch";
-                        if (!expected) return;
-                        let text = "";
-                        if (this.responseType === "" || this.responseType === "text") {
-                          text = this.responseText;
-                        } else if (this.responseType === "json") {
-                          text = JSON.stringify(this.response);
-                        } else {
-                          return;
-                        }
-                        if (typeof text !== "string") return;
-                        if (text.length > 1000000) {
-                          rememberCapture({
-                            tooLarge: true,
-                            requestUrl: this.__moneyStorageRequestUrl,
-                            finalUrl: this.responseURL || this.__moneyStorageRequestUrl
-                          });
-                          return;
-                        }
-                        rememberCapture({
-                          status: this.status,
-                          requestUrl: this.__moneyStorageRequestUrl,
-                          finalUrl: this.responseURL || this.__moneyStorageRequestUrl,
-                          contentType: this.getResponseHeader("content-type") || "",
-                          text
+                          } catch (_) {}
+                          return response;
                         });
-                      } catch (_) {}
-                    }, { once: true });
-                    return xhrSend.apply(this, args);
-                  };
-                })();"""
-            },
-        )
+                      };
+                      // Some page bundles use XMLHttpRequest rather than fetch.
+                      // Observe its completed response too, without changing the request.
+                      const xhrOpen = XMLHttpRequest.prototype.open;
+                      const xhrSend = XMLHttpRequest.prototype.send;
+                      XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+                        this.__moneyStorageRequestUrl = new URL(String(url), location.href).href;
+                        return xhrOpen.call(this, method, url, ...rest);
+                      };
+                      XMLHttpRequest.prototype.send = function(...args) {
+                        this.addEventListener("load", function() {
+                          try {
+                            const url = new URL(this.responseURL || this.__moneyStorageRequestUrl, location.href);
+                            const expected = url.origin === "https://storage.money"
+                              && url.pathname === "/public_deals/fetch";
+                            if (!expected) return;
+                            let text = "";
+                            if (this.responseType === "" || this.responseType === "text") {
+                              text = this.responseText;
+                            } else if (this.responseType === "json") {
+                              text = JSON.stringify(this.response);
+                            } else {
+                              return;
+                            }
+                            if (typeof text !== "string") return;
+                            if (text.length > 1000000) {
+                              rememberCapture({
+                                tooLarge: true,
+                                requestUrl: this.__moneyStorageRequestUrl,
+                                finalUrl: this.responseURL || this.__moneyStorageRequestUrl
+                              });
+                              return;
+                            }
+                            rememberCapture({
+                              status: this.status,
+                              requestUrl: this.__moneyStorageRequestUrl,
+                              finalUrl: this.responseURL || this.__moneyStorageRequestUrl,
+                              contentType: this.getResponseHeader("content-type") || "",
+                              text
+                            });
+                          } catch (_) {}
+                        }, { once: true });
+                        return xhrSend.apply(this, args);
+                      };
+                    })();"""
+                },
+            )
         # Reload once after Network.enable so the main-document HTTP status is
         # observable even when the initial navigation happened before CDP attach.
         cdp.command("Page.reload", {"ignoreCache": True})
