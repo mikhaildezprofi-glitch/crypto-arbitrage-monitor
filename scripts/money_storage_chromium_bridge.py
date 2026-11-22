@@ -678,6 +678,9 @@ def main() -> int:
                     for attempt in range(1, 4):
                         try:
                             snapshot = fetch_from_authenticated_page(page)
+                            Path(os.environ["GITHUB_WORKSPACE"], "money-storage-profile-ready.txt").write_text(
+                                "profile_ready\n", encoding="utf-8"
+                            )
                             break
                         except TransientMoneyStorageReadError as exc:
                             print(
@@ -736,6 +739,14 @@ def main() -> int:
                     )
                     return 0
                 except Exception as exc:
+                    # The reader writes this marker only after the protected
+                    # offers endpoint returned HTTP 200 with result=ok. Preserve
+                    # that authenticated profile even if quote freshness fails.
+                    authenticated_marker = Path(os.environ["GITHUB_WORKSPACE"]) / "session-authenticated.txt"
+                    if authenticated_marker.is_file():
+                        Path(os.environ["GITHUB_WORKSPACE"], "money-storage-profile-ready.txt").write_text(
+                            "profile_ready\n", encoding="utf-8"
+                        )
                     STATUS_FILE.write_text("OFFERS_READ_FAILED", encoding="utf-8")
                     print(
                         "OFFERS_READ_FAILED=%s reason=%s"
