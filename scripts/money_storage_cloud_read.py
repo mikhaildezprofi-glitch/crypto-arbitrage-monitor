@@ -158,16 +158,20 @@ def fetch_from_authenticated_page(page) -> dict[str, Any]:
             "Money Storage page did not expose the exact approved offers request. "
             + (safe_summary[:500] if safe_summary else "No endpoint responses were captured.")
         )
-    final_url = urlparse(result.get("finalUrl", ""))
-    final_query = parse_qs(final_url.query)
+    request_url = urlparse(result.get("requestUrl") or result.get("finalUrl", ""))
+    request_query = parse_qs(request_url.query)
+    final_url = urlparse(result.get("finalUrl") or result.get("requestUrl", ""))
     if (
-        final_url.scheme != "https"
+        request_url.scheme != "https"
+        or request_url.netloc.lower() != "storage.money"
+        or request_url.path != "/public_deals/fetch"
+        or request_query.get("offset") != ["0"]
+        or request_query.get("limit") != ["20"]
+        or request_query.get("from") != ["ECR"]
+        or request_query.get("to") != ["USDT"]
+        or final_url.scheme != "https"
         or final_url.netloc.lower() != "storage.money"
         or final_url.path != "/public_deals/fetch"
-        or final_query.get("offset") != ["0"]
-        or final_query.get("limit") != ["20"]
-        or final_query.get("from") != ["ECR"]
-        or final_query.get("to") != ["USDT"]
     ):
         raise RuntimeError("Captured Money Storage response did not match the approved offers endpoint.")
     if result.get("invalidOrigin"):
