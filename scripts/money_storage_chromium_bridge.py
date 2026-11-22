@@ -42,6 +42,7 @@ DEBUG_ENDPOINT = "http://127.0.0.1:9222/json/list"
 STATUS_FILE = Path(os.environ.get("MONEY_STORAGE_STATUS_FILE", "/tmp/eid-auth-status"))
 SESSION_CHECK = os.environ.get("MONEY_STORAGE_SESSION_CHECK") == "1"
 RETURN_ONLY = os.environ.get("MONEY_STORAGE_RETURN_ONLY") == "1"
+FORM_INSPECTION = os.environ.get("MONEY_STORAGE_FORM_INSPECTION") == "1"
 DEADLINE_SECONDS = 180 if SESSION_CHECK else 1800
 
 
@@ -72,7 +73,24 @@ class CDP:
         method = message.get("method", "")
         params = message.get("params", {})
 
-        if method == "Page.frameNavigated":
+        if method == "Network.requestWillBeSent" and FORM_INSPECTION:
+            request = params.get("request", {})
+            parsed = urlparse(request.get("url", ""))
+            if parsed.hostname == "storage.money" and parsed.path == "/public_deals/fetch":
+                from urllib.parse import parse_qs
+                query = parse_qs(parsed.query)
+                source = query.get("from", [""])[0].upper()
+                target = query.get("to", [""])[0].upper()
+                if source and target:
+                    print(
+                        "PAGE_REQUEST endpoint=public_deals/fetch method=%s from=%s to=%s"
+                        % (request.get("method", "unknown"), source, target),
+                        flush=True,
+                    )
+                    if source == "ECR" and target == "USDT":
+                        STATUS_FILE.write_text("FORM_INSPECTION_COMPLETE", encoding="utf-8")
+
+        elif method == "Page.frameNavigated":
             frame = params.get("frame", {})
             if not frame.get("parentId"):
                 self.main_frame_id = frame.get("id")
@@ -272,7 +290,7 @@ def main() -> int:
         cdp.command("Network.enable")
         # Capture the offers JSON from the page's own authenticated fetch. The
         # response is cloned asynchronously; the original response is untouched.
-        if not SESSION_CHECK and not RETURN_ONLY:
+        if not SESSION_CHECK and not RETURN_ONLY and not FORM_INSPECTION:
             cdp.command(
                 "Page.addScriptToEvaluateOnNewDocument",
                 {
@@ -481,6 +499,21 @@ def main() -> int:
                 print("AUTH_REQUIRED: restored profile reached a provider login route", flush=True)
                 return 2
 
+            if FORM_INSPECTION and host == "storage.money" and storage_page == "deals":
+                document_status = (
+                    cdp.storage_document_status
+                    if cdp.storage_document_path == parsed.path else None
+                )
+                if is_money_storage_authenticated_offers_page(
+                    current_url, status=document_status, title=title, body=body
+                ):
+                    if STATUS_FILE.read_text(encoding="utf-8") != "FORM_INSPECTION_READY":
+                        deals_form_diagnostics(cdp)
+                        STATUS_FILE.write_text("FORM_INSPECTION_READY", encoding="utf-8")
+                        print("FORM_INSPECTION_READY: use the visible browser to select USDT → ECR", flush=True)
+                    time.sleep(1)
+                    continue
+
             if RETURN_ONLY and host == "storage.money" and storage_page == "deals":
                 document_status = (
                     cdp.storage_document_status
@@ -574,7 +607,7 @@ def main() -> int:
             # Access-only phases must never fall through to the legacy quote reader.
             # A page that fails the access predicate is a failed/unknown check, not
             # permission to read the offers API.
-            if RETURN_ONLY or SESSION_CHECK:
+            if RETURN_ONLY or SESSION_CHECK or FORM_INSPECTION:
                 time.sleep(2)
                 continue
 
