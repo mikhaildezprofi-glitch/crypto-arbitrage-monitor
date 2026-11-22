@@ -72,7 +72,7 @@ class SberkassaProbeSyntaxTests(unittest.TestCase):
         project_root = Path(__file__).resolve().parents[1]
         workflow = (project_root / ".github" / "workflows" / "browserless-eid-handoff-stable.yml").read_text(encoding="utf-8")
         self.assertIn('CHROMIUM_START_URL="https://sberkassa.site/deals#tab-3"', workflow)
-        self.assertIn("hashFiles('session-authenticated.txt')", workflow)
+        self.assertIn("hashFiles('money-storage-profile-ready.txt')", workflow)
         self.assertIn("steps.encrypt-profile.outcome == 'success'", workflow)
         self.assertIn('BRIDGE_SCRIPT="scripts/sberkassa_chromium_probe.py"', workflow)
         self.assertIn('CHROMIUM_START_URL="https://storage.money/deals#tab-3"', workflow)
