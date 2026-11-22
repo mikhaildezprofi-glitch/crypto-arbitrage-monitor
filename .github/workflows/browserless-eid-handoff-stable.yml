@@ -382,9 +382,9 @@ jobs:
           # or performs a sanitized, read-only Sberkassa page inspection.
           if [ "$TARGET" = "money_storage" ] && [ "${{ inputs.inspect_currency_form }}" = "true" ]; then
             MONEY_STORAGE_FORM_INSPECTION=1 python3 "$BRIDGE_SCRIPT" >/tmp/eid-browser.log 2>&1 &
-          elif [ "$TARGET" = "money_storage" ]; then
-            MONEY_STORAGE_RETURN_ONLY=1 python3 "$BRIDGE_SCRIPT" >/tmp/eid-browser.log 2>&1 &
           else
+            # Default Money Storage mode is the original authenticated, read-only
+            # quote capture. Access-only diagnostics require an explicit input.
             python3 "$BRIDGE_SCRIPT" >/tmp/eid-browser.log 2>&1 &
           fi
           BRIDGE_PID=$!
