@@ -40,9 +40,10 @@ from arbitrage_monitor.providers.money_storage_access import (
 DEBUG_ENDPOINT = "http://127.0.0.1:9222/json/list"
 STATUS_FILE = Path(os.environ.get("MONEY_STORAGE_STATUS_FILE", "/tmp/eid-auth-status"))
 SESSION_CHECK = os.environ.get("MONEY_STORAGE_SESSION_CHECK") == "1"
+NONINTERACTIVE = os.environ.get("MONEY_STORAGE_NONINTERACTIVE") == "1"
 RETURN_ONLY = os.environ.get("MONEY_STORAGE_RETURN_ONLY") == "1"
 FORM_INSPECTION = os.environ.get("MONEY_STORAGE_FORM_INSPECTION") == "1"
-DEADLINE_SECONDS = 180 if SESSION_CHECK else 1800
+DEADLINE_SECONDS = 180 if SESSION_CHECK or NONINTERACTIVE else 1800
 
 
 def safe_location(value: str) -> str:
@@ -487,7 +488,7 @@ def main() -> int:
                 if cloudflare_state is not True:
                     print("CLOUDFLARE_STATE=CHALLENGE_REQUIRED; waiting for the normal browser check", flush=True)
                 cloudflare_state = True
-                if SESSION_CHECK:
+                if SESSION_CHECK or NONINTERACTIVE:
                     STATUS_FILE.write_text("AUTH_REQUIRED", encoding="utf-8")
                     print("AUTH_REQUIRED: restored profile requires an interactive Cloudflare check", flush=True)
                     return 2
@@ -539,7 +540,7 @@ def main() -> int:
 
             # /account is a valid post-E-ID landing page only when it is not
             # rejected and does not display an expired-session marker.
-            if SESSION_CHECK and storage_page == "login":
+            if (SESSION_CHECK or NONINTERACTIVE) and storage_page == "login":
                 STATUS_FILE.write_text("AUTH_REQUIRED", encoding="utf-8")
                 print("AUTH_REQUIRED: restored profile reached a provider login route", flush=True)
                 return 2
@@ -550,6 +551,7 @@ def main() -> int:
             # public_deals/fetch request captured by the normal reader.
             if (
                 not SESSION_CHECK
+                and not NONINTERACTIVE
                 and not RETURN_ONLY
                 and not FORM_INSPECTION
                 and saw_eid
@@ -700,7 +702,7 @@ def main() -> int:
                                 "HTTP 401", "HTTP 403", "redirected outside the approved origin",
                                 "response was not JSON",
                             )):
-                                if SESSION_CHECK:
+                                if SESSION_CHECK or NONINTERACTIVE:
                                     STATUS_FILE.write_text("AUTH_REQUIRED", encoding="utf-8")
                                     print("AUTH_REQUIRED: protected offers endpoint rejected the restored session", flush=True)
                                     return 2
@@ -760,7 +762,7 @@ def main() -> int:
 
             time.sleep(2)
 
-        final_status = "SESSION_CHECK_TIMEOUT" if SESSION_CHECK else "MONEY_STORAGE_RETURN_TIMEOUT"
+        final_status = "SESSION_CHECK_TIMEOUT" if SESSION_CHECK else ("AUTH_REQUIRED" if NONINTERACTIVE else "MONEY_STORAGE_RETURN_TIMEOUT")
         STATUS_FILE.write_text(final_status, encoding="utf-8")
         print(f"{final_status}: Chromium did not return from E-ID to storage.money", flush=True)
         return 1
