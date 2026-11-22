@@ -33,6 +33,7 @@ from scripts.money_storage_cloud_read import (
 from arbitrage_monitor.providers.money_storage_access import (
     classify_cloudflare_challenge,
     classify_money_storage_page,
+    is_money_storage_auth_failure,
 )
 
 DEBUG_ENDPOINT = "http://127.0.0.1:9222/json/list"
@@ -357,8 +358,32 @@ def main() -> int:
                     print("AUTH_REQUIRED: restored profile was redirected to E-ID; manual confirmation is required", flush=True)
                     return 2
 
-            # /account is a valid possible post-E-ID landing page. It is not
-            # itself proof of failed authentication; continue to the offers tab.
+            # A provider route or URL alone never proves authentication. Reject
+            # explicit HTTP/session-timeout evidence before attempting route handoff.
+            document_status = (
+                cdp.storage_document_status
+                if cdp.storage_document_path == parsed.path else None
+            )
+            if host == "storage.money" and is_money_storage_auth_failure(
+                status=document_status, title=title, body=body
+            ):
+                print(
+                    "MONEY_STORAGE_AUTH_REQUIRED=YES status=%s path=%s; waiting for normal sign-in"
+                    % (document_status if document_status is not None else "page-marker", parsed.path),
+                    flush=True,
+                )
+                if SESSION_CHECK:
+                    STATUS_FILE.write_text("AUTH_REQUIRED", encoding="utf-8")
+                    print("AUTH_REQUIRED: restored profile is not authenticated", flush=True)
+                    return 2
+                # Keep the visible browser on the provider page. The user can
+                # complete its ordinary login/E-ID flow; do not bounce between
+                # /account and /deals while the session is rejected.
+                time.sleep(2)
+                continue
+
+            # /account is a valid post-E-ID landing page only when it is not
+            # rejected and does not display an expired-session marker.
             if SESSION_CHECK and storage_page == "login":
                 STATUS_FILE.write_text("AUTH_REQUIRED", encoding="utf-8")
                 print("AUTH_REQUIRED: restored profile reached a provider login route", flush=True)
@@ -437,16 +462,6 @@ def main() -> int:
                 continue
 
             if storage_page == "deals":
-                print(
-                    "AUTH_RETURN_ROUTE=%s"
-                    % ("DIRECT_DEALS" if saw_eid else "SESSION_REUSED"),
-                    flush=True,
-                )
-                print(
-                    "MONEY_STORAGE_SESSION=%s"
-                    % ("AUTHENTICATED_AFTER_EID" if saw_eid else "RESTORED_PROFILE_REUSED"),
-                    flush=True,
-                )
                 try:
                     snapshot = None
                     for attempt in range(1, 4):
@@ -491,6 +506,17 @@ def main() -> int:
                         summary.write(f"- Средний курс USDT → ECR: {snapshot['rate']} ECR за 1 USDT\\n")
                         summary.write(f"- Время UTC: {snapshot['observed_at']}\\n")
                         summary.write("- Комиссия не учитывалась; история не сохранялась.\\n")
+                    # Only the protected endpoint response plus validated payload
+                    # establishes a successful read. The URL is not an auth signal.
+                    print(
+                        "AUTH_RETURN_ROUTE=%s"
+                        % ("DIRECT_DEALS" if saw_eid else "SESSION_REUSED"),
+                        flush=True,
+                    )
+                    print(
+                        "MONEY_STORAGE_SESSION=AUTHENTICATED_AFTER_PROTECTED_READ",
+                        flush=True,
+                    )
                     STATUS_FILE.write_text("OFFERS_READ_OK", encoding="utf-8")
                     print(
                         "OFFERS_READ_OK count=%s rate=%s"
