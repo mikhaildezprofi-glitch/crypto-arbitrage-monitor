@@ -16,6 +16,15 @@ on:
         required: false
         type: boolean
         default: false
+  push:
+    branches:
+      - feat/integrated-arbitrage-automation-20261123
+    paths:
+      - scripts/sberkassa_chromium_probe.py
+      - src/arbitrage_monitor/providers/sberkassa.py
+      - tests/test_sberkassa_offer_quote.py
+      - tests/test_sberkassa_probe_syntax.py
+      - .github/workflows/browserless-eid-handoff-stable.yml
   workflow_call:
     inputs:
       target:
@@ -316,11 +325,13 @@ jobs:
           fi
           echo "STANDALONE_CHROMIUM=$(basename "$(dirname "$CHROMIUM_BIN")")/chrome"
           "$CHROMIUM_BIN" --version
-          TARGET="${{ inputs.target }}"
+          TARGET="${{ github.event_name == 'push' && 'sberkassa' || inputs.target }}"
           if [ "$TARGET" = "sberkassa" ]; then
             # Start at the exact Sberkassa login page requested by the user.
             # Its own normal E-ID redirect is completed manually in this tab.
-            CHROMIUM_START_URL="https://sberkassa.site/deals#tab-3"
+            # Start blank so the probe can install strict request filtering
+            # before the first Sberkassa page request is made.
+            CHROMIUM_START_URL="about:blank"
             BRIDGE_SCRIPT="scripts/sberkassa_chromium_probe.py"
           else
             # Reuse the saved authenticated session first. The bridge opens the
@@ -384,9 +395,11 @@ jobs:
           # or performs a sanitized, read-only Sberkassa page inspection.
           if [ "$TARGET" = "money_storage" ] && [ "${{ inputs.inspect_currency_form }}" = "true" ]; then
             MONEY_STORAGE_FORM_INSPECTION=1 python3 "$BRIDGE_SCRIPT" >/tmp/eid-browser.log 2>&1 &
+          elif [ "$TARGET" = "sberkassa" ] && [ "${{ github.event_name }}" = "push" ]; then
+            # Push-triggered test uses the previously saved session only. If it
+            # expired, fail closed instead of waiting for a manual login.
+            SBERKASSA_NONINTERACTIVE=1 python3 "$BRIDGE_SCRIPT" >/tmp/eid-browser.log 2>&1 &
           else
-            # Default Money Storage mode is the original authenticated, read-only
-            # quote capture. Access-only diagnostics require an explicit input.
             python3 "$BRIDGE_SCRIPT" >/tmp/eid-browser.log 2>&1 &
           fi
           BRIDGE_PID=$!
