@@ -274,8 +274,9 @@ def main() -> int:
                   const inputs = Array.from(document.querySelectorAll('input')).filter(visible).slice(0,30).map(el => ({
                     type: clean(el.type), name: clean(el.name), id: clean(el.id),
                     placeholder: clean(el.placeholder), value: clean(el.value)
-                  })).filter(x => x.type !== 'password' && x.type !== 'email');
-                  const lines = body.split(/\\n/).map(x=>x.trim()).filter(x=>x && x.length<=220 && /(RUB|USDT|курс|rate|обмен|обновл|updated|refresh)/i.test(x)).slice(0,60);
+                  })).filter(x => /rate|курс|currency|from|to|price/i.test([x.name,x.id,x.placeholder].join(' ')))
+                    .filter(x => /^(?:[-+]?\\d+(?:[.,]\\d+)?|RUB|RUR|USDT|USD)$/i.test(x.value));
+                  const lines = body.split(/\\n/).map(x=>x.trim()).filter(x=>x && x.length<=180 && /(курс|rate|обновл|updated|refresh|last update)/i.test(x)).slice(0,40);
                   const timeLines = body.split(/\\n/).map(x=>x.trim()).filter(x=>x && /(обновл|updated|refresh|последн.*курс|last update)/i.test(x)).slice(0,15);
                   return {url:location.href,title:document.title,lines,time_lines:timeLines,selects,inputs};
                 })()""",
