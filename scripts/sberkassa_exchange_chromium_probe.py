@@ -325,10 +325,12 @@ def main() -> int:
               };
               const codeFromLabel = value => {
                 const text = String(value || '').toUpperCase();
-                if (/\\bUSDT\\b|TETHER|ТЕЗЕР/.test(text)) return 'USDT';
-                if (/\\bERUB\\b|E-RUBLE/.test(text)) return 'ERUB';
-                if (/\\bRUB\\b|\\bRUR\\b|РОССИЙСКИЙ РУБЛЬ|РУБЛЬ|₽/.test(text)) return 'RUB';
-                if (/\\bUSD\\b/.test(text)) return 'USD';
+                // Match full UI labels before generic currency codes:
+                // "Tether USD" is USDT, not USD; "Российский рубль" is RUB.
+                if (/USDT|TETHER(?:\\s+USD)?|ТЕЗЕР/.test(text)) return 'USDT';
+                if (/ERUB|E[- ]?RUBLE|Е-РУБЛ/.test(text)) return 'ERUB';
+                if (/RUB|RUR|РОССИЙСКИЙ\\s+РУБЛЬ|РУБЛЬ|₽/.test(text)) return 'RUB';
+                if (/USD/.test(text)) return 'USD';
                 return '';
               };
               const chooseByClick = async (dir, code) => {
