@@ -397,7 +397,8 @@ def main() -> int:
             }).get("result", {}).get("value", {})
             if urlparse(state.get("url", "")).path.rstrip("/") == "/exchange":
                 probe.current_path = "/exchange"
-                probe.drain_bodies()
+                # Check the visible quote before optional network diagnostics so
+                # a received RUB -> USDT rate ends the probe immediately.
                 pair = state.get("selected_pair", {})
                 rate_text = str(state.get("displayed_rate_text", "")).strip()
                 if pair.get("from") == "RUB" and pair.get("to") == "USDT" and rate_text:
@@ -420,6 +421,8 @@ def main() -> int:
             print("SBERKASSA_EXCHANGE_SELECTION_TIMEOUT=YES", flush=True)
             return 1
         print("SBERKASSA_EXCHANGE_UI_SELECTION=" + json.dumps(selection, ensure_ascii=False), flush=True)
+        print("SBERKASSA_EXCHANGE_DISPLAYED_RATE=" + selection["displayed_rate_text"], flush=True)
+        print("SBERKASSA_EXCHANGE_RATE_CAPTURE_MODE=SINGLE_DISPLAYED_RATE", flush=True)
         print("SBERKASSA_EXCHANGE_RESULT_RECEIVED=YES", flush=True)
 
         artifact = {
@@ -430,6 +433,7 @@ def main() -> int:
             "http_methods_allowed": ["GET"],
             "captured_at_utc": datetime.now(timezone.utc).isoformat(),
             "ui_selection": selection,
+            "rate_capture_mode": "single_displayed_rate",
             "latest_dom_selection": ({
                 "selected_pair": samples[-1]["dom"].get("selected_pair", {}) if samples else {},
                 "selected_labels": samples[-1]["dom"].get("selected_labels", {}) if samples else {},
@@ -440,7 +444,7 @@ def main() -> int:
             "responses": probe.responses,
             "blocked_non_get_request_count": len(probe.blocked_methods),
             "limitations": [
-                "The probe automatically selected RUB -> USDT using only the currency dropdowns; it did not enter amounts or click exchange/submit controls",
+                "The probe automatically selected RUB -> USDT and captured the single displayed rate; it did not search or average offers, enter amounts, or click exchange/submit controls",
                 "The final selected pair and displayed rate are read from the latest captured DOM snapshot, independently of click-attempt status",
                 "All non-GET requests to sberkassa.site were blocked",
                 "Only allowlisted numeric quote/time/currency fields and visible form state are retained",
