@@ -1,8 +1,9 @@
-"""Read-only inspection of Sberkassa /exchange with authorized currency selection.
+"""Read-only inspection of Sberkassa /exchange after manual currency selection.
 
-The probe clicks only the RUB and USDT currency dropdown controls/options.
-It never enters an amount or clicks exchange/submit controls. Non-GET
-requests are blocked. E-ID/CAPTCHA/MFA remain manual.
+The user selects RUB -> USDT in the visible remote browser. The probe only
+observes the selected pair and displayed rate; it never enters an amount or
+clicks exchange/submit controls. Non-GET requests are blocked. E-ID/CAPTCHA/MFA
+remain manual.
 """
 from __future__ import annotations
 
