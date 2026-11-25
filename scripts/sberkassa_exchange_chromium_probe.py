@@ -376,6 +376,87 @@ def main() -> int:
           };
         })()"""
 
+        dom_diagnostic_expression = """(() => {
+          const visible = el => {
+            if (!el) return false;
+            const s = getComputedStyle(el), r = el.getBoundingClientRect();
+            return r.width > 0 && r.height > 0 && s.display !== 'none'
+              && s.visibility !== 'hidden' && Number(s.opacity || 1) > 0;
+          };
+          const safeText = el => {
+            const value = String(el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+            return /\b(RUB|RUR|USDT|USD|ERUB)\b|руб|тезер|tether|₽/i.test(value)
+              ? value.slice(0, 100) : '';
+          };
+          const describe = el => {
+            const r = el.getBoundingClientRect(), s = getComputedStyle(el);
+            return {
+              tag:el.tagName.toLowerCase(), id:String(el.id || '').slice(0,100),
+              class:String(el.className && typeof el.className === 'string' ? el.className : '').slice(0,180),
+              name:String(el.getAttribute('name') || '').slice(0,100),
+              role:String(el.getAttribute('role') || '').slice(0,60),
+              aria:String(el.getAttribute('aria-label') || '').slice(0,100),
+              title:String(el.getAttribute('title') || '').slice(0,100),
+              text:safeText(el), visible:visible(el),
+              rect:{x:Math.round(r.x),y:Math.round(r.y),width:Math.round(r.width),height:Math.round(r.height)},
+              display:s.display, visibility:s.visibility, pointerEvents:s.pointerEvents,
+              disabled:!!el.disabled, tabindex:el.getAttribute('tabindex')
+            };
+          };
+          const nodes = Array.from(document.querySelectorAll('body *'));
+          const candidates = nodes.filter(el => {
+            const meta = [el.id, el.className, el.getAttribute('name'), el.getAttribute('role'),
+              el.getAttribute('aria-label'), el.getAttribute('title')].join(' ');
+            const text = safeText(el);
+            return /currency|selectbox|dropdown|from|to|select/i.test(String(meta))
+              || (text && /\b(RUB|RUR|USDT|USD|ERUB)\b|руб|тезер|tether|₽/i.test(text))
+              || ['SELECT','BUTTON','OPTION'].includes(el.tagName);
+          }).slice(0,160).map(describe);
+          const selects = Array.from(document.querySelectorAll('select')).slice(0,40).map(el => ({
+            ...describe(el),
+            options:Array.from(el.options || []).slice(0,80).map(o => ({
+              text:String(o.textContent || '').trim().slice(0,100),
+              value:String(o.value || '').slice(0,80), selected:!!o.selected, disabled:!!o.disabled
+            }))
+          }));
+          const known = {};
+          for (const id of ['currency_from','currency_to','currency_fromSelectBoxIt',
+            'currency_toSelectBoxIt','currency_fromSelectBoxItOptions','currency_toSelectBoxItOptions',
+            'current_rate']) {
+            const el = document.getElementById(id);
+            known[id] = el ? describe(el) : null;
+          }
+          return {url:location.href,title:document.title,readyState:document.readyState,
+            known_ids:known,selects,candidates};
+        })()"""
+
+        def save_dom_diagnostic(reason: str) -> dict:
+            diagnostic = evaluate_page(dom_diagnostic_expression)
+            payload = {
+                "schema_version": 1,
+                "captured_at_utc": datetime.now(timezone.utc).isoformat(),
+                "page": "/exchange",
+                "reason": reason,
+                "read_only": True,
+                "diagnostic": diagnostic,
+            }
+            Path("sberkassa-exchange-dom-diagnostic.json").write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+            )
+            compact = {
+                "url": diagnostic.get("url"),
+                "readyState": diagnostic.get("readyState"),
+                "known_ids": diagnostic.get("known_ids"),
+                "selects": diagnostic.get("selects", [])[:20],
+                "candidate_count": len(diagnostic.get("candidates", [])),
+                "candidates": diagnostic.get("candidates", [])[:60],
+            }
+            print("SBERKASSA_EXCHANGE_DOM_DIAGNOSTIC=" +
+                  json.dumps(compact, ensure_ascii=False), flush=True)
+            print("SBERKASSA_EXCHANGE_DOM_DIAGNOSTIC_ARTIFACT=sberkassa-exchange-dom-diagnostic.json",
+                  flush=True)
+            return diagnostic
+
         def dispatch_click(rect: dict | None) -> bool:
             if not isinstance(rect, dict) or rect.get("visible") is not True:
                 return False
@@ -499,6 +580,7 @@ def main() -> int:
                 time.sleep(0.5)
 
         if selection.get("selection_confirmed") is not True:
+            save_dom_diagnostic("automatic_currency_selection_failed")
             STATUS_FILE.write_text("SBERKASSA_EXCHANGE_SELECTION_TIMEOUT", encoding="utf-8")
             print("SBERKASSA_EXCHANGE_SELECTION_TIMEOUT=YES", flush=True)
             return 1
