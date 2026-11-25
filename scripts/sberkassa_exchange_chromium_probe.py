@@ -362,7 +362,10 @@ def main() -> int:
             return {selected:false, action:'dropdown_control_missing'};
           };
           const fromAction = chooseByClick('from', 'RUB');
-          const toAction = chooseByClick('to', 'USDT');
+          const fromConfirmed = codeFromLabel(selectedLabel('from')) === 'RUB';
+          const toAction = fromConfirmed
+            ? chooseByClick('to', 'USDT')
+            : {selected:false, action:'waiting_for_from_selection'};
           const fromLabel = String(selectedLabel('from') || '').trim().slice(0,120);
           const toLabel = String(selectedLabel('to') || '').trim().slice(0,120);
           return {
