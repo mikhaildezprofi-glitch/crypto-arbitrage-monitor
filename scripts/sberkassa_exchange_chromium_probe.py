@@ -455,9 +455,9 @@ def main() -> int:
         with open(__import__("os").environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
             summary.write("\n## Sberkassa /exchange read-only inspection\n")
             summary.write("- Inspected /exchange using the restored authenticated Chromium profile or manual E-ID handoff.\n")
-            summary.write("- The probe did not click or modify page controls and blocked all non-GET requests to Sberkassa.\n")
+            summary.write("- The probe selected only the RUB and USDT currency dropdowns, did not enter amounts or submit an exchange, and blocked all non-GET requests to Sberkassa.\n")
             summary.write("- Captured sanitized visible form state and allowlisted quote/time fields only.\n")
-            summary.write("- No quote freshness or RUB -> USDT rate is asserted by this discovery run.\n")
+            summary.write("- The displayed RUB -> USDT rate is recorded as a UI observation; quote freshness is not asserted by this discovery run.\n")
         STATUS_FILE.write_text("SBERKASSA_EXCHANGE_INSPECTION_COMPLETE", encoding="utf-8")
         print("SBERKASSA_EXCHANGE_INSPECTION_COMPLETE=YES", flush=True)
         return 0
