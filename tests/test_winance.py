@@ -171,7 +171,9 @@ class WinanceProviderTests(unittest.TestCase):
             "currency_pairs": [
                 {"id": "18", "name": "ERUB/USDT", "rate": "Infinity"},
                 {"id": "18", "name": "ERUB/USDT", "rate": "0.031"},
-            ]
+            ],
+            "result": "ok",
+            "status": 200,
         }
         quote = parse_winance_response(payload, self.observed_at)
         self.assertEqual(quote.rate, Decimal("0.031"))
