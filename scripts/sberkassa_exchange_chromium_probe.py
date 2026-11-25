@@ -23,9 +23,9 @@ STATUS_FILE = Path("/tmp/eid-auth-status")
 MAX_BODY_BYTES = 1_000_000
 SAFE_KEYS = re.compile(
     r"^(rate|back_rate|exchange_rate|buy_rate|sell_rate|rate_value|price|"
-    r"from|to|from_currency|to_currency|currency|currency_id|from_id|to_id|"
-    r"base_currency|quote_currency|pair|pair_id|direction|updated_at|updatedAt|"
-    r"timestamp|date|time|last_updated|refresh_time|created_at)$", re.I
+    r"from|to|from_currency|to_currency|currency|currency_id|currency_code|currency_name|"
+    r"code|symbol|name|from_id|to_id|base_currency|quote_currency|pair|pair_id|"
+    r"direction|updated_at|updatedAt|timestamp|date|time|last_updated|refresh_time|created_at)$", re.I
 )
 CURRENCY = re.compile(r"^(RUB|RUR|USDT|USD|₽|руб\.?|тезер)$", re.I)
 TIME_VALUE = re.compile(r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}", re.I)
@@ -210,17 +210,20 @@ class Probe:
                 source = raw.decode("utf-8", errors="replace")
                 endpoints = sorted(set(re.findall(
                     r"""['"]((?:/api/|/public_deals/)[^'"\\s]{1,140})['"]""", source
-                )))[:40]
+                )))
+                endpoints = [x for x in endpoints if not re.search(
+                    r"(create|order|deposit|withdraw|transfer|payment|submit)", x, re.I
+                )][:40]
                 selectors = sorted(set(re.findall(
-                    r"""['"]([.#][A-Za-z0-9_-]*(?:currency|rate|convert|exchange|from|to)[A-Za-z0-9_-]*)['"]""",
+                    r"""['"]([.#][A-Za-z0-9_-]*(?:currency|rate|convert|exchange)[A-Za-z0-9_-]*)['"]""",
                     source, re.I
                 )))[:60]
                 fields = sorted(set(re.findall(
                     r"""['"]([A-Za-z_][A-Za-z0-9_]{0,60})['"]""", source
                 )))
                 fields = [x for x in fields if re.search(
-                    r"(currency|rate|price|exchange|convert|updated|refresh|from|to)", x, re.I
-                )][:80]
+                    r"(currency|rate|price|exchange|convert|updated|refresh)|(^|_)(from|to)(_|$)", x, re.I
+                ) and not re.search(r"(top_up|deal_create|order|deposit|withdraw|transfer)", x, re.I)][:80]
                 methods = sorted(set(re.findall(
                     r"""(?:method|type)\\s*:\\s*['"](GET|POST|PUT|DELETE)['"]""",
                     source, re.I
@@ -320,8 +323,8 @@ def main() -> int:
                     visible: visible(el),
                     label: clean(el.labels && Array.from(el.labels).map(x=>x.innerText).join(' ')),
                     name: clean(el.name), id: clean(el.id), class_name: clean(el.className),
-                    selected: clean(el.selectedOptions && el.selectedOptions[0] && el.selectedOptions[0].textContent),
-                    value: clean(el.value)
+                    selected: (() => { const v = clean(el.selectedOptions && el.selectedOptions[0] && el.selectedOptions[0].textContent); return /^(RUB|RUR|USDT|USD|ERUB|E-Ruble|₽|рубль)$/i.test(v) ? v : ''; })(),
+                    value: /^(RUB|RUR|USDT|USD|ERUB)$/i.test(clean(el.value)) ? clean(el.value) : ''
                   }));
                   const inputs = Array.from(document.querySelectorAll('input')).slice(0,40).map(el => ({
                     visible: visible(el), type: clean(el.type), name: clean(el.name), id: clean(el.id),
@@ -332,8 +335,8 @@ def main() -> int:
                     .filter(visible).slice(0,60).map(el => ({
                       tag: clean(el.tagName), id: clean(el.id), class_name: clean(typeof el.className === 'string' ? el.className : ''),
                       role: clean(el.getAttribute('role')), aria_label: clean(el.getAttribute('aria-label')),
-                      text: clean(el.innerText || el.textContent),
-                      data: Array.from(el.attributes || []).filter(a => /^(data-(currency|rate|from|to|value)|aria-label)$/i.test(a.name))
+                      text: (() => { const v = clean(el.innerText || el.textContent); return !/\\d/.test(v) ? v : ''; })(),
+                      data: Array.from(el.attributes || []).filter(a => /^(data-currency|aria-label)$/i.test(a.name) && /^(RUB|RUR|USDT|USD|ERUB|E-Ruble|₽|рубль)$/i.test(clean(a.value)))
                         .map(a => ({name: a.name, value: clean(a.value)}))
                     })).filter(x => x.text || x.aria_label || x.data.length);
                   const lines = body.split(/\\n/).map(x=>x.trim()).filter(x=>x && x.length<=180 && /(RUB|RUR|USDT|руб|₽|курс|rate|обмен|обновл|updated|refresh|last update)/i.test(x)).slice(0,60);
