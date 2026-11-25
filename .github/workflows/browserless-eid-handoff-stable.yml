@@ -62,10 +62,10 @@ jobs:
       - name: Restore encrypted Chromium profile cache
         uses: actions/cache/restore@v4
         with:
-          path: ${{ runner.temp }}/chromium-profile-${{ inputs.target }}.gpg
-          key: ${{ runner.os }}-chromium-profile-${{ inputs.target }}-${{ github.ref_name }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/chromium-profile-money_storage.gpg
+          key: ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-${{ github.run_id }}
           restore-keys: |
-            ${{ runner.os }}-chromium-profile-${{ inputs.target }}-${{ github.ref_name }}-
+            ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-
 
       - name: Install browser and tunnel dependencies
         shell: bash
@@ -83,20 +83,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          PROFILE_ARCHIVE="${RUNNER_TEMP}/chromium-profile-${{ inputs.target }}.gpg"
+          PROFILE_ARCHIVE="${RUNNER_TEMP}/chromium-profile-money_storage.gpg"
           mkdir -p /tmp/eid-chromium-profile
           if [ -f "$PROFILE_ARCHIVE" ]; then
             exec 3<<<"$CHROMIUM_PROFILE_PASSPHRASE"
             gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \
-              --output "${RUNNER_TEMP}/chromium-profile-${{ inputs.target }}.tar.gz" \
+              --output "${RUNNER_TEMP}/chromium-profile-money_storage.tar.gz" \
               --decrypt "$PROFILE_ARCHIVE"
             exec 3<&-
-            if tar -tzf "${RUNNER_TEMP}/chromium-profile-${{ inputs.target }}.tar.gz" | grep -Eq '(^/|(^|/)\\.\\.(/|$))'; then
+            if tar -tzf "${RUNNER_TEMP}/chromium-profile-money_storage.tar.gz" | grep -Eq '(^/|(^|/)\\.\\.(/|$))'; then
               echo "Unsafe path found in encrypted profile archive"
               exit 1
             fi
-            tar -xzf "${RUNNER_TEMP}/chromium-profile-${{ inputs.target }}.tar.gz" -C /tmp/eid-chromium-profile
-            rm -f "${RUNNER_TEMP}/chromium-profile-${{ inputs.target }}.tar.gz"
+            tar -xzf "${RUNNER_TEMP}/chromium-profile-money_storage.tar.gz" -C /tmp/eid-chromium-profile
+            rm -f "${RUNNER_TEMP}/chromium-profile-money_storage.tar.gz"
             echo "CHROMIUM_PROFILE_CACHE=RESTORED_AND_DECRYPTED"
           else
             echo "CHROMIUM_PROFILE_CACHE=EMPTY_FIRST_AUTHENTICATION_REQUIRED"
@@ -558,8 +558,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          PROFILE_ARCHIVE="${RUNNER_TEMP}/chromium-profile-${{ inputs.target }}.tar.gz"
-          ENCRYPTED_PROFILE="${RUNNER_TEMP}/chromium-profile-${{ inputs.target }}.gpg"
+          PROFILE_ARCHIVE="${RUNNER_TEMP}/chromium-profile-money_storage.tar.gz"
+          ENCRYPTED_PROFILE="${RUNNER_TEMP}/chromium-profile-money_storage.gpg"
           # Do not carry machine-specific Chromium singleton locks into the
           # next runner's encrypted profile cache.
           rm -f -- /tmp/eid-chromium-profile/SingletonLock \
@@ -578,8 +578,8 @@ jobs:
         if: steps.encrypt-profile.outcome == 'success'
         uses: actions/cache/save@v4
         with:
-          path: ${{ runner.temp }}/chromium-profile-${{ inputs.target }}.gpg
-          key: ${{ runner.os }}-chromium-profile-${{ inputs.target }}-${{ github.ref_name }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/chromium-profile-money_storage.gpg
+          key: ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-${{ github.run_id }}
 
       - name: Publish normalized current offers
         if: always() && hashFiles('money-storage-current-offers.json') != ''
