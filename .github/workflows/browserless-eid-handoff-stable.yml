@@ -326,7 +326,7 @@ jobs:
           fi
           echo "STANDALONE_CHROMIUM=$(basename "$(dirname "$CHROMIUM_BIN")")/chrome"
           "$CHROMIUM_BIN" --version
-          TARGET="${{ github.event_name == 'push' && 'sberkassa' || inputs.target }}"
+          TARGET="${{ inputs.target != '' && inputs.target || (github.event_name == 'push' && 'sberkassa' || 'money_storage') }}"
           if [ "$TARGET" = "sberkassa" ]; then
             # Existing ERUB -> RUB deals collector. Keep its scope unchanged.
             CHROMIUM_START_URL="about:blank"
