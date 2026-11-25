@@ -1,6 +1,6 @@
 # Crypto Arbitrage Monitor: operations status
 
-Snapshot date: 2026-11-23
+Snapshot date: 2026-11-25
 
 This file consolidates the agreed project rules and the verified implementation state. It is not a claim that unattended production polling is live.
 
@@ -78,7 +78,7 @@ All arithmetic is denominated in USDT. Do not label USDT as exact USD without a 
 - A prior real browser run on the PR #8 line read 20 USDT -> ECR offers; reported average: `0.178908318`; freshness was confirmed by `create_time` within 900 seconds. This is historical evidence of one successful read, not proof that the current session remains valid.
 - Run `45040162913` later restored/decrypted a profile and saved an encrypted AES-256 profile cache. The browser returned to `storage.money/html/oauth_return.html` with HTTP 200, but E-ID state was `AUTHENTICATION_REQUIRED`; E-ID API received a Cloudflare 403 challenge. This did not prove authenticated quote access.
 - A return URL or HTTP 200 by itself is never treated as authentication.
-- The PR #9 bridge's normal mode reads the page-originated offers response and separates authentication confirmation from quote freshness.
+- The integrated PR #10 bridge's normal mode reads the page-originated offers response and separates authentication confirmation from quote freshness.
 - Current browser startup is deliberately session-first: open `/deals#tab-3` using the restored profile; only if the protected page rejects the session does the bridge navigate to the normal account/E-ID flow. This avoids forcing OAuth on every run.
 - The latest PR #9 code changes have passed the repository unit suite: Actions run `45058948246`, commit `55c793e792f1c7b3907c65ca52608fda6d94177e`, 121 tests passed. This is code/CI evidence, not a new live provider run.
 
@@ -99,10 +99,10 @@ All arithmetic is denominated in USDT. Do not label USDT as exact USD without a 
 
 - PR #7: open; encrypted Chromium profile persistence.
 - PR #8: open Draft; Sberkassa diagnostics and freshness rules.
-- PR #9: open Draft; original Money Storage E-ID/session work. Its branch diverged from the current PR #8 head and is superseded by PR #10 for integration review.
-- PR #10: open Draft; integration branch based directly on the current PR #8 head `f13c8f0b09e11cf3888828cf2920c274e058409f`, with the PR #9 Money Storage changes ported and the precise Cloudflare classifier/top-level document fixes retained.
-- PR #10 head at this snapshot: `0d2e45b499ab4219900196d824c10c475accf320`; it is mergeable but not merged. Do not merge until live source validation and CI are complete.
-- The repository `main` branch still contains stale README wording that conflicts with the newer Money Storage `create_time` freshness rule.
+- PR #9: closed as superseded; do not merge.
+- PR #10: open Draft; integration branch based on PR #8, with the Money Storage session work ported and the Cloudflare classifier/top-level document fixes retained.
+- PR #10 head at this snapshot: `a569d222b5f48cf8d3d3a63241528dd4c4c16eec`; it is mergeable but not merged. Keep it Draft until live source validation is complete.
+- The integration branch README now reflects the public repository state and agreed quote rules. `main` remains unchanged until a reviewed merge.
 - No hourly production schedule is enabled.
 - The existing `four-step-quote-test.yml` is a manual diagnostic and intentionally does not calculate final USDT, profit, or ROI. It omits the fifth source.
 
@@ -141,3 +141,14 @@ The scheduled design must therefore be a separate, minimal headless read-only jo
 - The latest PR #10 test workflow run `45073521252` failed before any job step was allocated (GitHub reports an empty step list and no runner ID). This is not evidence of a unit-test assertion failure. Earlier PR #9 head `55c793e792f1c7b3907c65ca52608fda6d94177e` did complete all 121 unit tests successfully in run `45058948246`. The newer classifier changes still require a real CI execution on an allocated runner.
 - The PR #10 branch has an updated README reflecting the agreed Money Storage `create_time` freshness rule, explicit fifth-source blocker, session-reuse limits, and disabled schedule.
 - The five-source collector data model exists, but the production workflow remains a four-source diagnostic. The Sberkassa `/exchange` probe records candidate fields only; no provider is allowed to turn those candidates into a valid RUB -> USDT quote yet.
+
+
+## Verification recorded on 2026-11-25
+
+- Repository visibility was changed to Public and independently confirmed through the GitHub repository API (visibility=public).
+- PR #10 was corrected so restored-session verification no longer treats a protected page HTTP 200 as sufficient. It now requires three independent fresh Chromium processes, each reading the page-originated Everyone Offers response and validating the USDT -> ECR pair, normalized quote, and provider create_time freshness window of 900 seconds.
+- Added a unit test that guards this three-process, real-offers verification contract.
+- CI run 45681563302 passed all 127 unit tests. Its runner clock check also passed using three responding HTTPS Date references. Earlier runs failed because of stale documentation assertions and an unsuitable GitHub API Date reference; both issues were corrected.
+- This CI result is unit-test evidence only. It does not establish a currently valid Money Storage session or a live quote.
+- No new E-ID browser workflow was dispatched. The last live inspection showed the saved profile was rejected and required a normal interactive E-ID/Cloudflare flow. The next live step requires the owner's participation in that flow and a configured CHROMIUM_PROFILE_PASSPHRASE secret.
+- PR #7 remains open and non-Draft; PR #8 and PR #10 remain open Drafts. No PR was merged. No hourly schedule or Telegram delivery was enabled.
