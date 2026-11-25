@@ -72,12 +72,14 @@ Implemented:
 - Encrypted Chromium profile persistence, session-first browser startup, and a supervised E-ID fallback.
 - Consolidated operating rules in [docs/OPERATIONS_STATUS.md](docs/OPERATIONS_STATUS.md).
 
-Not yet complete:
-- A confirmed current Money Storage session on a fresh runner. The last inspected run restored the encrypted profile but received HTTP 401 from `/account`; E-ID required a new interactive sign-in and Cloudflare challenge.
-- A live validated Sberkassa ERUB -> RUB quote/freshness capture on the current integrated branch.
-- A validated Sberkassa RUB -> USDT numeric field and independent freshness marker.
-- One integrated five-source report workflow, a notification destination, and measured free-runner cost.
-- Recurring hourly schedule. It remains intentionally disabled until every source is validated and the free-runtime budget is demonstrated.
+Live validation status (2026-11-26):
+- Money Storage: encrypted Chromium profile restored and decrypted; three independent fresh-runner processes each read 20 authenticated USDT -> ECR offers and passed the 900-second `create_time` freshness check (workflow run `45688839011`). No repeated E-ID handoff was needed for this verification.
+- BlackBit: live public API validation passed (workflow run `45690240533`). Pair ID `6`, displayed `last_rate` `1.311`, retrieved at `2026-11-25T19:57:32Z`. The endpoint exposes no provider quote timestamp, so freshness is based on a live HTTPS retrieval with `Cache-Control: no-cache`; the quote remains indicative only.
+- Winance: adapter and unit tests exist, but a live retrieval has not yet been validated.
+- Sberkassa ERUB -> RUB: live direction, `back_rate` average, and 15-minute `create_time` freshness still need validation.
+- Sberkassa RUB -> USDT: numeric field and independent successful-refresh freshness signal still need validation.
+- One integrated five-source report workflow, notification destination, and measured free-runner cost are not complete.
+- Recurring hourly schedule remains disabled until all sources are validated and free-runtime cost is demonstrated.
 
 ## Intended schedule after validation
 
