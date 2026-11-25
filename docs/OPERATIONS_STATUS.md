@@ -59,7 +59,7 @@ All arithmetic is denominated in USDT. Do not label USDT as exact USD without a 
 - Use only `/deals#tab-3`, "Всем предлагают".
 - The exact page-originated request must establish `from=ERUB&to=RUB`; when per-row currency IDs are unavailable, the request metadata is the direction context.
 - Use only `back_rate`; ignore `rate`.
-- Average the first 20 correctly directed offers in source order, or all if fewer.
+- Require at least 20 correctly directed offers; average exactly the first 20 in source order. Fewer than 20 makes the quote unavailable.
 - Any invalid/non-finite/non-positive selected `back_rate`, or no matching offers, makes the quote unavailable.
 - Freshness is confirmed when at least one correctly directed offer has `create_time` within the preceding 900 seconds. Future or invalid timestamps do not confirm freshness. Creation time does not filter the first-20 average.
 - Ignore fees, amounts, reserves, volumes, limits, liquidity, and partial execution.
@@ -188,3 +188,16 @@ PR #10 remains Draft and unmerged. The Money Storage and BlackBit live validatio
 - Live workflow run `45690618669` completed successfully. It confirmed exactly pair ID `18`, `ERUB/USDT`, displayed rate `0.032728`, retrieved at `2026-11-25T19:59:57.829592Z`.
 - The endpoint does not publish a quote timestamp. The recorded `observed_at` is the UTC retrieval time from the live HTTPS response, not an independently published market-update timestamp.
 - Unit-test run `45690807145` passed all 129 tests, including the Winance response-envelope and cache-revalidation tests.
+
+
+## Current verified status after Sberkassa live run (2026-11-25)
+
+- Current integration branch head: `cc6969e088b2c73fb0d8cd710f36974f054a26d0`. PR #10 remains Draft and unmerged.
+- Sberkassa ERUB -> RUB was live-validated by Actions run [45697596726](https://github.com/mikhaildezprofi-glitch/crypto-arbitrage-monitor/actions/runs/45697596726).
+- The encrypted shared Chromium profile was restored, the existing authenticated Sberkassa session was reused, and the updated profile was encrypted and saved back to GitHub Actions Cache.
+- The collector opened only `/deals#tab-3`. It set the read-only page filter to `currency_from=ERUB` and `currency_to=RUB` before page scripts initialized, disabled browser cache, and blocked `/exchange` plus any public-deals request with another direction.
+- The page-originated `GET /public_deals/fetch?from=ERUB&to=RUB` returned HTTP 200 and 50 offers. Exactly the first 20 `back_rate` values were averaged: `41.824849917`. An independent recomputation from the sanitized artifact matched exactly.
+- The newest qualifying server `create_time` was 31.7 seconds old at capture. The 15-minute freshness check passed.
+- Sanitized artifact `sberkassa-current-inspection`, ID `15061472918`, was uploaded successfully. No raw response body, cookies, or session tokens were published.
+- Unit-test run [45697606894](https://github.com/mikhaildezprofi-glitch/crypto-arbitrage-monitor/actions/runs/45697606894) passed all 134 tests.
+- This clears only Sberkassa ERUB -> RUB. RUB -> USDT remains uncollected and is outside the current deals-only scope; do not open `/exchange`. The five-source report, fee inputs, notification destination, and free-runner cost still require work. No recurring schedule or fund-moving operation is enabled.
