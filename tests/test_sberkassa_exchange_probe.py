@@ -32,7 +32,7 @@ class SberkassaExchangeProbeTests(unittest.TestCase):
         self.assertIn("displayed_rate_text:String((document.querySelector('#current_rate')?.innerText || '').trim())", source)
         self.assertIn('"latest_dom_selection": ({', source)
         self.assertIn('samples[-1]["dom"].get("displayed_rate_text", "")', source)
-        self.assertIn("exchange_submit_clicked:false", source)
+        self.assertIn('"exchange_submit_clicked": False', source)
         self.assertIn("The user manually selected RUB -> USDT in the visible browser", source)
         self.assertNotIn("Page.handleJavaScriptDialog", source)
         self.assertNotIn("Input.dispatchMouseEvent", source)
