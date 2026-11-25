@@ -470,7 +470,7 @@ def main() -> int:
             "responses": probe.responses,
             "blocked_non_get_request_count": len(probe.blocked_methods),
             "limitations": [
-                "Only the RUB and USDT currency dropdown buttons/options were clicked as authorized; no amounts were entered and the exchange submit button was never clicked",
+                "The user manually selected RUB -> USDT in the visible browser; the probe did not enter amounts or click the exchange submit button",
                 "The final selected pair and displayed rate are read from the latest captured DOM snapshot, independently of click-attempt status",
                 "All non-GET requests to sberkassa.site were blocked",
                 "Only allowlisted numeric quote/time/currency fields and visible form state are retained",
