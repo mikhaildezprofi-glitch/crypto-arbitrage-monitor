@@ -354,9 +354,11 @@ def main() -> int:
               let matrix = null;
               try { if (typeof rates !== 'undefined') matrix = rates; } catch (_) {}
               if (!matrix && window.rates) matrix = window.rates;
-              const matrixRate = (matrix && fromEntry && toEntry)
+              const rawMatrixRate = (matrix && fromEntry && toEntry)
                 ? matrix[toEntry[1].currency_id] && matrix[toEntry[1].currency_id][fromEntry[1].currency_id]
                 : null;
+              const matrixRate = rawMatrixRate === null || rawMatrixRate === undefined || rawMatrixRate === ''
+                ? null : Number(rawMatrixRate);
               const rateText = (document.querySelector('#current_rate')?.innerText || '').trim().slice(0,180);
               return {
                 available_currency_codes:codes,
@@ -375,7 +377,7 @@ def main() -> int:
             })()""",
             "awaitPromise": True,
             "returnByValue": True
-        }).get("result", {}).get("result", {}).get("value", {})
+        }).get("result", {}).get("value", {})
         print("SBERKASSA_EXCHANGE_UI_SELECTION=" + json.dumps(selection, ensure_ascii=False), flush=True)
 
         samples = []
