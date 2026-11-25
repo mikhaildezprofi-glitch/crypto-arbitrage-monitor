@@ -192,7 +192,7 @@ PR #10 remains Draft and unmerged. The Money Storage and BlackBit live validatio
 
 ## Current verified status after Sberkassa live run (2026-11-25)
 
-- Current integration branch head: `cc6969e088b2c73fb0d8cd710f36974f054a26d0`. PR #10 remains Draft and unmerged.
+- Live-validation code commit: `cc6969e088b2c73fb0d8cd710f36974f054a26d0`. PR #10 remains Draft and unmerged.
 - Sberkassa ERUB -> RUB was live-validated by Actions run [45697596726](https://github.com/mikhaildezprofi-glitch/crypto-arbitrage-monitor/actions/runs/45697596726).
 - The encrypted shared Chromium profile was restored, the existing authenticated Sberkassa session was reused, and the updated profile was encrypted and saved back to GitHub Actions Cache.
 - The collector opened only `/deals#tab-3`. It set the read-only page filter to `currency_from=ERUB` and `currency_to=RUB` before page scripts initialized, disabled browser cache, and blocked `/exchange` plus any public-deals request with another direction.
