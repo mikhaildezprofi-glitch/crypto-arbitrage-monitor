@@ -438,6 +438,7 @@ def main() -> int:
         cdp.command("Page.enable")
         cdp.command("Runtime.enable")
         cdp.command("Network.enable")
+        cdp.command("Network.setCacheDisabled", {"cacheDisabled": True})
         cdp.command(
             "Fetch.enable",
             {"patterns": [{"urlPattern": "https://sberkassa.site/*", "requestStage": "Request"}]},
