@@ -30,6 +30,7 @@ class SberkassaExchangeProbeTests(unittest.TestCase):
         self.assertIn("path: sberkassa-exchange-inspection.json", workflow)
         self.assertIn("SBERKASSA_EXCHANGE_INSPECTION_COMPLETE", workflow)
         self.assertIn("SBERKASSA_EXCHANGE_AUTH_TIMEOUT", workflow)
+        self.assertIn("inputs.target != ''", workflow)
         self.assertIn('BRIDGE_SCRIPT="scripts/sberkassa_chromium_probe.py"', workflow)
 
 
