@@ -120,6 +120,9 @@ class BlackBitProviderTests(unittest.TestCase):
         self.assertEqual(quote.rate, Decimal("0.52901"))
         self.assertTrue(quote.indicative_only)
         self.assertEqual(mocked.call_count, 2)
+        for call in mocked.call_args_list:
+            self.assertEqual(call.args[0].get_header("Cache-control"), "no-cache")
+            self.assertEqual(call.args[0].get_header("Pragma"), "no-cache")
         self.assertTrue(mocked.call_args_list[0].args[0].full_url.endswith("/currency_pairs"))
         self.assertIn("currency_pair=6", mocked.call_args_list[1].args[0].full_url)
         self.assertIn("depth=100", mocked.call_args_list[1].args[0].full_url)
