@@ -85,8 +85,14 @@ class SnapshotProviderTests(unittest.TestCase):
                         "status": 200,
                     },
                     "offer_records": [
-                        {"back_rate": "25.0", "create_time": created},
-                        {"back_rate": "27.0", "create_time": (NOW - timedelta(hours=2)).isoformat()},
+                        *[
+                            {"back_rate": "25.0", "create_time": created}
+                            for _ in range(10)
+                        ],
+                        *[
+                            {"back_rate": "27.0", "create_time": (NOW - timedelta(hours=2)).isoformat()}
+                            for _ in range(10)
+                        ],
                     ],
                 }
             },
@@ -116,9 +122,6 @@ class SnapshotProviderTests(unittest.TestCase):
 
     def test_sberkassa_snapshot_rejects_stale_offers(self):
         payload = self.sber_snapshot(created_at=NOW - timedelta(minutes=16))
-        payload["pages"]["deals_everyone_offers"]["offer_records"][1]["create_time"] = (
-            NOW - timedelta(hours=2)
-        ).isoformat()
         with tempfile.TemporaryDirectory() as directory:
             path = self.write_json(directory, "sber.json", payload)
             with self.assertRaisesRegex(RuntimeError, "no_offer_created_within_15_minutes"):
