@@ -426,8 +426,40 @@ def main() -> int:
             const el = document.getElementById(id);
             known[id] = el ? describe(el) : null;
           }
+          const root = document.querySelector('.main-request');
+          const mainRequestTree = root ? Array.from(root.querySelectorAll('*')).slice(0,120).map(el => ({
+            ...describe(el), child_count:el.children.length,
+            type:String(el.getAttribute('type') || '').slice(0,40)
+          })) : [];
+          const forms = Array.from(document.forms).slice(0,20).map(form => ({
+            id:String(form.id || '').slice(0,80),
+            class:String(typeof form.className === 'string' ? form.className : '').slice(0,120),
+            method:String(form.method || '').toUpperCase(),
+            action:(() => { try { return new URL(form.action, location.href).pathname; } catch (_) { return ''; } })(),
+            controls:Array.from(form.querySelectorAll('input,select,button,textarea')).slice(0,60).map(el => ({
+              tag:el.tagName.toLowerCase(),type:String(el.type || '').slice(0,40),
+              id:String(el.id || '').slice(0,80),name:String(el.name || '').slice(0,80),
+              role:String(el.getAttribute('role') || '').slice(0,40),
+              visible:visible(el),disabled:!!el.disabled,
+              text:safeText(el),placeholder:/currency|rate|amount|from|to/i.test(
+                [el.id,el.name,el.placeholder].join(' ')) ? safeText({innerText:el.placeholder}) : ''
+            }))
+          }));
+          const scripts = Array.from(document.scripts).map(el => {
+            try { return new URL(el.src, location.href).pathname; } catch (_) { return ''; }
+          }).filter(Boolean).slice(0,60);
+          const iframes = Array.from(document.querySelectorAll('iframe')).slice(0,20).map(el => {
+            let path = '';
+            try { path = new URL(el.src, location.href).pathname; } catch (_) {}
+            return {id:String(el.id || '').slice(0,80),class:String(el.className || '').slice(0,100),
+              title:String(el.title || '').slice(0,80),path,visible:visible(el)};
+          });
+          const textMarkers = Array.from((document.body?.innerText || '').matchAll(
+            /валют|курс|обмен|купить|продать|сумм|получ|отправ|войти|авторизац|exchange|rate|currency|amount|select|choose|continue|\\bRUB\\b|\\bUSDT\\b|\\bUSD\\b|\\bERUB\\b/gi
+          )).map(match => match[0].slice(0,40)).slice(0,80);
           return {url:location.href,title:document.title,readyState:document.readyState,
-            known_ids:known,selects,candidates};
+            known_ids:known,selects,candidates,main_request_tree:mainRequestTree,
+            forms,scripts,iframes,text_markers:textMarkers};
         })()"""
 
         def save_dom_diagnostic(reason: str) -> dict:
