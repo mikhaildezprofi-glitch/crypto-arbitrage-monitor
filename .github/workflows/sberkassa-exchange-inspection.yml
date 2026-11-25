@@ -11,6 +11,7 @@ on:
 permissions:
   contents: read
 
+# The called workflow receives an explicit target, independent of the caller's push event.
 jobs:
   inspect-exchange-page:
     uses: ./.github/workflows/browserless-eid-handoff-stable.yml
