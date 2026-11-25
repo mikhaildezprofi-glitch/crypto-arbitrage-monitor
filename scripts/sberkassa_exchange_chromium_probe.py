@@ -310,62 +310,106 @@ def main() -> int:
         Path("money-storage-profile-ready.txt").write_text("profile_ready\n", encoding="utf-8")
         print("SBERKASSA_EXCHANGE_SESSION=AUTHENTICATED", flush=True)
 
-        # Wait for the user to select RUB -> USDT in the visible remote browser.
-        # Do not click or change any page controls automatically.
+        # Automatically select RUB -> USDT using only the two currency dropdowns.
+        # The probe never enters an amount and never activates exchange/submit controls.
+        selection_expression = """(() => {
+          const codeFromLabel = value => {
+            const text = String(value || '').toUpperCase();
+            if (/\\bUSDT\\b|TETHER|ТЕЗЕР/.test(text)) return 'USDT';
+            if (/\\bERUB\\b|E-RUBLE|Е-РУБЛ/.test(text)) return 'ERUB';
+            if (/\\bRUB\\b|\\bRUR\\b|РОССИЙСКИЙ\\s+РУБЛЬ|РУБЛЬ|₽/.test(text)) return 'RUB';
+            if (/\\bUSD\\b/.test(text)) return 'USD';
+            return '';
+          };
+          const selectedLabel = dir => {
+            const label = document.querySelector('#currency_' + dir + 'SelectBoxItText');
+            const select = document.querySelector('#currency_' + dir);
+            return (label && (label.innerText || label.textContent))
+              || (select && select.selectedOptions && select.selectedOptions[0] && select.selectedOptions[0].textContent)
+              || '';
+          };
+          const visible = el => !!(el && el.getClientRects().length
+            && getComputedStyle(el).visibility !== 'hidden'
+            && getComputedStyle(el).display !== 'none');
+          const chooseByClick = (dir, wantedCode) => {
+            if (codeFromLabel(selectedLabel(dir)) === wantedCode) {
+              return {selected:true, action:'already_selected'};
+            }
+            const optionsRoot = document.querySelector('#currency_' + dir + 'SelectBoxItOptions');
+            const optionNodes = optionsRoot
+              ? Array.from(optionsRoot.querySelectorAll('li,a,[role="option"]'))
+              : [];
+            const option = optionNodes.find(el => codeFromLabel(el.innerText || el.textContent) === wantedCode);
+            if (option && visible(option)) {
+              option.click();
+              return {selected:false, action:'clicked_option'};
+            }
+            const trigger = document.querySelector('#currency_' + dir + 'SelectBoxIt');
+            if (trigger && visible(trigger)) {
+              trigger.click();
+              return {selected:false, action:'opened_dropdown'};
+            }
+            const nativeSelect = document.querySelector('#currency_' + dir);
+            if (nativeSelect && nativeSelect.options && nativeSelect.options.length) {
+              const nativeOption = Array.from(nativeSelect.options)
+                .find(el => codeFromLabel(el.textContent || el.label || el.value) === wantedCode);
+              if (nativeOption) {
+                nativeSelect.value = nativeOption.value;
+                nativeSelect.dispatchEvent(new Event('input', {bubbles:true}));
+                nativeSelect.dispatchEvent(new Event('change', {bubbles:true}));
+                return {selected:false, action:'selected_native_option'};
+              }
+            }
+            return {selected:false, action:'dropdown_control_missing'};
+          };
+          const fromAction = chooseByClick('from', 'RUB');
+          const toAction = chooseByClick('to', 'USDT');
+          const fromLabel = String(selectedLabel('from') || '').trim().slice(0,120);
+          const toLabel = String(selectedLabel('to') || '').trim().slice(0,120);
+          return {
+            url:location.href,
+            selected_pair:{from:codeFromLabel(fromLabel),to:codeFromLabel(toLabel)},
+            selected_labels:{from:fromLabel,to:toLabel},
+            displayed_rate_text:String((document.querySelector('#current_rate')?.innerText || '').trim()).slice(0,180),
+            selection_actions:{from:fromAction,to:toAction}
+          };
+        })()""";
+
         selection = {
-            "manual_selection_required": True,
+            "manual_selection_required": False,
+            "selection_method": "automatic_currency_dropdown_selection",
             "selected_pair": {},
+            "selected_labels": {},
             "displayed_rate_text": "",
             "selection_confirmed": False,
             "sell_amount_entered": False,
             "exchange_submit_clicked": False,
         }
-        print("SBERKASSA_EXCHANGE_MANUAL_SELECTION_REQUIRED=YES", flush=True)
-        print("SBERKASSA_EXCHANGE_WAITING_FOR_RUB_USDT=YES", flush=True)
-
-        selection_deadline = time.monotonic() + 1200
+        samples = []
+        print("SBERKASSA_EXCHANGE_AUTOMATIC_SELECTION=STARTED", flush=True)
+        selection_deadline = time.monotonic() + 300
         while time.monotonic() < selection_deadline:
             state = probe.command("Runtime.evaluate", {
-                "expression": """(() => {
-                  const code = dir => {
-                    const label = document.querySelector('#currency_' + dir + 'SelectBoxItText');
-                    const select = document.querySelector('#currency_' + dir);
-                    const value = (label && (label.innerText || label.textContent))
-                      || (select && select.selectedOptions && select.selectedOptions[0] && select.selectedOptions[0].textContent)
-                      || '';
-                    const text = String(value).toUpperCase();
-                    if (/\\bUSDT\\b|TETHER|ТЕЗЕР/.test(text)) return 'USDT';
-                    if (/\\bERUB\\b|E-RUBLE|Е-РУБЛ/.test(text)) return 'ERUB';
-                    if (/\\bRUB\\b|\\bRUR\\b|РОССИЙСКИЙ\\s+РУБЛЬ|РУБЛЬ|₽/.test(text)) return 'RUB';
-                    if (/\\bUSD\\b/.test(text)) return 'USD';
-                    return '';
-                  };
-                  const label = dir => {
-                    const el = document.querySelector('#currency_' + dir + 'SelectBoxItText');
-                    return String((el && (el.innerText || el.textContent)) || '').trim().slice(0,120);
-                  };
-                  return {
-                    url: location.href,
-                    selected_pair: {from: code('from'), to: code('to')},
-                    selected_labels: {from: label('from'), to: label('to')},
-                    displayed_rate_text: String((document.querySelector('#current_rate')?.innerText || '').trim()).slice(0,180)
-                  };
-                })()""",
+                "expression": selection_expression,
                 "returnByValue": True,
             }).get("result", {}).get("value", {})
             if urlparse(state.get("url", "")).path.rstrip("/") == "/exchange":
+                probe.current_path = "/exchange"
+                probe.drain_bodies()
                 pair = state.get("selected_pair", {})
-                if pair.get("from") == "RUB" and pair.get("to") == "USDT":
-                    selection = {
-                        "manual_selection_required": True,
+                rate_text = str(state.get("displayed_rate_text", "")).strip()
+                if pair.get("from") == "RUB" and pair.get("to") == "USDT" and rate_text:
+                    observed_at = datetime.now(timezone.utc).isoformat()
+                    selection.update({
                         "selected_pair": pair,
                         "selected_labels": state.get("selected_labels", {}),
-                        "displayed_rate_text": state.get("displayed_rate_text", ""),
+                        "displayed_rate_text": rate_text,
                         "selection_confirmed": True,
-                        "sell_amount_entered": False,
-                        "exchange_submit_clicked": False,
-                    }
-                    print("SBERKASSA_EXCHANGE_MANUAL_PAIR_CONFIRMED=RUB_USDT", flush=True)
+                        "observed_at_utc": observed_at,
+                        "selection_actions": state.get("selection_actions", {}),
+                    })
+                    samples.append({"observed_at_utc": observed_at, "dom": state})
+                    print("SBERKASSA_EXCHANGE_AUTOMATIC_PAIR_CONFIRMED=RUB_USDT", flush=True)
                     break
             time.sleep(2)
 
@@ -374,84 +418,7 @@ def main() -> int:
             print("SBERKASSA_EXCHANGE_SELECTION_TIMEOUT=YES", flush=True)
             return 1
         print("SBERKASSA_EXCHANGE_UI_SELECTION=" + json.dumps(selection, ensure_ascii=False), flush=True)
-
-        samples = []
-        last_signature = None
-        last_capture = 0.0
-        capture_deadline = time.monotonic() + 300
-        while time.monotonic() < capture_deadline:
-            state = probe.command("Runtime.evaluate", {
-                "expression": """(() => {
-                  const clean = v => String(v || '').trim().replace(/\\s+/g,' ').slice(0,180);
-                  const currencyLabel = v => Array.from(String(v || '').matchAll(/(Российский рубль|E-Ruble|ERUB|USDT|RUB|RUR|USD|Tether|Тезер|рубль|₽)/gi)).map(x=>x[0]).slice(0,8).join(' ');
-                  const codeFromLabel = v => {
-                    const text = String(v || '').toUpperCase();
-                    if (/\\bUSDT\\b|TETHER|ТЕЗЕР/.test(text)) return 'USDT';
-                    if (/\\bERUB\\b|E-RUBLE/.test(text)) return 'ERUB';
-                    if (/\\bRUB\\b|\\bRUR\\b|РОССИЙСКИЙ РУБЛЬ|РУБЛЬ|₽/.test(text)) return 'RUB';
-                    if (/\\bUSD\\b/.test(text)) return 'USD';
-                    return '';
-                  };
-                  const selectedLabel = dir => {
-                    const label = document.querySelector('#currency_' + dir + 'SelectBoxItText');
-                    const select = document.querySelector('#currency_' + dir);
-                    return (label && (label.innerText || label.textContent))
-                      || (select && select.selectedOptions && select.selectedOptions[0] && select.selectedOptions[0].textContent)
-                      || '';
-                  };
-                  const visible = el => !!(el && el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden' && getComputedStyle(el).display !== 'none');
-                  const body = document.body ? document.body.innerText : '';
-                  const selects = Array.from(document.querySelectorAll('select')).slice(0,20).map(el => ({
-                    visible: visible(el),
-                    label: clean(el.labels && Array.from(el.labels).map(x=>x.innerText).join(' ')),
-                    name: clean(el.name), id: clean(el.id), class_name: clean(el.className),
-                    selected: currencyLabel(el.selectedOptions && el.selectedOptions[0] && el.selectedOptions[0].textContent),
-                    options: Array.from(el.options || []).map(opt => currencyLabel(opt.textContent))
-                      .filter(Boolean).slice(0,30),
-                    value: /^(RUB|RUR|USDT|USD|ERUB)$/i.test(clean(el.value)) ? clean(el.value) : ''
-                  }));
-                  const inputs = Array.from(document.querySelectorAll('input')).slice(0,40).map(el => ({
-                    visible: visible(el), type: clean(el.type), name: clean(el.name), id: clean(el.id),
-                    placeholder: clean(el.placeholder), value: clean(el.value)
-                  })).filter(x => /rate|курс|currency|price/i.test([x.name,x.id,x.placeholder].join(' ')))
-                    .filter(x => /^(?:[-+]?\\d+(?:[.,]\\d+)?|RUB|RUR|USDT|USD)$/i.test(x.value));
-                  const customControls = Array.from(document.querySelectorAll('[class*="currency"],[id*="currency"],[class*="rate"],[id*="rate"],[class*="convert"],[id*="convert"],[class*="exchange"],[id*="exchange"],[data-currency],[data-rate]'))
-                    .slice(0,100).map(el => ({
-                      visible: visible(el), tag: clean(el.tagName), id: clean(el.id), class_name: clean(typeof el.className === 'string' ? el.className : ''),
-                      role: clean(el.getAttribute('role')), aria_label: currencyLabel(el.getAttribute('aria-label')),
-                      text: currencyLabel(el.innerText || el.textContent),
-                      data: Array.from(el.attributes || []).filter(a => /^(data-currency|aria-label)$/i.test(a.name) && /^(RUB|RUR|USDT|USD|ERUB|E-Ruble|₽|рубль)$/i.test(clean(a.value)))
-                        .map(a => ({name: a.name, value: clean(a.value)}))
-                    })).filter(x => x.text || x.aria_label || x.data.length);
-                  const dropdownOptions = Array.from(document.querySelectorAll('[id*="SelectBoxItOptions"] li,[class*="selectboxit-option"],select option'))
-                    .map(el => currencyLabel(el.textContent)).filter(Boolean).slice(0,80);
-                  const lines = body.split(/\\n/).map(x=>x.trim()).filter(x=>x && x.length<=180 && /(RUB|RUR|USDT|руб|₽|курс|rate|обмен|обновл|updated|refresh|last update)/i.test(x)).slice(0,60);
-                  const timeLines = body.split(/\\n/).map(x=>x.trim()).filter(x=>x && /(обновл|updated|refresh|последн.*курс|last update)/i.test(x)).slice(0,15);
-                  return {
-                    url:location.href,title:document.title,lines,time_lines:timeLines,selects,inputs,
-                    custom_controls:customControls,dropdown_options:dropdownOptions,
-                    selected_pair:{from:codeFromLabel(selectedLabel('from')),to:codeFromLabel(selectedLabel('to'))},
-                    selected_labels:{from:String(selectedLabel('from') || '').trim().slice(0,120),to:String(selectedLabel('to') || '').trim().slice(0,120)},
-                    displayed_rate_text:String((document.querySelector('#current_rate')?.innerText || '').trim()).slice(0,180)
-                  };
-                })()""",
-                "returnByValue": True,
-            }).get("result", {}).get("value", {})
-            if urlparse(state.get("url", "")).path.rstrip("/") == "/exchange":
-                probe.current_path = "/exchange"
-                probe.drain_bodies()
-                signature = json.dumps(state, sort_keys=True, ensure_ascii=False)
-                if signature != last_signature:
-                    samples.append({"observed_at_utc": datetime.now(timezone.utc).isoformat(),
-                                    "dom": state})
-                    samples = samples[-12:]
-                    last_signature = signature
-                    print("SBERKASSA_EXCHANGE_DOM_SAMPLE=UPDATED", flush=True)
-                if time.monotonic() - last_capture >= 15:
-                    last_capture = time.monotonic()
-                    print("SBERKASSA_EXCHANGE_PROGRESS samples=%s responses=%s" %
-                          (len(samples), len(probe.responses)), flush=True)
-            time.sleep(3)
+        print("SBERKASSA_EXCHANGE_RESULT_RECEIVED=YES", flush=True)
 
         artifact = {
             "schema_version": 1,
@@ -471,7 +438,7 @@ def main() -> int:
             "responses": probe.responses,
             "blocked_non_get_request_count": len(probe.blocked_methods),
             "limitations": [
-                "The user manually selected RUB -> USDT in the visible browser; the probe did not enter amounts or click the exchange submit button",
+                "The probe automatically selected RUB -> USDT using only the currency dropdowns; it did not enter amounts or click exchange/submit controls",
                 "The final selected pair and displayed rate are read from the latest captured DOM snapshot, independently of click-attempt status",
                 "All non-GET requests to sberkassa.site were blocked",
                 "Only allowlisted numeric quote/time/currency fields and visible form state are retained",
