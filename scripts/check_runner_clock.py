@@ -15,7 +15,6 @@ from urllib.request import Request, urlopen
 SOURCES = (
     "https://www.google.com/generate_204",
     "https://www.apple.com/",
-    "https://api.github.com/",
     "https://www.cloudflare.com/",
     "https://www.microsoft.com/",
 )
