@@ -309,109 +309,69 @@ def main() -> int:
         Path("money-storage-profile-ready.txt").write_text("profile_ready\n", encoding="utf-8")
         print("SBERKASSA_EXCHANGE_SESSION=AUTHENTICATED", flush=True)
 
-        # The user authorized only the two currency dropdowns. These real UI
-        # clicks select RUB -> USDT; the exchange submit button is never clicked.
-        # convert.js calculates locally from the page's preloaded rates matrix.
-        selection = probe.command("Runtime.evaluate", {
-            "expression": """(async () => {
-              const store = (window.walletsStore && window.walletsStore.getWallets)
-                ? window.walletsStore.getWallets() : {};
-              const entries = Object.entries(store);
-              const codes = [...new Set(entries.map(([,w]) => String(w.currency_code || '').toUpperCase()).filter(Boolean))].sort();
-              const currencyLabel = value => String(value || '').match(/RUB|RUR|USDT|ERUB|USD|E-Ruble|Российский рубль|рубль/ig) || [];
-              const menuLabels = dir => {
-                const menu = document.querySelector('#currency_' + dir + 'SelectBoxItOptions');
-                return menu ? [...menu.querySelectorAll('li')].map(li => currencyLabel(li.innerText || li.textContent).join(' ')).filter(Boolean).slice(0,40) : [];
-              };
-              const codeFromLabel = value => {
-                const text = String(value || '').toUpperCase();
-                // Match full UI labels before generic currency codes:
-                // "Tether USD" is USDT, not USD; "Российский рубль" is RUB.
-                if (/USDT|TETHER(?:\\s+USD)?|ТЕЗЕР/.test(text)) return 'USDT';
-                if (/ERUB|E[- ]?RUBLE|Е-РУБЛ/.test(text)) return 'ERUB';
-                if (/RUB|RUR|РОССИЙСКИЙ\\s+РУБЛЬ|РУБЛЬ|₽/.test(text)) return 'RUB';
-                if (/USD/.test(text)) return 'USD';
-                return '';
-              };
-              const chooseByClick = async (dir, code) => {
-                const select = document.querySelector('#currency_' + dir);
-                const button = document.querySelector('#currency_' + dir + 'SelectBoxIt')
-                  || document.querySelector('#currency_' + dir + 'SelectBoxItText');
-                if (!select || !button) return {code, clicked:false, reason:'dropdown_control_missing'};
-                const nativeOption = [...(select.options || [])].find(opt =>
-                  codeFromLabel(opt.textContent) === code
-                  || (entries.some(([id,w]) => String(id) === String(opt.value)
-                      && String(w.currency_code || '').toUpperCase() === code))
-                );
-                if (!nativeOption) return {code, clicked:false, reason:'currency_option_missing',
-                  available_labels:[...(select.options || [])].map(opt => String(opt.textContent || '').trim()).slice(0,30)};
-                button.click();
-                await new Promise(resolve => setTimeout(resolve, 300));
-                const menu = document.querySelector('#currency_' + dir + 'SelectBoxItOptions')
-                  || document.querySelector('[id*="currency_' + dir + '"][id*="Options"]');
-                if (!menu) return {code, clicked:false, reason:'dropdown_menu_missing'};
-                const option = [...menu.querySelectorAll('li')].find(li => {
-                  const anchor = li.querySelector('a');
-                  const value = li.getAttribute('data-val') || li.getAttribute('data-id')
-                    || (anchor && (anchor.getAttribute('data-val') || anchor.getAttribute('data-id')));
-                  const label = (li.innerText || li.textContent || '') + ' '
-                    + (anchor ? anchor.getAttribute('title') || '' : '');
-                  return String(value || '') === String(nativeOption.value)
-                    || codeFromLabel(label) === code;
-                });
-                if (!option) return {code, clicked:false, reason:'matching_dropdown_option_missing',
-                  available_labels:[...menu.querySelectorAll('li')].map(li => String(li.innerText || li.textContent || '').trim()).slice(0,40)};
-                (option.querySelector('a') || option).click();
-                await new Promise(resolve => setTimeout(resolve, 650));
-                const selectedLabel = document.querySelector('#currency_' + dir + 'SelectBoxItText');
-                const selectedCode = codeFromLabel(
-                  (selectedLabel && (selectedLabel.innerText || selectedLabel.textContent)) ||
-                  (select.selectedOptions && select.selectedOptions[0] && select.selectedOptions[0].textContent)
-                ) || codeFromLabel(select.value);
-                return {code, clicked:true, selected_code:selectedCode,
-                  selection_confirmed:selectedCode === code};
-              };
-              const from = await chooseByClick('from', 'RUB');
-              const to = await chooseByClick('to', 'USDT');
-              const selectedCode = dir => {
-                const select = document.querySelector('#currency_' + dir);
-                const label = document.querySelector('#currency_' + dir + 'SelectBoxItText');
-                return codeFromLabel((label && (label.innerText || label.textContent))
-                  || (select && select.selectedOptions && select.selectedOptions[0] && select.selectedOptions[0].textContent)
-                  || (select && select.value));
-              };
-              const fromEntry = entries.find(([,w]) => String(w.currency_code || '').toUpperCase() === 'RUB');
-              const toEntry = entries.find(([,w]) => String(w.currency_code || '').toUpperCase() === 'USDT');
-              let matrix = null;
-              try { if (typeof rates !== 'undefined') matrix = rates; } catch (_) {}
-              if (!matrix && window.rates) matrix = window.rates;
-              const fromSelect = document.querySelector('#currency_from');
-              const toSelect = document.querySelector('#currency_to');
-              const actualFromId = fromSelect ? fromSelect.value : '';
-              const actualToId = toSelect ? toSelect.value : '';
-              const actualFromEntry = entries.find(([id]) => String(id) === String(actualFromId));
-              const actualToEntry = entries.find(([id]) => String(id) === String(actualToId));
-              const rawMatrixRate = (matrix && actualFromEntry && actualToEntry)
-                ? matrix[actualToEntry[1].currency_id] && matrix[actualToEntry[1].currency_id][actualFromEntry[1].currency_id]
-                : null;
-              const matrixRate = rawMatrixRate === null || rawMatrixRate === undefined || rawMatrixRate === ''
-                ? null : Number(rawMatrixRate);
-              const rateText = (document.querySelector('#current_rate')?.innerText || '').trim().slice(0,180);
-              return {
-                available_currency_codes:codes,
-                from_selection:from,
-                to_selection:to,
-                selected_pair: {from:selectedCode('from'), to:selectedCode('to')},
-                rate_matrix_available:!!matrix,
-                matrix_pair_value:typeof matrixRate === 'number' && Number.isFinite(matrixRate) ? matrixRate : null,
-                displayed_rate_text:rateText,
-                sell_amount_entered:false,
-                exchange_submit_clicked:false
-              };
-            })()""",
-            "awaitPromise": True,
-            "returnByValue": True
-        }).get("result", {}).get("value", {})
+        # Wait for the user to select RUB -> USDT in the visible remote browser.
+        # Do not click or change any page controls automatically.
+        selection = {
+            "manual_selection_required": True,
+            "selected_pair": {},
+            "displayed_rate_text": "",
+            "selection_confirmed": False,
+            "sell_amount_entered": False,
+            "exchange_submit_clicked": False,
+        }
+        print("SBERKASSA_EXCHANGE_MANUAL_SELECTION_REQUIRED=YES", flush=True)
+        print("SBERKASSA_EXCHANGE_WAITING_FOR_RUB_USDT=YES", flush=True)
+
+        selection_deadline = time.monotonic() + 1200
+        while time.monotonic() < selection_deadline:
+            state = probe.command("Runtime.evaluate", {
+                "expression": """(() => {
+                  const code = dir => {
+                    const label = document.querySelector('#currency_' + dir + 'SelectBoxItText');
+                    const select = document.querySelector('#currency_' + dir);
+                    const value = (label && (label.innerText || label.textContent))
+                      || (select && select.selectedOptions && select.selectedOptions[0] && select.selectedOptions[0].textContent)
+                      || '';
+                    const text = String(value).toUpperCase();
+                    if (/\\bUSDT\\b|TETHER|ТЕЗЕР/.test(text)) return 'USDT';
+                    if (/\\bERUB\\b|E-RUBLE|Е-РУБЛ/.test(text)) return 'ERUB';
+                    if (/\\bRUB\\b|\\bRUR\\b|РОССИЙСКИЙ\\s+РУБЛЬ|РУБЛЬ|₽/.test(text)) return 'RUB';
+                    if (/\\bUSD\\b/.test(text)) return 'USD';
+                    return '';
+                  };
+                  const label = dir => {
+                    const el = document.querySelector('#currency_' + dir + 'SelectBoxItText');
+                    return String((el && (el.innerText || el.textContent)) || '').trim().slice(0,120);
+                  };
+                  return {
+                    url: location.href,
+                    selected_pair: {from: code('from'), to: code('to')},
+                    selected_labels: {from: label('from'), to: label('to')},
+                    displayed_rate_text: String((document.querySelector('#current_rate')?.innerText || '').trim()).slice(0,180)
+                  };
+                })()""",
+                "returnByValue": True,
+            }).get("result", {}).get("value", {})
+            if urlparse(state.get("url", "")).path.rstrip("/") == "/exchange":
+                pair = state.get("selected_pair", {})
+                if pair.get("from") == "RUB" and pair.get("to") == "USDT":
+                    selection = {
+                        "manual_selection_required": True,
+                        "selected_pair": pair,
+                        "selected_labels": state.get("selected_labels", {}),
+                        "displayed_rate_text": state.get("displayed_rate_text", ""),
+                        "selection_confirmed": True,
+                        "sell_amount_entered": False,
+                        "exchange_submit_clicked": False,
+                    }
+                    print("SBERKASSA_EXCHANGE_MANUAL_PAIR_CONFIRMED=RUB_USDT", flush=True)
+                    break
+            time.sleep(2)
+
+        if selection.get("selection_confirmed") is not True:
+            STATUS_FILE.write_text("SBERKASSA_EXCHANGE_SELECTION_TIMEOUT", encoding="utf-8")
+            print("SBERKASSA_EXCHANGE_SELECTION_TIMEOUT=YES", flush=True)
+            return 1
         print("SBERKASSA_EXCHANGE_UI_SELECTION=" + json.dumps(selection, ensure_ascii=False), flush=True)
 
         samples = []
