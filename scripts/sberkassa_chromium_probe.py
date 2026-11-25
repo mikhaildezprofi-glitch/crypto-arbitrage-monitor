@@ -814,7 +814,7 @@ def main() -> int:
                     },
                     "limitations": [
                         "The restored authenticated profile is tested first; manual E-ID is needed only when the session is no longer valid",
-                    "Only the user-specified /deals#tab-3 page is opened; /exchange is never visited",
+                        "Only the user-specified /deals#tab-3 page is opened; /exchange is never visited",
                         "Search includes JSON XHR/fetch responses, WebSocket/EventSource JSON frames, embedded JSON state, selected window state stores, DOM data attributes, numeric rate inputs, script paths, resource timing, and response cache metadata",
                         "Only whitelisted numeric quote/time fields and currency/direction identifiers are retained; no raw stream frames, raw response bodies, or arbitrary page state is published",
                         "No exchange rate is inferred from an unverified field",
@@ -829,11 +829,10 @@ def main() -> int:
                 with open(Path(__import__("os").environ["GITHUB_STEP_SUMMARY"]), "a", encoding="utf-8") as summary:
                     summary.write("\n## Sberkassa read-only page inspection\n")
                     summary.write("- The restored session was reused, or the user completed E-ID manually when required.\n")
-                    summary.write("- Both quote pages were visited using read-only navigation in the same Chromium profile.\n")
+                    summary.write("- Only https://sberkassa.site/deals#tab-3 was inspected in the shared Chromium profile.\n")
                     summary.write("- Captured sanitized currency/direction identifiers, quote-related fields, and page update-marker lines separately for each page.\n")
                     summary.write("- No raw response body, cookies, session tokens, authorization headers, or offer amounts were published.\n")
                     summary.write(f"- Deals page update timestamp: {page_timestamps.get('deals_everyone_offers') or 'not found'}\n")
-                    summary.write(f"- Exchange page update timestamp: {page_timestamps.get('exchange_rub_usdt') or 'not found'}\n")
                     summary.write("- Offer creation timestamps are not used as page freshness.\n")
                     summary.write("- A visible timestamp still needs to be correlated with a successful refresh before enabling polling.\n")
                 STATUS_FILE.write_text("SBERKASSA_CAPTURE_COMPLETE", encoding="utf-8")
