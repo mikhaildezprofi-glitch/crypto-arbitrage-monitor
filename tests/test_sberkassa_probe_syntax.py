@@ -20,7 +20,7 @@ class SberkassaProbeSyntaxTests(unittest.TestCase):
         self.assertIn('"SBERKASSA_ERUB_RUB_OFFERS captured=%s status=%s"', source)
         self.assertIn("sberkassa-current-inspection.json", source)
         self.assertIn("eid_provider_seen", source)
-        # Read-only navigation is used only between the two approved quote pages.
+        # The Sberkassa collector remains on the approved deals tab only.
         self.assertIn('"Runtime.evaluate"', source)
         auth_probe = source.split('auth_state = cdp.command(', 1)[1].split('auth_url = urlparse(auth_state.get("url", ""))', 1)[0]
         self.assertIn('"awaitPromise": True', auth_probe)
@@ -30,12 +30,14 @@ class SberkassaProbeSyntaxTests(unittest.TestCase):
         self.assertIn('"awaitPromise": True', capture_probe)
         self.assertIn('"Page.navigate"', source)
         self.assertIn("SBERKASSA_SESSION=RESTORED_PROFILE_REUSED", source)
-        self.assertIn("SBERKASSA_AUTO_NAVIGATE=exchange", source)
+        self.assertNotIn("SBERKASSA_AUTO_NAVIGATE=exchange", source)
+        self.assertIn("money-storage-profile-ready.txt", source)
+        self.assertIn("CHROMIUM_PROFILE_PERSISTENCE=ELIGIBLE_AFTER_SBERKASSA_AUTH", source)
         self.assertIn("session-authenticated.txt", source)
         self.assertIn('r"(rate|price|updated|timestamp|date|time)"', source)
         self.assertIn("currency_id|from_id|to_id", source)
         self.assertIn('"/exchange": "exchange_rub_usdt"', source)
-        self.assertIn("if seen_deals and seen_exchange", source)
+        self.assertIn("if seen_deals and deals_ready_since is not None", source)
         self.assertIn("quoteLines:", source)
         self.assertIn('"visible_quote_lines"', source)
         self.assertIn("quoteDom:", source)
