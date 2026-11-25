@@ -311,75 +311,146 @@ def main() -> int:
 
         # Automatically select RUB -> USDT using only the two currency dropdowns.
         # The probe never enters an amount and never activates exchange/submit controls.
-        selection_expression = """(() => {
-          const codeFromLabel = value => {
-            const text = String(value || '').toUpperCase();
-            if (/\\bUSDT\\b|TETHER|ТЕЗЕР/.test(text)) return 'USDT';
-            if (/\\bERUB\\b|E-RUBLE|Е-РУБЛ/.test(text)) return 'ERUB';
-            if (/\\bRUB\\b|\\bRUR\\b|РОССИЙСКИЙ\\s+РУБЛЬ|РУБЛЬ|₽/.test(text)) return 'RUB';
-            if (/\\bUSD\\b/.test(text)) return 'USD';
-            return '';
+        # Reuse the proven authenticated /exchange browser session and its
+        # existing DOM quote reader. Replace only the former manual selection
+        # pause with real pointer clicks dispatched through Chromium CDP.
+        def evaluate_page(expression: str) -> dict:
+            result = probe.command("Runtime.evaluate", {
+                "expression": expression,
+                "returnByValue": True,
+            }).get("result", {}).get("value", {})
+            return result if isinstance(result, dict) else {}
+
+        def currency_code(value: object) -> str:
+            text = str(value or "").upper()
+            if re.search(r"\bUSDT\b|TETHER|ТЕЗЕР", text):
+                return "USDT"
+            if re.search(r"\bERUB\b|E-RUBLE|Е-РУБЛ", text):
+                return "ERUB"
+            if re.search(r"\bRUB\b|\bRUR\b|РОССИЙСКИЙ\s+РУБЛЬ|РУБЛЬ|₽", text):
+                return "RUB"
+            if re.search(r"\bUSD\b", text):
+                return "USD"
+            return ""
+
+        page_state_expression = """(() => {
+          const visible = el => {
+            if (!el) return false;
+            const s = getComputedStyle(el), r = el.getBoundingClientRect();
+            return r.width > 0 && r.height > 0 && s.display !== 'none'
+              && s.visibility !== 'hidden' && Number(s.opacity || 1) > 0;
           };
-          const selectedLabel = dir => {
-            const label = document.querySelector('#currency_' + dir + 'SelectBoxItText');
+          const rect = el => {
+            if (!visible(el)) return null;
+            const r = el.getBoundingClientRect();
+            return {x:r.left + r.width/2, y:r.top + r.height/2,
+              width:r.width, height:r.height, visible:true};
+          };
+          const label = dir => {
+            const text = document.querySelector('#currency_' + dir + 'SelectBoxItText');
             const select = document.querySelector('#currency_' + dir);
-            return (label && (label.innerText || label.textContent))
-              || (select && select.selectedOptions && select.selectedOptions[0] && select.selectedOptions[0].textContent)
-              || '';
+            return String((text && (text.innerText || text.textContent))
+              || (select && select.selectedOptions && select.selectedOptions[0]
+                && select.selectedOptions[0].textContent) || '').trim().slice(0,120);
           };
-          const visible = el => !!(el && el.getClientRects().length
-            && getComputedStyle(el).visibility !== 'hidden'
-            && getComputedStyle(el).display !== 'none');
-          const chooseByClick = (dir, wantedCode) => {
-            if (codeFromLabel(selectedLabel(dir)) === wantedCode) {
-              return {selected:true, action:'already_selected'};
-            }
-            const optionsRoot = document.querySelector('#currency_' + dir + 'SelectBoxItOptions');
-            const optionNodes = optionsRoot
-              ? Array.from(optionsRoot.querySelectorAll('li,a,[role="option"]'))
-              : [];
-            const option = optionNodes.find(el => codeFromLabel(el.innerText || el.textContent) === wantedCode);
-            if (option && visible(option)) {
-              option.click();
-              return {selected:false, action:'clicked_option'};
-            }
-            const trigger = document.querySelector('#currency_' + dir + 'SelectBoxIt');
-            if (trigger && visible(trigger)) {
-              trigger.click();
-              return {selected:false, action:'opened_dropdown'};
-            }
-            const nativeSelect = document.querySelector('#currency_' + dir);
-            if (nativeSelect && nativeSelect.options && nativeSelect.options.length) {
-              const nativeOption = Array.from(nativeSelect.options)
-                .find(el => codeFromLabel(el.textContent || el.label || el.value) === wantedCode);
-              if (nativeOption) {
-                nativeSelect.value = nativeOption.value;
-                nativeSelect.dispatchEvent(new Event('input', {bubbles:true}));
-                nativeSelect.dispatchEvent(new Event('change', {bubbles:true}));
-                return {selected:false, action:'selected_native_option'};
-              }
-            }
-            return {selected:false, action:'dropdown_control_missing'};
+          const options = dir => {
+            const root = document.querySelector('#currency_' + dir + 'SelectBoxItOptions');
+            if (!root) return [];
+            return Array.from(root.querySelectorAll('li')).map(li => {
+              const clickable = li.querySelector('a,[role="option"]') || li;
+              return {text:String(li.innerText || li.textContent || '').trim().slice(0,120),
+                rect:rect(clickable)};
+            }).filter(x => x.text);
           };
-          const fromAction = chooseByClick('from', 'RUB');
-          const fromConfirmed = codeFromLabel(selectedLabel('from')) === 'RUB';
-          const toAction = fromConfirmed
-            ? chooseByClick('to', 'USDT')
-            : {selected:false, action:'waiting_for_from_selection'};
-          const fromLabel = String(selectedLabel('from') || '').trim().slice(0,120);
-          const toLabel = String(selectedLabel('to') || '').trim().slice(0,120);
+          const fromLabel = label('from'), toLabel = label('to');
           return {
             url:location.href,
-            selected_pair:{from:codeFromLabel(fromLabel),to:codeFromLabel(toLabel)},
+            title:document.title,
             selected_labels:{from:fromLabel,to:toLabel},
             displayed_rate_text:String((document.querySelector('#current_rate')?.innerText || '').trim()).slice(0,180),
-            selection_actions:{from:fromAction,to:toAction}
+            triggers:{
+              from:rect(document.querySelector('#currency_fromSelectBoxIt')),
+              to:rect(document.querySelector('#currency_toSelectBoxIt'))
+            },
+            options:{from:options('from'),to:options('to')}
           };
-        })()""";
+        })()"""
+
+        def dispatch_click(rect: dict | None) -> bool:
+            if not isinstance(rect, dict) or rect.get("visible") is not True:
+                return False
+            x, y = float(rect["x"]), float(rect["y"])
+            probe.command("Input.dispatchMouseEvent", {
+                "type": "mouseMoved", "x": x, "y": y,
+            })
+            probe.command("Input.dispatchMouseEvent", {
+                "type": "mousePressed", "x": x, "y": y,
+                "button": "left", "clickCount": 1,
+            })
+            probe.command("Input.dispatchMouseEvent", {
+                "type": "mouseReleased", "x": x, "y": y,
+                "button": "left", "clickCount": 1,
+            })
+            return True
+
+        def select_currency(direction: str, wanted: str, timeout: float = 30) -> dict:
+            deadline = time.monotonic() + timeout
+            last_state: dict = {}
+            clicked_trigger = False
+            clicked_option = False
+            while time.monotonic() < deadline:
+                state = evaluate_page(page_state_expression)
+                last_state = state
+                if urlparse(state.get("url", "")).path.rstrip("/") != "/exchange":
+                    time.sleep(0.25)
+                    continue
+                label = state.get("selected_labels", {}).get(direction, "")
+                if currency_code(label) == wanted:
+                    return {"selected": True, "label": label,
+                            "trigger_clicked": clicked_trigger,
+                            "option_clicked": clicked_option}
+                if not clicked_trigger:
+                    if not dispatch_click(state.get("triggers", {}).get(direction)):
+                        time.sleep(0.5)
+                        continue
+                    clicked_trigger = True
+                    time.sleep(0.25)
+                    continue
+                matching = next((item for item in state.get("options", {}).get(direction, [])
+                                 if currency_code(item.get("text")) == wanted
+                                 and isinstance(item.get("rect"), dict)
+                                 and item["rect"].get("visible") is True), None)
+                if matching:
+                    if not dispatch_click(matching.get("rect")):
+                        time.sleep(0.25)
+                        continue
+                    clicked_option = True
+                    verify_deadline = time.monotonic() + 5
+                    while time.monotonic() < verify_deadline:
+                        verify = evaluate_page(page_state_expression)
+                        label = verify.get("selected_labels", {}).get(direction, "")
+                        if currency_code(label) == wanted:
+                            return {"selected": True, "label": label,
+                                    "trigger_clicked": clicked_trigger,
+                                    "option_clicked": clicked_option}
+                        time.sleep(0.2)
+                    # A failed attempt may have closed the list; reopen it.
+                    clicked_trigger = False
+                else:
+                    # The menu may still be animating or its option list may
+                    # be rendered only after the real pointer event.
+                    time.sleep(0.25)
+            return {"selected": False,
+                    "last_label": last_state.get("selected_labels", {}).get(direction, ""),
+                    "trigger_clicked": clicked_trigger,
+                    "option_clicked": clicked_option,
+                    "available_options": [
+                        x.get("text", "") for x in last_state.get("options", {}).get(direction, [])
+                    ][:40]}
 
         selection = {
             "manual_selection_required": False,
-            "selection_method": "automatic_currency_dropdown_selection",
+            "selection_method": "chromium_cdp_pointer_clicks",
             "selected_pair": {},
             "selected_labels": {},
             "displayed_rate_text": "",
@@ -389,32 +460,43 @@ def main() -> int:
         }
         samples = []
         print("SBERKASSA_EXCHANGE_AUTOMATIC_SELECTION=STARTED", flush=True)
-        selection_deadline = time.monotonic() + 300
-        while time.monotonic() < selection_deadline:
-            state = probe.command("Runtime.evaluate", {
-                "expression": selection_expression,
-                "returnByValue": True,
-            }).get("result", {}).get("value", {})
-            if urlparse(state.get("url", "")).path.rstrip("/") == "/exchange":
-                probe.current_path = "/exchange"
-                # Check the visible quote before optional network diagnostics so
-                # a received RUB -> USDT rate ends the probe immediately.
-                pair = state.get("selected_pair", {})
+
+        from_result = select_currency("from", "RUB")
+        selection["from_selection"] = from_result
+        print("SBERKASSA_EXCHANGE_FROM_SELECTION=" +
+              json.dumps(from_result, ensure_ascii=False), flush=True)
+        if from_result.get("selected") is True:
+            to_result = select_currency("to", "USDT")
+        else:
+            to_result = {"selected": False, "reason": "from_currency_not_selected"}
+        selection["to_selection"] = to_result
+        print("SBERKASSA_EXCHANGE_TO_SELECTION=" +
+              json.dumps(to_result, ensure_ascii=False), flush=True)
+
+        if from_result.get("selected") is True and to_result.get("selected") is True:
+            rate_deadline = time.monotonic() + 20
+            while time.monotonic() < rate_deadline:
+                state = evaluate_page(page_state_expression)
+                labels = state.get("selected_labels", {})
+                pair = {
+                    "from": currency_code(labels.get("from", "")),
+                    "to": currency_code(labels.get("to", "")),
+                }
                 rate_text = str(state.get("displayed_rate_text", "")).strip()
-                if pair.get("from") == "RUB" and pair.get("to") == "USDT" and rate_text:
+                if (urlparse(state.get("url", "")).path.rstrip("/") == "/exchange"
+                        and pair == {"from": "RUB", "to": "USDT"} and rate_text):
                     observed_at = datetime.now(timezone.utc).isoformat()
                     selection.update({
                         "selected_pair": pair,
-                        "selected_labels": state.get("selected_labels", {}),
+                        "selected_labels": labels,
                         "displayed_rate_text": rate_text,
                         "selection_confirmed": True,
                         "observed_at_utc": observed_at,
-                        "selection_actions": state.get("selection_actions", {}),
                     })
                     samples.append({"observed_at_utc": observed_at, "dom": state})
                     print("SBERKASSA_EXCHANGE_AUTOMATIC_PAIR_CONFIRMED=RUB_USDT", flush=True)
                     break
-            time.sleep(2)
+                time.sleep(0.5)
 
         if selection.get("selection_confirmed") is not True:
             STATUS_FILE.write_text("SBERKASSA_EXCHANGE_SELECTION_TIMEOUT", encoding="utf-8")
