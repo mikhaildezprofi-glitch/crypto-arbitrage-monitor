@@ -199,8 +199,10 @@ def main() -> int:
     target = None
     while time.monotonic() < deadline:
         try:
-            target = next((x for x in page_targets()
-                           if "sberkassa.site" in x.get("url", "")), None)
+            targets = page_targets()
+            target = next((x for x in targets
+                           if "sberkassa.site" in x.get("url", "")),
+                          targets[0] if targets else None)
             if target:
                 break
         except Exception:
