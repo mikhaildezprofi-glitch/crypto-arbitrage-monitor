@@ -1,6 +1,6 @@
 # Crypto Arbitrage Monitor
 
-Private, cloud-oriented, read-only monitoring project. It does not place orders, accept offers, deposit, withdraw, transfer, or move funds.
+Public, cloud-oriented, read-only monitoring project. It does not place orders, accept offers, deposit, withdraw, transfer, or move funds.
 
 ## Intended five-step route
 
@@ -39,9 +39,9 @@ Reference starting amount: 1000 USDT. Profit and ROI are calculated only after e
 
 - Use only `/deals#tab-3`, tab «Всем предлагают».
 - The actual page-originated request must establish `from=ERUB&to=RUB`; request metadata can establish direction only when per-row currency IDs are not exposed.
-- Use only `back_rate`; ignore `rate`.
-- Average the first 20 correctly directed offers in source order, or all if fewer. Any missing, non-numeric, non-finite, zero, or negative selected `back_rate`, or an empty list, invalidates the quote.
-- Freshness is independent from rate selection: at least one correctly directed offer must have a valid `create_time` within the preceding 900 seconds. Future or invalid timestamps do not prove freshness. Older offers are not filtered out of the first-20 average.
+- Use only `back_rate` and ignore `rate` completely. The quote is the arithmetic mean of the selected `back_rate` values.
+- Average the first 20 correctly directed offers in source order, regardless of their creation times, or all if fewer. The quote is the arithmetic mean of `back_rate` for those offers. Any missing, non-numeric, non-finite, zero, or negative selected `back_rate`, or an empty list, invalidates the quote.
+- Freshness is independent from rate selection: at least one correctly directed offer must have a valid `create_time` within the 15 minutes before collection (900 seconds). Future or invalid timestamps do not prove freshness. Older offers remain in the first-20 average regardless of their creation times.
 - Ignore fees, amounts, reserves, limits, volumes, liquidity, and partial execution.
 
 ### Sberkassa: RUB -> USDT
@@ -49,7 +49,7 @@ Reference starting amount: 1000 USDT. Profit and ROI are calculated only after e
 - Inspect `/exchange` separately.
 - The actual numeric rate field and an independent successful-refresh freshness signal for this page must be established before this leg can be marked valid.
 - Never reuse the `/deals` timestamp. HTTP Date, Last-Modified, ETag, browser clock, Age, or network timing alone do not prove that the displayed quote was refreshed.
-- Do not infer a rate from an unverified field. The current probe collects sanitized candidate metadata only; this leg is not yet a validated quote provider.
+- If the page presents one published rate, use that single rate. If it presents multiple independent offers, validate their direction and apply the agreed first-20 averaging rule. Do not infer a rate from an unverified field. The current probe collects sanitized candidate metadata only; this leg is not yet a validated quote provider.
 
 ## Collection and safety
 
