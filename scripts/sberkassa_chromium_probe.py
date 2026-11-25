@@ -442,6 +442,20 @@ def main() -> int:
             "Fetch.enable",
             {"patterns": [{"urlPattern": "https://sberkassa.site/*", "requestStage": "Request"}]},
         )
+        # The site's own deals filter is driven by these two documented
+        # localStorage keys. Set the read-only page filter before site scripts
+        # initialize, so the first public-deals request is ERUB -> RUB.
+        cdp.command(
+            "Page.addScriptToEvaluateOnNewDocument",
+            {
+                "source": (
+                    "try { "
+                    "localStorage.setItem('currency_from', 'ERUB'); "
+                    "localStorage.setItem('currency_to', 'RUB'); "
+                    "} catch (_) {}"
+                )
+            },
+        )
         cdp.command("Page.navigate", {"url": "https://sberkassa.site/deals#tab-3"})
         print("SBERKASSA_PROBE_READY=YES", flush=True)
         print("SBERKASSA_SCOPE=DEALS_TAB_ERUB_TO_RUB_ONLY", flush=True)
