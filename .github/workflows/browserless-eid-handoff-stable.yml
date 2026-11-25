@@ -625,6 +625,15 @@ jobs:
           path: sberkassa-exchange-inspection.json
           if-no-files-found: error
           retention-days: 1
+ 
+      - name: Publish Sberkassa exchange DOM diagnostics
+        if: always() && hashFiles('sberkassa-exchange-dom-diagnostic.json') != ''
+        uses: actions/upload-artifact@v5
+        with:
+          name: sberkassa-exchange-dom-diagnostic
+          path: sberkassa-exchange-dom-diagnostic.json
+          if-no-files-found: error
+          retention-days: 1
 
   # After the owner completes the one-time interactive E-ID handoff, verify the
   # encrypted profile in three independent Chromium processes. Each process
