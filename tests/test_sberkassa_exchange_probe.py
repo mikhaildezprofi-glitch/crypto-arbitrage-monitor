@@ -12,6 +12,8 @@ class SberkassaExchangeProbeTests(unittest.TestCase):
         self.assertIn("const chooseByClick = (dir, wantedCode) =>", source)
         self.assertIn("chooseByClick('from', 'RUB')", source)
         self.assertIn("chooseByClick('to', 'USDT')", source)
+        self.assertIn("const fromConfirmed = codeFromLabel(selectedLabel('from')) === 'RUB';", source)
+        self.assertIn("waiting_for_from_selection", source)
         self.assertIn("const codeFromLabel = value =>", source)
         self.assertIn(r"/\\bUSDT\\b|TETHER|ТЕЗЕР/", source)
         self.assertIn(r"/\\bERUB\\b|E-RUBLE|Е-РУБЛ/", source)
