@@ -496,10 +496,11 @@ def main() -> int:
             )
             return 1
 
-        Path(__import__("os").environ["GITHUB_WORKSPACE"], "session-authenticated.txt").write_text(
-            "sberkassa\n", encoding="utf-8"
-        )
+        workspace = Path(os.environ["GITHUB_WORKSPACE"])
+        (workspace / "session-authenticated.txt").write_text("sberkassa\n", encoding="utf-8")
+        (workspace / "money-storage-profile-ready.txt").write_text("profile_ready\n", encoding="utf-8")
         print("SBERKASSA_SESSION_AUTHENTICATED=YES", flush=True)
+        print("CHROMIUM_PROFILE_PERSISTENCE=ELIGIBLE_AFTER_SBERKASSA_AUTH", flush=True)
 
         seen_deals = False
         seen_exchange = False
@@ -771,7 +772,7 @@ def main() -> int:
             cdp.drain_json_bodies()
 
             now = time.monotonic()
-            if is_deals and not exchange_navigation_started:
+            if is_deals:
                 deals_data_ready = (
                     cdp.capture["deals_everyone_offers"]["json_response_count"] > 0
                     and any("курс:" in line.lower() for line in state.get("quoteLines", []))
@@ -781,11 +782,6 @@ def main() -> int:
                         deals_ready_since = now
                     elif now - deals_ready_since >= 4:
                         print("SBERKASSA_DEALS_CAPTURE_READY=YES", flush=True)
-                        print("SBERKASSA_AUTO_NAVIGATE=exchange", flush=True)
-                        cdp.command("Page.navigate", {"url": "https://sberkassa.site/exchange"})
-                        exchange_navigation_started = True
-                        time.sleep(2)
-                        continue
                 else:
                     deals_ready_since = None
 
@@ -797,12 +793,12 @@ def main() -> int:
                     flush=True,
                 )
 
-            if seen_deals and seen_exchange and now - last_target_activity >= 12:
+            if seen_deals and deals_ready_since is not None and now - deals_ready_since >= 12:
                 artifact = {
                     "schema_version": 3,
                     "captured_at_utc": datetime.now(timezone.utc).isoformat(),
                     "source": "sberkassa.site",
-                    "quote_scope": "ERUB->RUB on /deals#tab-3 and RUB->USDT on /exchange",
+                    "quote_scope": "ERUB->RUB offers on /deals#tab-3 only",
                     "read_only": True,
                     "pages": {
                         "deals_everyone_offers": {
@@ -815,21 +811,10 @@ def main() -> int:
                             "source_inventory": page_source_inventory.get("deals_everyone_offers", {}),
                             **cdp.capture["deals_everyone_offers"],
                         },
-                        "exchange_rub_usdt": {
-                            "url_path": "/exchange",
-                            "page_updated_at": page_timestamps.get("exchange_rub_usdt"),
-                            "update_marker_lines": page_markers.get("exchange_rub_usdt", []),
-                            "visible_quote_lines": page_quote_lines.get("exchange_rub_usdt", []),
-                            "visible_quote_dom": page_quote_dom.get("exchange_rub_usdt", {}),
-                            "dom_time_metadata": page_time_metadata.get("exchange_rub_usdt", []),
-                            "source_inventory": page_source_inventory.get("exchange_rub_usdt", {}),
-                            **cdp.capture["exchange_rub_usdt"],
-                        },
                     },
                     "limitations": [
                         "The restored authenticated profile is tested first; manual E-ID is needed only when the session is no longer valid",
-                    "The probe automatically visits /exchange after collecting the deals page using read-only navigation",
-                    "The ERUB/RUB everyone-offers page and RUB/USDT exchange page are captured independently",
+                    "Only the user-specified /deals#tab-3 page is opened; /exchange is never visited",
                         "Search includes JSON XHR/fetch responses, WebSocket/EventSource JSON frames, embedded JSON state, selected window state stores, DOM data attributes, numeric rate inputs, script paths, resource timing, and response cache metadata",
                         "Only whitelisted numeric quote/time fields and currency/direction identifiers are retained; no raw stream frames, raw response bodies, or arbitrary page state is published",
                         "No exchange rate is inferred from an unverified field",
