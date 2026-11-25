@@ -317,15 +317,16 @@ def main() -> int:
             state = probe.command("Runtime.evaluate", {
                 "expression": """(() => {
                   const clean = v => String(v || '').trim().replace(/\\s+/g,' ').slice(0,180);
+                  const currencyLabel = v => Array.from(String(v || '').matchAll(/(Российский рубль|E-Ruble|ERUB|USDT|RUB|RUR|USD|Tether|Тезер|рубль|₽)/gi)).map(x=>x[0]).slice(0,8).join(' ');
                   const visible = el => !!(el && el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden' && getComputedStyle(el).display !== 'none');
                   const body = document.body ? document.body.innerText : '';
                   const selects = Array.from(document.querySelectorAll('select')).slice(0,20).map(el => ({
                     visible: visible(el),
                     label: clean(el.labels && Array.from(el.labels).map(x=>x.innerText).join(' ')),
                     name: clean(el.name), id: clean(el.id), class_name: clean(el.className),
-                    selected: (() => { const v = clean(el.selectedOptions && el.selectedOptions[0] && el.selectedOptions[0].textContent); return /^(RUB|RUR|USDT|USD|ERUB|E-Ruble|₽|рубль|Российский рубль|Tether|Тезер)$/i.test(v) ? v : ''; })(),
-                    options: Array.from(el.options || []).map(opt => clean(opt.textContent))
-                      .filter(v => /^(RUB|RUR|USDT|USD|ERUB|E-Ruble|₽|рубль|Российский рубль|Tether|Тезер)$/i.test(v)).slice(0,30),
+                    selected: currencyLabel(el.selectedOptions && el.selectedOptions[0] && el.selectedOptions[0].textContent),
+                    options: Array.from(el.options || []).map(opt => currencyLabel(opt.textContent))
+                      .filter(Boolean).slice(0,30),
                     value: /^(RUB|RUR|USDT|USD|ERUB)$/i.test(clean(el.value)) ? clean(el.value) : ''
                   }));
                   const inputs = Array.from(document.querySelectorAll('input')).slice(0,40).map(el => ({
@@ -334,16 +335,18 @@ def main() -> int:
                   })).filter(x => /rate|курс|currency|price/i.test([x.name,x.id,x.placeholder].join(' ')))
                     .filter(x => /^(?:[-+]?\\d+(?:[.,]\\d+)?|RUB|RUR|USDT|USD)$/i.test(x.value));
                   const customControls = Array.from(document.querySelectorAll('[class*="currency"],[id*="currency"],[class*="rate"],[id*="rate"],[class*="convert"],[id*="convert"],[class*="exchange"],[id*="exchange"],[data-currency],[data-rate]'))
-                    .filter(visible).slice(0,60).map(el => ({
-                      tag: clean(el.tagName), id: clean(el.id), class_name: clean(typeof el.className === 'string' ? el.className : ''),
-                      role: clean(el.getAttribute('role')), aria_label: clean(el.getAttribute('aria-label')),
-                      text: (() => { const v = clean(el.innerText || el.textContent); return !/\\d/.test(v) ? v : ''; })(),
+                    .slice(0,100).map(el => ({
+                      visible: visible(el), tag: clean(el.tagName), id: clean(el.id), class_name: clean(typeof el.className === 'string' ? el.className : ''),
+                      role: clean(el.getAttribute('role')), aria_label: currencyLabel(el.getAttribute('aria-label')),
+                      text: currencyLabel(el.innerText || el.textContent),
                       data: Array.from(el.attributes || []).filter(a => /^(data-currency|aria-label)$/i.test(a.name) && /^(RUB|RUR|USDT|USD|ERUB|E-Ruble|₽|рубль)$/i.test(clean(a.value)))
                         .map(a => ({name: a.name, value: clean(a.value)}))
                     })).filter(x => x.text || x.aria_label || x.data.length);
+                  const dropdownOptions = Array.from(document.querySelectorAll('[id*="SelectBoxItOptions"] li,[class*="selectboxit-option"],select option'))
+                    .map(el => currencyLabel(el.textContent)).filter(Boolean).slice(0,80);
                   const lines = body.split(/\\n/).map(x=>x.trim()).filter(x=>x && x.length<=180 && /(RUB|RUR|USDT|руб|₽|курс|rate|обмен|обновл|updated|refresh|last update)/i.test(x)).slice(0,60);
                   const timeLines = body.split(/\\n/).map(x=>x.trim()).filter(x=>x && /(обновл|updated|refresh|последн.*курс|last update)/i.test(x)).slice(0,15);
-                  return {url:location.href,title:document.title,lines,time_lines:timeLines,selects,inputs,custom_controls:customControls};
+                  return {url:location.href,title:document.title,lines,time_lines:timeLines,selects,inputs,custom_controls:customControls,dropdown_options:dropdownOptions};
                 })()""",
                 "returnByValue": True,
             }).get("result", {}).get("value", {})
