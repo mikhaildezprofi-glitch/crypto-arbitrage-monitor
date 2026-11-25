@@ -269,8 +269,11 @@ def main() -> int:
             {"urlPattern": "https://sberkassa.site/*", "requestStage": "Request"}
         ]})
         probe.current_path = "/exchange"
-        probe.command("Page.navigate", {"url": TARGET_URL})
+        # Start at the site's supported login entry point. Direct navigation
+        # to /exchange can return an expired-session placeholder with no form.
+        probe.command("Page.navigate", {"url": "https://sberkassa.site/"})
         print("SBERKASSA_EXCHANGE_PROBE_READY=YES", flush=True)
+        print("SBERKASSA_EXCHANGE_LOGIN_ENTRY=HOME_PAGE", flush=True)
         print("SBERKASSA_EXCHANGE_SCOPE=READ_ONLY_GET_ONLY", flush=True)
 
         eid_seen = False
@@ -291,6 +294,14 @@ def main() -> int:
                 probe.current_path = "/exchange"
                 probe.drain_bodies()
                 body = str(state.get("body", "")).lower()
+                if "время сессии истекло" in body or "session expired" in body:
+                    print("SBERKASSA_EXCHANGE_SESSION_EXPIRED=YES", flush=True)
+                    print("SBERKASSA_EXCHANGE_LOGIN_REQUIRED=HOME_PAGE_EID", flush=True)
+                    eid_seen = False
+                    callback_returned = False
+                    probe.command("Page.navigate", {"url": "https://sberkassa.site/"})
+                    time.sleep(2)
+                    continue
                 if len(body) > 20 and not any(x in body for x in ("войти", "авторизац", "sign in", "login")):
                     authenticated = True
                     break
