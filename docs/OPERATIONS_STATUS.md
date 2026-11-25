@@ -71,6 +71,11 @@ All arithmetic is denominated in USDT. Do not label USDT as exact USD without a 
 - Do not borrow timestamps from `/deals`. HTTP Date, Last-Modified, ETag, browser time, Age, and network timing alone do not prove quote freshness.
 - If the page has one published rate, use that rate. If it has independent offers, use the agreed first-20 average only after the structure and direction are proven.
 
+- A separate manual workflow-dispatch target, `sberkassa_exchange`, and probe `scripts/sberkassa_exchange_chromium_probe.py` are implemented for discovery. It reuses the shared encrypted Chromium profile, opens only `/exchange`, does not click or change page controls, and blocks every non-GET request to Sberkassa.
+- The discovery artifact contains sanitized visible quote-related lines, selected currency controls, allowlisted numeric quote/time fields from same-origin JSON responses, response status/cache metadata, and browser response timing for correlation. It does not publish raw bodies, cookies, authorization headers, tokens, or general input values.
+- Initial discovery capture is limited to five minutes. This is not quote validation: no RUB -> USDT field, direction, or successful-refresh freshness signal is accepted until independently established from the captured evidence.
+- The existing ERUB -> RUB deals collector remains separate and unchanged. Do not merge PR #10 or enable full-route calculations from this discovery probe.
+
 ## Verified progress and evidence
 
 ### Money Storage
