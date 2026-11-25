@@ -138,6 +138,9 @@ class Probe:
                 "mime_type": str(response.get("mimeType", ""))[:80],
                 "from_disk_cache": bool(response.get("fromDiskCache", False)),
                 "from_service_worker": bool(response.get("fromServiceWorker", False)),
+                "response_time_epoch_ms": response.get("responseTime"),
+                "request_time_monotonic_seconds": response.get("timing", {}).get("requestTime"),
+                "encoded_data_length": response.get("encodedDataLength"),
                 "headers": safe_headers,
                 "quote_fields": [],
             }
