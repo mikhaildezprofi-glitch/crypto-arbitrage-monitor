@@ -669,9 +669,9 @@ jobs:
           cat /tmp/session-check-xvfb.log || true
           exit 1
 
-      - name: Run one fresh restored-session page-access check
+      - name: Run three independent restored-session and fresh-offers checks
         shell: bash
-        timeout-minutes: 8
+        timeout-minutes: 18
         run: |
           set -euo pipefail
           mkdir -p session-check-results
@@ -680,15 +680,17 @@ jobs:
             echo "SESSION_CHECK_CHROMIUM_MISSING"
             exit 1
           fi
-          for attempt in 1; do
+          for attempt in 1 2 3; do
             PROFILE_DIR="/tmp/money-storage-session-check-$attempt"
             STATUS_FILE="/tmp/money-storage-session-status-$attempt"
             LOG_FILE="session-check-results/attempt-$attempt.log"
+            SNAPSHOT_FILE="$GITHUB_WORKSPACE/money-storage-current-offers.json"
             rm -rf "$PROFILE_DIR"
+            rm -f "$STATUS_FILE" "$SNAPSHOT_FILE" "$GITHUB_WORKSPACE/session-authenticated.txt"
             mkdir -p "$PROFILE_DIR"
             cp -a /tmp/eid-chromium-profile/. "$PROFILE_DIR/"
             rm -f "$PROFILE_DIR/SingletonLock" "$PROFILE_DIR/SingletonCookie" "$PROFILE_DIR/SingletonSocket"
-            echo "SESSION_CHECK_ATTEMPT=$attempt/1"
+            echo "SESSION_CHECK_ATTEMPT=$attempt/3"
             DISPLAY=:99 "$CHROMIUM_BIN" \
               --no-sandbox \
               --disable-dev-shm-usage \
@@ -703,7 +705,7 @@ jobs:
               "https://storage.money/deals#tab-3" >/tmp/money-storage-session-chrome-$attempt.log 2>&1 &
             BROWSER_PID=$!
             set +e
-            MONEY_STORAGE_SESSION_CHECK=1 \
+            MONEY_STORAGE_NONINTERACTIVE=1 \
             MONEY_STORAGE_STATUS_FILE="$STATUS_FILE" \
             timeout 240s python3 scripts/money_storage_chromium_bridge.py >"$LOG_FILE" 2>&1
             RESULT=$?
@@ -712,20 +714,45 @@ jobs:
             wait "$BROWSER_PID" 2>/dev/null || true
             STATUS="$(cat "$STATUS_FILE" 2>/dev/null || echo NO_STATUS)"
             echo "SESSION_CHECK_ATTEMPT_RESULT=$attempt status=$STATUS exit=$RESULT"
-            if [ "$RESULT" -ne 0 ] || [ "$STATUS" != "SESSION_AUTHENTICATED" ]; then
+            if [ "$RESULT" -ne 0 ] || [ "$STATUS" != "OFFERS_READ_OK" ] || [ ! -s "$SNAPSHOT_FILE" ]; then
               cat "$LOG_FILE"
               echo "SESSION_CHECK_FAILED attempt=$attempt status=$STATUS"
               exit 1
             fi
-            grep -E '^(SESSION_AUTHENTICATED|AUTH_REQUIRED|SESSION_CHECK_TIMEOUT)' "$LOG_FILE" || true
+            python3 - "$SNAPSHOT_FILE" <<'PY'
+          import json
+          import sys
+          from datetime import datetime, timezone
+          from decimal import Decimal
+
+          with open(sys.argv[1], encoding="utf-8") as handle:
+              snapshot = json.load(handle)
+          if snapshot.get("source") != "money_storage" or snapshot.get("tab") != "everyone_offers":
+              raise SystemExit("SESSION_CHECK_INVALID_SNAPSHOT_SOURCE")
+          if snapshot.get("pair") != "USDT/ECR" or snapshot.get("freshness_confirmed") is not True:
+              raise SystemExit("SESSION_CHECK_INVALID_PAIR_OR_FRESHNESS")
+          count = snapshot.get("offer_count")
+          if not isinstance(count, int) or not 1 <= count <= 20:
+              raise SystemExit("SESSION_CHECK_INVALID_OFFER_COUNT")
+          rate = Decimal(str(snapshot.get("rate", "")))
+          if not rate.is_finite() or rate <= 0:
+              raise SystemExit("SESSION_CHECK_INVALID_RATE")
+          observed = datetime.fromisoformat(snapshot["observed_at"]).astimezone(timezone.utc)
+          newest = datetime.fromisoformat(snapshot["newest_offer_created_at"]).astimezone(timezone.utc)
+          age = (observed - newest).total_seconds()
+          if age < 0 or age > 900:
+              raise SystemExit("SESSION_CHECK_STALE_OR_FUTURE_OFFERS")
+          print(f"SESSION_CHECK_QUOTE_VALID offers={count} rate={rate} newest_age_seconds={age:.1f}")
+          PY
+            grep -E '^(MONEY_STORAGE_SESSION=|OFFERS_READ_OK|AUTH_REQUIRED|OFFERS_READ_FAILED)' "$LOG_FILE" || true
           done
-          echo "SESSION_CHECK_RESULT=1_OF_1_SUCCESS"
+          echo "SESSION_CHECK_RESULT=3_OF_3_SUCCESS"
           {
             echo "## Money Storage restored-session verification"
-            echo "- One fresh Chromium process restored the encrypted profile and completed the protected-page check."
-            echo "- The test used a separate copy of the encrypted profile; the saved archive remained unchanged."
-            echo "- The protected /deals document returned HTTP 200 without reading offers APIs or quote values."
-            echo "- No offers API, quote values, or freshness data were read. No CAPTCHA, E-ID, MFA, or login challenge was automated."
+            echo "- Three independent fresh Chromium processes restored separate copies of the encrypted profile."
+            echo "- Each process read the page-originated protected Everyone Offers response for ECR -> USDT raw fields (displayed USDT -> ECR)."
+            echo "- Each response passed the 900-second provider create_time freshness check and the first-20 rate average validation."
+            echo "- No CAPTCHA, E-ID, MFA, or login challenge was automated."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload sanitized session-check diagnostics
