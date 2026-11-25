@@ -86,6 +86,7 @@ class Probe:
         )
         self.next_id = 0
         self.pending: list[tuple[str, str, int]] = []
+        self.pending_scripts: list[tuple[str, str]] = []
         self.responses: list[dict] = []
         self.blocked_methods: list[str] = []
         self.current_path = ""
@@ -148,6 +149,8 @@ class Probe:
                 self.responses.append(item)
             if resource_type in ("XHR", "Fetch") and "json" in str(response.get("mimeType", "")).lower():
                 self.pending.append((params.get("requestId", ""), parsed.path, status))
+            elif resource_type == "Script" and parsed.path.startswith("/js/") and status == 200:
+                self.pending_scripts.append((params.get("requestId", ""), parsed.path))
 
     def command(self, method: str, params: dict | None = None, timeout: float = 8) -> dict:
         self.next_id += 1
@@ -190,6 +193,49 @@ class Probe:
                       (path, status, json.dumps(fields[:30], ensure_ascii=False)), flush=True)
             except Exception as exc:
                 print("EXCHANGE_JSON_UNAVAILABLE path=%s reason=%s" %
+                      (path, type(exc).__name__), flush=True)
+
+        pending_scripts, self.pending_scripts = self.pending_scripts, []
+        for request_id, path in pending_scripts[:20]:
+            if not request_id:
+                continue
+            try:
+                body = self.command("Network.getResponseBody", {"requestId": request_id}, timeout=3)
+                raw = body.get("body", "").encode("utf-8")
+                if body.get("base64Encoded"):
+                    import base64
+                    raw = base64.b64decode(body["body"], validate=True)
+                if len(raw) > MAX_BODY_BYTES:
+                    continue
+                source = raw.decode("utf-8", errors="replace")
+                endpoints = sorted(set(re.findall(
+                    r"""['"]((?:/api/|/public_deals/)[^'"\\s]{1,140})['"]""", source
+                )))[:40]
+                selectors = sorted(set(re.findall(
+                    r"""['"]([.#][A-Za-z0-9_-]*(?:currency|rate|convert|exchange|from|to)[A-Za-z0-9_-]*)['"]""",
+                    source, re.I
+                )))[:60]
+                fields = sorted(set(re.findall(
+                    r"""['"]([A-Za-z_][A-Za-z0-9_]{0,60})['"]""", source
+                )))
+                fields = [x for x in fields if re.search(
+                    r"(currency|rate|price|exchange|convert|updated|refresh|from|to)", x, re.I
+                )][:80]
+                methods = sorted(set(re.findall(
+                    r"""(?:method|type)\\s*:\\s*['"](GET|POST|PUT|DELETE)['"]""",
+                    source, re.I
+                )))
+                hints = {"path": path, "api_paths": endpoints, "selectors": selectors,
+                         "field_names": fields, "declared_http_methods": methods}
+                for item in self.responses:
+                    if item["path"] == path and item["resource_type"] == "Script":
+                        item["script_hints"] = hints
+                        break
+                print("EXCHANGE_SCRIPT_HINTS path=%s api_paths=%s selectors=%s fields=%s methods=%s" %
+                      (path, json.dumps(endpoints), json.dumps(selectors),
+                       json.dumps(fields), json.dumps(methods)), flush=True)
+            except Exception as exc:
+                print("EXCHANGE_SCRIPT_HINTS_UNAVAILABLE path=%s reason=%s" %
                       (path, type(exc).__name__), flush=True)
 
 
@@ -270,20 +316,29 @@ def main() -> int:
                   const clean = v => String(v || '').trim().replace(/\\s+/g,' ').slice(0,180);
                   const visible = el => !!(el && el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden' && getComputedStyle(el).display !== 'none');
                   const body = document.body ? document.body.innerText : '';
-                  const selects = Array.from(document.querySelectorAll('select')).filter(visible).slice(0,20).map(el => ({
+                  const selects = Array.from(document.querySelectorAll('select')).slice(0,20).map(el => ({
+                    visible: visible(el),
                     label: clean(el.labels && Array.from(el.labels).map(x=>x.innerText).join(' ')),
-                    name: clean(el.name), id: clean(el.id),
+                    name: clean(el.name), id: clean(el.id), class_name: clean(el.className),
                     selected: clean(el.selectedOptions && el.selectedOptions[0] && el.selectedOptions[0].textContent),
                     value: clean(el.value)
                   }));
-                  const inputs = Array.from(document.querySelectorAll('input')).filter(visible).slice(0,30).map(el => ({
-                    type: clean(el.type), name: clean(el.name), id: clean(el.id),
+                  const inputs = Array.from(document.querySelectorAll('input')).slice(0,40).map(el => ({
+                    visible: visible(el), type: clean(el.type), name: clean(el.name), id: clean(el.id),
                     placeholder: clean(el.placeholder), value: clean(el.value)
                   })).filter(x => /rate|курс|currency|from|to|price/i.test([x.name,x.id,x.placeholder].join(' ')))
                     .filter(x => /^(?:[-+]?\\d+(?:[.,]\\d+)?|RUB|RUR|USDT|USD)$/i.test(x.value));
-                  const lines = body.split(/\\n/).map(x=>x.trim()).filter(x=>x && x.length<=180 && /(курс|rate|обновл|updated|refresh|last update)/i.test(x)).slice(0,40);
+                  const customControls = Array.from(document.querySelectorAll('[class*="currency"],[id*="currency"],[class*="rate"],[id*="rate"],[class*="convert"],[id*="convert"],[class*="exchange"],[id*="exchange"],[data-currency],[data-rate]'))
+                    .filter(visible).slice(0,60).map(el => ({
+                      tag: clean(el.tagName), id: clean(el.id), class_name: clean(typeof el.className === 'string' ? el.className : ''),
+                      role: clean(el.getAttribute('role')), aria_label: clean(el.getAttribute('aria-label')),
+                      text: clean(el.innerText || el.textContent),
+                      data: Array.from(el.attributes || []).filter(a => /^(data-(currency|rate|from|to|value)|aria-label)$/i.test(a.name))
+                        .map(a => ({name: a.name, value: clean(a.value)}))
+                    })).filter(x => x.text || x.aria_label || x.data.length);
+                  const lines = body.split(/\\n/).map(x=>x.trim()).filter(x=>x && x.length<=180 && /(RUB|RUR|USDT|руб|₽|курс|rate|обмен|обновл|updated|refresh|last update)/i.test(x)).slice(0,60);
                   const timeLines = body.split(/\\n/).map(x=>x.trim()).filter(x=>x && /(обновл|updated|refresh|последн.*курс|last update)/i.test(x)).slice(0,15);
-                  return {url:location.href,title:document.title,lines,time_lines:timeLines,selects,inputs};
+                  return {url:location.href,title:document.title,lines,time_lines:timeLines,selects,inputs,custom_controls:customControls};
                 })()""",
                 "returnByValue": True,
             }).get("result", {}).get("value", {})
