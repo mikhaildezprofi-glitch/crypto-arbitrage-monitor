@@ -52,7 +52,7 @@ concurrency:
 jobs:
   cloud-browser:
     runs-on: ubuntu-latest
-    timeout-minutes: 65
+    timeout-minutes: 40
     env:
       CHROMIUM_PROFILE_PASSPHRASE: ${{ secrets.CHROMIUM_PROFILE_PASSPHRASE }}
     steps:
@@ -116,7 +116,7 @@ jobs:
       # background processes when a step ends, which caused the earlier 1033.
       - name: Keep browser and Cloudflare tunnel alive during E-ID handoff
         shell: bash
-        timeout-minutes: 60
+        timeout-minutes: 35
         run: |
           set -euo pipefail
           umask 077
@@ -503,7 +503,7 @@ jobs:
           # navigation and Cloudflare/E-ID diagnostics remain invisible.
           BROWSER_LOG_LINES=0
           echo "BROWSER_DIAGNOSTIC_STREAM=STARTED"
-          for i in $(seq 1 1750); do
+          for i in $(seq 1 900); do
             STATUS="$(cat /tmp/eid-auth-status 2>/dev/null || echo WAITING_FOR_LOGIN)"
             if [ "$STATUS" = "FORM_INSPECTION_COMPLETE" ]; then
               echo "FORM_INSPECTION_COMPLETE: the page itself sent a request containing from=ECR&to=USDT; inspect PAGE_REQUEST for the exact endpoint and parameter location."
