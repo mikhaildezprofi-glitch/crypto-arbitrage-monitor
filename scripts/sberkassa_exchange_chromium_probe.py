@@ -385,8 +385,8 @@ def main() -> int:
           };
           const safeText = el => {
             const value = String(el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
-            return /\b(RUB|RUR|USDT|USD|ERUB)\b|руб|тезер|tether|₽/i.test(value)
-              ? value.slice(0, 100) : '';
+            const tokens = value.match(/\b(?:RUB|RUR|USDT|USD|ERUB)\b|российский рубль|руб(?:ль|ля|лей)?\.?|тезер|tether|₽/gi) || [];
+            return Array.from(new Set(tokens.map(token => token.slice(0, 40)))).join(' ').slice(0, 100);
           };
           const describe = el => {
             const r = el.getBoundingClientRect(), s = getComputedStyle(el);
