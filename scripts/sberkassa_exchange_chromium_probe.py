@@ -323,7 +323,9 @@ def main() -> int:
                     visible: visible(el),
                     label: clean(el.labels && Array.from(el.labels).map(x=>x.innerText).join(' ')),
                     name: clean(el.name), id: clean(el.id), class_name: clean(el.className),
-                    selected: (() => { const v = clean(el.selectedOptions && el.selectedOptions[0] && el.selectedOptions[0].textContent); return /^(RUB|RUR|USDT|USD|ERUB|E-Ruble|₽|рубль)$/i.test(v) ? v : ''; })(),
+                    selected: (() => { const v = clean(el.selectedOptions && el.selectedOptions[0] && el.selectedOptions[0].textContent); return /^(RUB|RUR|USDT|USD|ERUB|E-Ruble|₽|рубль|Российский рубль|Tether|Тезер)$/i.test(v) ? v : ''; })(),
+                    options: Array.from(el.options || []).map(opt => clean(opt.textContent))
+                      .filter(v => /^(RUB|RUR|USDT|USD|ERUB|E-Ruble|₽|рубль|Российский рубль|Tether|Тезер)$/i.test(v)).slice(0,30),
                     value: /^(RUB|RUR|USDT|USD|ERUB)$/i.test(clean(el.value)) ? clean(el.value) : ''
                   }));
                   const inputs = Array.from(document.querySelectorAll('input')).slice(0,40).map(el => ({
