@@ -25,7 +25,7 @@ class SberkassaExchangeProbeTests(unittest.TestCase):
         self.assertIn("SBERKASSA_EXCHANGE_RESULT_RECEIVED=YES", source)
         self.assertIn("SBERKASSA_EXCHANGE_RATE_CAPTURE_MODE=SINGLE_DISPLAYED_RATE", source)
         self.assertIn('"rate_capture_mode": "single_displayed_rate"', source)
-        self.assertIn('selection_deadline = time.monotonic() + 300', source)
+        self.assertIn("timeout: float = 30", source)
         self.assertIn('"exchange_submit_clicked": False', source)
         self.assertIn('"sell_amount_entered": False', source)
         self.assertIn('verb == "GET"', source)
