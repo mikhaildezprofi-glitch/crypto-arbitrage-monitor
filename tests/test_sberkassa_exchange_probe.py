@@ -13,6 +13,7 @@ class SberkassaExchangeProbeTests(unittest.TestCase):
         self.assertIn("pending_scripts", source)
         self.assertIn("EXCHANGE_SCRIPT_HINTS", source)
         self.assertIn("customControls", source)
+        self.assertIn("options: Array.from(el.options || [])", source)
         self.assertIn("return !/\\\\d/.test(v)", source)
         self.assertIn("currency_code", source)
         self.assertIn("E-RUBLE", source)
