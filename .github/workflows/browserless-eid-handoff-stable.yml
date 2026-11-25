@@ -11,6 +11,7 @@ on:
         options:
           - money_storage
           - sberkassa
+          - sberkassa_exchange
       inspect_currency_form:
         description: "Keep the browser open for manual Money Storage currency-form inspection"
         required: false
@@ -327,12 +328,14 @@ jobs:
           "$CHROMIUM_BIN" --version
           TARGET="${{ github.event_name == 'push' && 'sberkassa' || inputs.target }}"
           if [ "$TARGET" = "sberkassa" ]; then
-            # Start at the exact Sberkassa login page requested by the user.
-            # Its own normal E-ID redirect is completed manually in this tab.
-            # Start blank so the probe can install strict request filtering
-            # before the first Sberkassa page request is made.
+            # Existing ERUB -> RUB deals collector. Keep its scope unchanged.
             CHROMIUM_START_URL="about:blank"
             BRIDGE_SCRIPT="scripts/sberkassa_chromium_probe.py"
+          elif [ "$TARGET" = "sberkassa_exchange" ]; then
+            # Separate authenticated /exchange discovery probe. It blocks all
+            # non-GET requests and never changes page controls.
+            CHROMIUM_START_URL="about:blank"
+            BRIDGE_SCRIPT="scripts/sberkassa_exchange_chromium_probe.py"
           else
             # Reuse the saved authenticated session first. The bridge opens the
             # normal account/E-ID route only if the protected offers page rejects it.
@@ -611,6 +614,15 @@ jobs:
         with:
           name: sberkassa-current-inspection
           path: sberkassa-current-inspection.json
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Publish Sberkassa exchange sanitized inspection
+        if: always() && hashFiles('sberkassa-exchange-inspection.json') != ''
+        uses: actions/upload-artifact@v5
+        with:
+          name: sberkassa-exchange-inspection
+          path: sberkassa-exchange-inspection.json
           if-no-files-found: error
           retention-days: 1
 
