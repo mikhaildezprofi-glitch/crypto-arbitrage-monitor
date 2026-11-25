@@ -75,7 +75,7 @@ Implemented:
 Live validation status (2026-11-26):
 - Money Storage: encrypted Chromium profile restored and decrypted; three independent fresh-runner processes each read 20 authenticated USDT -> ECR offers and passed the 900-second `create_time` freshness check (workflow run `45688839011`). No repeated E-ID handoff was needed for this verification.
 - BlackBit: live public API validation passed (workflow run `45690240533`). Pair ID `6`, displayed `last_rate` `1.311`, retrieved at `2026-11-25T19:57:32Z`. The endpoint exposes no provider quote timestamp, so freshness is based on a live HTTPS retrieval with `Cache-Control: no-cache`; the quote remains indicative only.
-- Winance: adapter and unit tests exist, but a live retrieval has not yet been validated.
+- Winance: live public API validation passed (workflow run `45690618669`). Pair ID `18`, ERUB/USDT displayed rate `0.032728`, retrieved at `2026-11-25T19:59:57Z`. The endpoint exposes no quote timestamp, so freshness is based on live HTTPS retrieval with `Cache-Control: no-cache`; this does not imply execution certainty.
 - Sberkassa ERUB -> RUB: live direction, `back_rate` average, and 15-minute `create_time` freshness still need validation.
 - Sberkassa RUB -> USDT: numeric field and independent successful-refresh freshness signal still need validation.
 - One integrated five-source report workflow, notification destination, and measured free-runner cost are not complete.
