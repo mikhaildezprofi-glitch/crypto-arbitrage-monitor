@@ -599,16 +599,15 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # After the owner completes the one-time interactive E-ID handoff, verify that
-  # the encrypted profile can be restored by a fresh Chromium process. This job never opens a public remote desktop and never attempts
-  # to complete CAPTCHA/E-ID/MFA.
+  # After the owner completes the one-time interactive E-ID handoff, verify the
+  # encrypted profile in three independent Chromium processes. Each process
+  # must read the real protected offers response and pass quote freshness checks.
+  # This job never opens a public remote desktop or automates CAPTCHA/E-ID/MFA.
   verify-restored-money-storage-session:
-    # Verify restored authentication and access to the protected offers page only.
-    # Do not read the offers API or any quote data in this phase.
     if: inputs.target == 'money_storage'
     needs: cloud-browser
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     permissions:
       contents: read
     env:
