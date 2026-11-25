@@ -14,35 +14,48 @@ from urllib.request import Request, urlopen
 
 SOURCES = (
     "https://www.google.com/generate_204",
+    "https://www.apple.com/",
+    "https://api.github.com/",
     "https://www.cloudflare.com/",
     "https://www.microsoft.com/",
 )
 MAX_OFFSET_SECONDS = 5.0
 MAX_SPREAD_SECONDS = 2.0
+RETRIES_PER_SOURCE = 2
 
 
 def main() -> int:
     offsets: list[float] = []
     for url in SOURCES:
-        nonce = str(time.time_ns())
-        request = Request(
-            f"{url}?clock_check={nonce}",
-            method="HEAD",
-            headers={"Cache-Control": "no-cache, no-store", "Pragma": "no-cache"},
-        )
-        before = time.time()
-        try:
-            with urlopen(request, timeout=8) as response:
-                raw_date = response.headers.get("Date")
-            after = time.time()
-            if not raw_date:
-                raise ValueError("missing HTTP Date header")
-            server_time = parsedate_to_datetime(raw_date).astimezone(timezone.utc).timestamp()
-            offset = server_time - ((before + after) / 2)
-            offsets.append(offset)
-            print(f"CLOCK_REFERENCE={url} OFFSET_SECONDS={offset:.3f} RTT_SECONDS={after-before:.3f}")
-        except Exception as exc:
-            print(f"CLOCK_REFERENCE={url} STATUS=UNAVAILABLE REASON={type(exc).__name__}")
+        last_error = "no response"
+        for attempt in range(1, RETRIES_PER_SOURCE + 1):
+            nonce = str(time.time_ns())
+            request = Request(
+                f"{url}?clock_check={nonce}",
+                method="HEAD",
+                headers={"Cache-Control": "no-cache, no-store", "Pragma": "no-cache"},
+            )
+            before = time.time()
+            try:
+                with urlopen(request, timeout=5) as response:
+                    raw_date = response.headers.get("Date")
+                after = time.time()
+                if not raw_date:
+                    raise ValueError("missing HTTP Date header")
+                server_time = parsedate_to_datetime(raw_date).astimezone(timezone.utc).timestamp()
+                offset = server_time - ((before + after) / 2)
+                offsets.append(offset)
+                print(
+                    f"CLOCK_REFERENCE={url} OFFSET_SECONDS={offset:.3f} "
+                    f"RTT_SECONDS={after-before:.3f} ATTEMPT={attempt}"
+                )
+                break
+            except Exception as exc:
+                last_error = type(exc).__name__
+                if attempt == RETRIES_PER_SOURCE:
+                    print(f"CLOCK_REFERENCE={url} STATUS=UNAVAILABLE REASON={last_error}")
+                else:
+                    time.sleep(0.5)
 
     if len(offsets) < 2:
         raise SystemExit("Fewer than two independent HTTPS time references responded.")
