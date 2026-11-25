@@ -26,7 +26,10 @@ import websocket
 sys.path.insert(0, str(Path.cwd()))
 sys.path.insert(0, str(Path.cwd() / "src"))
 from scripts.money_storage_cloud_read import parse_page_update_timestamp
-from arbitrage_monitor.providers.sberkassa import extract_erub_rub_offer_records
+from arbitrage_monitor.providers.sberkassa import (
+    build_erub_rub_offer_quote,
+    extract_erub_rub_offer_records,
+)
 
 DEBUG_ENDPOINT = "http://127.0.0.1:9222/json/list"
 STATUS_FILE = Path("/tmp/eid-auth-status")
@@ -167,23 +170,10 @@ class CDP:
                 "stream_quote_fields": [],
                 "request_timing": [],
             },
-            "exchange_rub_usdt": {
-                "request_count": 0,
-                "response_statuses": [],
-                "json_response_count": 0,
-                "quote_fields": [],
-                "offer_schema_samples": [],
-                "http_response_headers": [],
-                "stream_quote_fields": [],
-                "request_timing": [],
-            },
         }
 
     def record_stream_payload(self, raw: str, source: str) -> None:
-        page_key = {
-            "/deals": "deals_everyone_offers",
-            "/exchange": "exchange_rub_usdt",
-        }.get(self.current_path)
+        page_key = "deals_everyone_offers" if self.current_path == "/deals" else None
         if not page_key:
             return
         fields, samples = parse_stream_quote_payload(raw)
@@ -206,15 +196,43 @@ class CDP:
                 frame_url = frame.get("url", "")
                 self.current_path = urlparse(frame_url).path
                 print(f"NAV={safe_location(frame_url)}", flush=True)
+        elif method == "Fetch.requestPaused":
+            request = params.get("request", {})
+            parsed = urlparse(request.get("url", ""))
+            query = parse_qs(parsed.query, keep_blank_values=True)
+            blocked_reason = None
+            if parsed.hostname == "sberkassa.site":
+                if parsed.path.rstrip("/") == "/exchange":
+                    blocked_reason = "exchange_page_out_of_scope"
+                elif parsed.path == "/public_deals/fetch" and (
+                    query.get("from", [""])[0] != "ERUB"
+                    or query.get("to", [""])[0] != "RUB"
+                ):
+                    blocked_reason = "wrong_or_missing_direction"
+            self.next_id += 1
+            if blocked_reason:
+                self.ws.send(json.dumps({
+                    "id": self.next_id,
+                    "method": "Fetch.failRequest",
+                    "params": {"requestId": params["requestId"], "errorReason": "BlockedByClient"},
+                }))
+                print(
+                    "SBERKASSA_SCOPE_BLOCKED path=%s reason=%s"
+                    % (parsed.path, blocked_reason),
+                    flush=True,
+                )
+            else:
+                self.ws.send(json.dumps({
+                    "id": self.next_id,
+                    "method": "Fetch.continueRequest",
+                    "params": {"requestId": params["requestId"]},
+                }))
         elif method == "Network.requestWillBeSent":
             request = params.get("request", {})
             parsed = urlparse(request.get("url", ""))
             if parsed.hostname != "sberkassa.site":
                 return
-            page_key = {
-                "/deals": "deals_everyone_offers",
-                "/exchange": "exchange_rub_usdt",
-            }.get(self.current_path)
+            page_key = "deals_everyone_offers" if self.current_path == "/deals" else None
             if page_key:
                 self.capture[page_key]["request_count"] += 1
             query = parse_qs(parsed.query, keep_blank_values=True)
@@ -251,13 +269,13 @@ class CDP:
                 return
             mime = (response.get("mimeType") or "unknown").split(";")[0]
             status = int(response.get("status", 0))
-            page_paths = {
-                "/deals": "deals_everyone_offers",
-                "/exchange": "exchange_rub_usdt",
-            }
             page_key = (
-                page_paths.get(parsed.path) or page_paths.get(self.current_path)
-            ) if host == "sberkassa.site" else None
+                "deals_everyone_offers"
+                if host == "sberkassa.site" and (
+                    parsed.path == "/deals" or self.current_path == "/deals"
+                )
+                else None
+            )
             if page_key:
                 captured = self.capture[page_key]
                 statuses = captured["response_statuses"]
@@ -301,7 +319,7 @@ class CDP:
             )
             if (
                 host == "sberkassa.site"
-                and self.current_path in ("/deals", "/exchange")
+                and self.current_path == "/deals"
                 and params.get("type") in ("XHR", "Fetch")
                 and "json" in mime
             ):
@@ -420,7 +438,13 @@ def main() -> int:
         cdp.command("Page.enable")
         cdp.command("Runtime.enable")
         cdp.command("Network.enable")
+        cdp.command(
+            "Fetch.enable",
+            {"patterns": [{"urlPattern": "https://sberkassa.site/*", "requestStage": "Request"}]},
+        )
+        cdp.command("Page.navigate", {"url": "https://sberkassa.site/deals#tab-3"})
         print("SBERKASSA_PROBE_READY=YES", flush=True)
+        print("SBERKASSA_SCOPE=DEALS_TAB_ERUB_TO_RUB_ONLY", flush=True)
 
         # Test the restored browser profile first on the protected quote page.
         # A normal E-ID handoff is requested only if the page does not deliver
@@ -503,7 +527,6 @@ def main() -> int:
         print("CHROMIUM_PROFILE_PERSISTENCE=ELIGIBLE_AFTER_SBERKASSA_AUTH", flush=True)
 
         seen_deals = False
-        seen_exchange = False
         last_target_activity = 0.0
         last_progress = 0.0
         last_page_key = ""
@@ -515,7 +538,6 @@ def main() -> int:
         page_time_metadata: dict[str, list[dict]] = {}
         page_source_inventory: dict[str, dict] = {}
         deals_ready_since: float | None = None
-        exchange_navigation_started = False
         deadline = time.monotonic() + DEADLINE_SECONDS
 
         while time.monotonic() < deadline:
@@ -717,22 +739,12 @@ def main() -> int:
                 and parsed.path.rstrip("/") == "/deals"
                 and parsed.fragment == "tab-3"
             )
-            is_exchange = (
-                parsed.hostname == "sberkassa.site"
-                and parsed.path.rstrip("/") == "/exchange"
-            )
-
             if is_deals and not seen_deals:
                 seen_deals = True
                 last_target_activity = time.monotonic()
                 print("SBERKASSA_DEALS_PAGE_SEEN=YES", flush=True)
-            if is_exchange and not seen_exchange:
-                seen_exchange = True
-                last_target_activity = time.monotonic()
-                print("SBERKASSA_EXCHANGE_PAGE_SEEN=YES", flush=True)
-
-            if is_deals or is_exchange:
-                page_name = "deals_everyone_offers" if is_deals else "exchange_rub_usdt"
+            if is_deals:
+                page_name = "deals_everyone_offers"
                 markers = state.get("updateLines", [])
                 page_markers[page_name] = markers
                 page_quote_lines[page_name] = state.get("quoteLines", [])
@@ -794,9 +806,61 @@ def main() -> int:
                 )
 
             if seen_deals and deals_ready_since is not None and now - deals_ready_since >= 12:
+                captured_at = datetime.now(timezone.utc)
+                page_capture = cdp.capture["deals_everyone_offers"]
+                request = page_capture.get("offer_request", {})
+                records = page_capture.get("offer_records", [])
+                expected_request = {
+                    "path": "/public_deals/fetch",
+                    "from": "ERUB",
+                    "to": "RUB",
+                    "status": 200,
+                }
+                if request != expected_request or len(records) < 20:
+                    STATUS_FILE.write_text("SBERKASSA_CAPTURE_FAILED", encoding="utf-8")
+                    print(
+                        "SBERKASSA_OFFERS_VALIDATION_FAILED request_ok=%s records=%s required=20"
+                        % (request == expected_request, len(records)),
+                        flush=True,
+                    )
+                    return 1
+                normalized_offers = [
+                    {
+                        "from_currency": "ERUB",
+                        "to_currency": "RUB",
+                        "back_rate": row.get("back_rate"),
+                        "create_time": row.get("create_time"),
+                    }
+                    for row in records
+                ]
+                quote = build_erub_rub_offer_quote(
+                    {"offers": normalized_offers},
+                    now=captured_at,
+                )
+                if not quote.available or quote.rate is None:
+                    STATUS_FILE.write_text("SBERKASSA_CAPTURE_FAILED", encoding="utf-8")
+                    print(
+                        "SBERKASSA_OFFERS_VALIDATION_FAILED reason=%s selected=%s"
+                        % (quote.reason or "unavailable", quote.selected_offer_count),
+                        flush=True,
+                    )
+                    return 1
+                freshest_age = (
+                    captured_at - quote.fresh_offer_created_at
+                ).total_seconds() if quote.fresh_offer_created_at else None
+                print(
+                    "SBERKASSA_ERUB_RUB_VALIDATED offers=%s averaged=%s rate=%s newest_age_seconds=%.1f"
+                    % (
+                        quote.matching_offer_count,
+                        quote.selected_offer_count,
+                        quote.rate,
+                        freshest_age,
+                    ),
+                    flush=True,
+                )
                 artifact = {
                     "schema_version": 3,
-                    "captured_at_utc": datetime.now(timezone.utc).isoformat(),
+                    "captured_at_utc": captured_at.isoformat(),
                     "source": "sberkassa.site",
                     "quote_scope": "ERUB->RUB offers on /deals#tab-3 only",
                     "read_only": True,
@@ -809,7 +873,17 @@ def main() -> int:
                             "visible_quote_dom": page_quote_dom.get("deals_everyone_offers", {}),
                             "dom_time_metadata": page_time_metadata.get("deals_everyone_offers", []),
                             "source_inventory": page_source_inventory.get("deals_everyone_offers", {}),
-                            **cdp.capture["deals_everyone_offers"],
+                            **page_capture,
+                            "quote_validation": {
+                                "direction": "ERUB->RUB",
+                                "rate_field": "back_rate",
+                                "offer_count": quote.matching_offer_count,
+                                "averaged_offer_count": quote.selected_offer_count,
+                                "average_back_rate": str(quote.rate),
+                                "fresh": quote.fresh,
+                                "freshest_offer_created_at_utc": quote.fresh_offer_created_at.isoformat(),
+                                "freshest_offer_age_seconds": round(freshest_age, 1),
+                            },
                         },
                     },
                     "limitations": [
@@ -830,7 +904,9 @@ def main() -> int:
                     summary.write("\n## Sberkassa read-only page inspection\n")
                     summary.write("- The restored session was reused, or the user completed E-ID manually when required.\n")
                     summary.write("- Only https://sberkassa.site/deals#tab-3 was inspected in the shared Chromium profile.\n")
-                    summary.write("- Captured sanitized currency/direction identifiers, quote-related fields, and page update-marker lines separately for each page.\n")
+                    summary.write("- Captured only the ERUB -> RUB public-deals response; other directions and /exchange requests are blocked.\n")
+                    summary.write(f"- Validated the arithmetic mean of the first 20 back_rate values: {quote.rate}.\n")
+                    summary.write(f"- Freshness confirmed from server create_time: {freshest_age:.1f} seconds.\n")
                     summary.write("- No raw response body, cookies, session tokens, authorization headers, or offer amounts were published.\n")
                     summary.write(f"- Deals page update timestamp: {page_timestamps.get('deals_everyone_offers') or 'not found'}\n")
                     summary.write("- Offer creation timestamps are not used as page freshness.\n")
