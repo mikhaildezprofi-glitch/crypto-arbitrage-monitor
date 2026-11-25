@@ -180,3 +180,11 @@ The scheduled design must therefore be a separate, minimal headless read-only jo
 7. Measure free GitHub Actions runtime before considering the 18-runs/day hourly schedule. No recurring schedule or Telegram delivery is enabled.
 
 PR #10 remains Draft and unmerged. The Money Storage and BlackBit live validations do not clear the remaining Winance/Sberkassa blockers.
+
+
+### Winance live validation
+- Added `scripts/validate_winance_live.py` and the isolated `.github/workflows/winance-live-check.yml` workflow.
+- The adapter now requires the successful API envelope (`result=ok`, `status=200`) and requests cache revalidation with `Cache-Control: no-cache` and `Pragma: no-cache`.
+- Live workflow run `45690618669` completed successfully. It confirmed exactly pair ID `18`, `ERUB/USDT`, displayed rate `0.032728`, retrieved at `2026-11-25T19:59:57.829592Z`.
+- The endpoint does not publish a quote timestamp. The recorded `observed_at` is the UTC retrieval time from the live HTTPS response, not an independently published market-update timestamp.
+- Unit-test run `45690807145` passed all 129 tests, including the Winance response-envelope and cache-revalidation tests.
