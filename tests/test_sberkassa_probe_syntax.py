@@ -33,6 +33,7 @@ class SberkassaProbeSyntaxTests(unittest.TestCase):
         self.assertIn('"awaitPromise": True', capture_probe)
         self.assertIn('"Page.navigate"', source)
         self.assertIn('"Fetch.enable"', source)
+        self.assertIn('"Network.setCacheDisabled"', source)
         self.assertIn('"Page.addScriptToEvaluateOnNewDocument"', source)
         self.assertIn("localStorage.setItem('currency_from', 'ERUB')", source)
         self.assertIn("localStorage.setItem('currency_to', 'RUB')", source)
