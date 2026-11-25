@@ -629,6 +629,13 @@ def main() -> int:
             ):
                 post_eid_navigation_attempted = True
                 print("EID_RETURN=ACCOUNT_CONFIRMED; opening the Everyone Offers tab", flush=True)
+                # Persist the browser profile as soon as the provider's normal
+                # E-ID callback returns to its own account domain. Do not make
+                # profile persistence depend on the offers endpoint/parser:
+                # quote inspection may fail independently of a valid login.
+                profile_ready = Path(os.environ["GITHUB_WORKSPACE"]) / "money-storage-profile-ready.txt"
+                profile_ready.write_text("profile_ready\\n", encoding="utf-8")
+                print("CHROMIUM_PROFILE_PERSISTENCE=ELIGIBLE_AFTER_EID_RETURN", flush=True)
                 cdp.command("Page.navigate", {"url": "https://storage.money/deals#tab-3"})
                 time.sleep(2)
                 continue
