@@ -72,11 +72,13 @@ class WinanceProviderTests(unittest.TestCase):
         import json
         from unittest.mock import patch
 
+        payload_bytes = json.dumps(self.live_shape_payload()).encode()
+
         class FakeResponse:
             status = 200
 
             def read(self):
-                return json.dumps(self.live_shape_payload()).encode()
+                return payload_bytes
 
             def __enter__(self):
                 return self
