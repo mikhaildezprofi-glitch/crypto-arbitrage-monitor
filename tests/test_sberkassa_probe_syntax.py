@@ -62,10 +62,10 @@ class SberkassaProbeSyntaxTests(unittest.TestCase):
         project_root = Path(__file__).resolve().parents[1]
         readme = (project_root / "README.md").read_text(encoding="utf-8")
         self.assertIn("at least one correctly directed offer", readme)
-        self.assertIn("15 minutes before it", readme)
+        self.assertIn("15 minutes before collection", readme)
         self.assertIn("regardless of their creation times", readme)
         self.assertIn("arithmetic mean of `back_rate`", readme)
-        self.assertIn("Ignore `rate` completely", readme)
+        self.assertIn("ignore `rate` completely", readme)
         self.assertIn("single rate", readme)
 
     def test_sberkassa_workflow_starts_from_its_own_login_page(self):
