@@ -680,6 +680,13 @@ jobs:
             exit 1
           fi
           for attempt in 1 2 3; do
+            # Money Storage rate-limited the second independent read with HTTP 429
+            # when checks were launched only seconds apart. Keep each verification
+            # isolated, but leave a conservative cooldown between provider reads.
+            if [ "$attempt" -gt 1 ]; then
+              echo "SESSION_CHECK_COOLDOWN=120_SECONDS before attempt $attempt"
+              sleep 120
+            fi
             PROFILE_DIR="/tmp/money-storage-session-check-$attempt"
             STATUS_FILE="/tmp/money-storage-session-status-$attempt"
             LOG_FILE="session-check-results/attempt-$attempt.log"
