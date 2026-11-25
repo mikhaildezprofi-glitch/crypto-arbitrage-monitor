@@ -101,7 +101,7 @@ All arithmetic is denominated in USDT. Do not label USDT as exact USD without a 
 - PR #8: open Draft; Sberkassa diagnostics and freshness rules.
 - PR #9: closed as superseded; do not merge.
 - PR #10: open Draft; integration branch based on PR #8, with the Money Storage session work ported and the Cloudflare classifier/top-level document fixes retained.
-- PR #10 head at this snapshot: `a569d222b5f48cf8d3d3a63241528dd4c4c16eec`; it is mergeable but not merged. Keep it Draft until live source validation is complete.
+- PR #10 head at this snapshot: `8054990b44c291f9d8f85776aecbad4798779e69`; it is mergeable but not merged. Keep it Draft until live source validation is complete.
 - The integration branch README now reflects the public repository state and agreed quote rules. `main` remains unchanged until a reviewed merge.
 - No hourly production schedule is enabled.
 - The existing `four-step-quote-test.yml` is a manual diagnostic and intentionally does not calculate final USDT, profit, or ROI. It omits the fifth source.
