@@ -23,6 +23,12 @@ class SberkassaExchangeProbeTests(unittest.TestCase):
         self.assertIn('pair.get("to") == "USDT"', source)
         self.assertIn("SBERKASSA_EXCHANGE_AUTOMATIC_PAIR_CONFIRMED=RUB_USDT", source)
         self.assertIn("SBERKASSA_EXCHANGE_RESULT_RECEIVED=YES", source)
+        self.assertIn("SBERKASSA_EXCHANGE_RATE_CAPTURE_MODE=SINGLE_DISPLAYED_RATE", source)
+        self.assertIn('"rate_capture_mode": "single_displayed_rate"', source)
+        selection_loop = source.split("selection_deadline = time.monotonic() + 300", 1)[1].split(
+            'if selection.get("selection_confirmed") is not True:', 1
+        )[0]
+        self.assertNotIn("probe.drain_bodies()", selection_loop)
         self.assertIn("selection_deadline = time.monotonic() + 300", source)
         self.assertIn('"latest_dom_selection": ({', source)
         self.assertIn('samples[-1]["dom"].get("displayed_rate_text", "")', source)
