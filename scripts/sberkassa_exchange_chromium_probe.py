@@ -329,7 +329,7 @@ def main() -> int:
                   const inputs = Array.from(document.querySelectorAll('input')).slice(0,40).map(el => ({
                     visible: visible(el), type: clean(el.type), name: clean(el.name), id: clean(el.id),
                     placeholder: clean(el.placeholder), value: clean(el.value)
-                  })).filter(x => /rate|курс|currency|from|to|price/i.test([x.name,x.id,x.placeholder].join(' ')))
+                  })).filter(x => /rate|курс|currency|price/i.test([x.name,x.id,x.placeholder].join(' ')))
                     .filter(x => /^(?:[-+]?\\d+(?:[.,]\\d+)?|RUB|RUR|USDT|USD)$/i.test(x.value));
                   const customControls = Array.from(document.querySelectorAll('[class*="currency"],[id*="currency"],[class*="rate"],[id*="rate"],[class*="convert"],[id*="convert"],[class*="exchange"],[id*="exchange"],[data-currency],[data-rate]'))
                     .filter(visible).slice(0,60).map(el => ({
