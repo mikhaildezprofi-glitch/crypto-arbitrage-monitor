@@ -27,7 +27,7 @@ SAFE_KEYS = re.compile(
     r"code|symbol|name|from_id|to_id|base_currency|quote_currency|pair|pair_id|"
     r"direction|updated_at|updatedAt|timestamp|date|time|last_updated|refresh_time|created_at)$", re.I
 )
-CURRENCY = re.compile(r"^(RUB|RUR|USDT|USD|ERUB|E-RUBLE|₽|руб\\.?|тезер|TETHER)$", re.I)
+CURRENCY = re.compile(r"^(RUB|RUR|USDT|USD|ERUB|E-RUBLE|₽|руб\.?|тезер|TETHER)$", re.I)
 TIME_VALUE = re.compile(r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}", re.I)
 
 
