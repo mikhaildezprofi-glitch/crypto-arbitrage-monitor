@@ -23,13 +23,13 @@ def offer(rate, created, source="ERUB", target="RUB"):
 class SberkassaOfferQuoteTests(unittest.TestCase):
     def test_any_offer_within_15_minutes_confirms_freshness(self):
         payload = {"data": [
-            offer("25.0", (NOW - timedelta(hours=2)).isoformat()),
+            *[offer("25.0", (NOW - timedelta(hours=2)).isoformat()) for _ in range(19)],
             offer("26.0", (NOW - timedelta(minutes=14)).isoformat()),
         ]}
         quote = build_erub_rub_offer_quote(payload, now=NOW)
         self.assertTrue(quote.available)
-        self.assertEqual(quote.rate, Decimal("25.5"))
-        self.assertEqual(quote.selected_offer_count, 2)
+        self.assertEqual(quote.rate, Decimal("25.05"))
+        self.assertEqual(quote.selected_offer_count, 20)
 
     def test_freshness_does_not_filter_first_twenty_average(self):
         rows = [offer("20", (NOW - timedelta(hours=3)).isoformat()) for _ in range(20)]
@@ -40,25 +40,36 @@ class SberkassaOfferQuoteTests(unittest.TestCase):
         self.assertEqual(quote.selected_offer_count, 20)
 
     def test_stale_offers_keep_average_but_quote_is_unavailable(self):
-        payload = {"offers": [offer("25", (NOW - timedelta(minutes=16)).isoformat())]}
+        payload = {"offers": [
+            offer("25", (NOW - timedelta(minutes=16)).isoformat()) for _ in range(20)
+        ]}
         quote = build_erub_rub_offer_quote(payload, now=NOW)
         self.assertFalse(quote.available)
         self.assertEqual(quote.rate, Decimal("25"))
         self.assertEqual(quote.reason, "no_offer_created_within_15_minutes")
 
     def test_future_timestamp_does_not_confirm_freshness(self):
-        payload = {"offers": [offer("25", (NOW + timedelta(seconds=1)).isoformat())]}
+        payload = {"offers": [
+            offer("25", (NOW + timedelta(seconds=1)).isoformat()) for _ in range(20)
+        ]}
         quote = build_erub_rub_offer_quote(payload, now=NOW)
         self.assertFalse(quote.fresh)
 
     def test_wrong_direction_is_excluded(self):
         payload = {"offers": [
             offer("100", NOW.isoformat(), "RUB", "ERUB"),
-            offer("25", NOW.isoformat(), "ERUB", "RUB"),
+            *[offer("25", NOW.isoformat(), "ERUB", "RUB") for _ in range(20)],
         ]}
         quote = build_erub_rub_offer_quote(payload, now=NOW)
         self.assertEqual(quote.rate, Decimal("25"))
-        self.assertEqual(quote.matching_offer_count, 1)
+        self.assertEqual(quote.matching_offer_count, 20)
+
+    def test_fewer_than_twenty_matching_offers_blocks_quote(self):
+        rows = [offer("25", NOW.isoformat()) for _ in range(19)]
+        quote = build_erub_rub_offer_quote({"offers": rows}, now=NOW)
+        self.assertFalse(quote.available)
+        self.assertIsNone(quote.rate)
+        self.assertEqual(quote.reason, "fewer_than_20_matching_offers")
 
     def test_invalid_back_rate_in_first_twenty_blocks_quote(self):
         rows = [offer("25", NOW.isoformat()) for _ in range(20)]
