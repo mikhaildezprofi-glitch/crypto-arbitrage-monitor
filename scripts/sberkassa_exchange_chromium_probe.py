@@ -258,7 +258,7 @@ def main() -> int:
         samples = []
         last_signature = None
         last_capture = 0.0
-        capture_deadline = time.monotonic() + 900
+        capture_deadline = time.monotonic() + 300
         while time.monotonic() < capture_deadline:
             state = probe.command("Runtime.evaluate", {
                 "expression": """(() => {
