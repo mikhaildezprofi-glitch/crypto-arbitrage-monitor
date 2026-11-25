@@ -32,6 +32,7 @@ class SberkassaProbeSyntaxTests(unittest.TestCase):
         self.assertIn('sourceInventory: await (async () => {', capture_probe)
         self.assertIn('"awaitPromise": True', capture_probe)
         self.assertIn('"Page.navigate"', source)
+        self.assertIn('cdp.current_path = "/deals"', source)
         self.assertIn('"Fetch.enable"', source)
         self.assertIn('"Network.setCacheDisabled"', source)
         self.assertIn('"Page.addScriptToEvaluateOnNewDocument"', source)
