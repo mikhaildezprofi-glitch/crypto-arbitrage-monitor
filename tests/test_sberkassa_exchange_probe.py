@@ -9,6 +9,7 @@ class SberkassaExchangeProbeTests(unittest.TestCase):
         source = path.read_text(encoding="utf-8")
         compile(source, str(path), "exec")
         self.assertIn('TARGET_URL = "https://sberkassa.site/exchange"', source)
+        self.assertIn("targets[0] if targets else None", source)
         self.assertIn('verb == "GET"', source)
         self.assertIn('"Fetch.failRequest"', source)
         self.assertIn('"Network.setCacheDisabled"', source)
