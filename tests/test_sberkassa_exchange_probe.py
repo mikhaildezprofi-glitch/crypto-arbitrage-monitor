@@ -29,7 +29,7 @@ class SberkassaExchangeProbeTests(unittest.TestCase):
         self.assertIn("РОССИЙСКИЙ\\\\s+РУБЛЬ", source)
         self.assertIn("if (/USD/.test(text)) return 'USD'", source)
         self.assertIn("selection_confirmed:selectedCode === code", source)
-        self.assertIn("selected_pair:{from:codeFromLabel(selectedLabel('from')), to:codeFromLabel(selectedLabel('to'))}", source)
+        self.assertIn("selected_pair: {from:codeFromLabel(selectedLabel('from')), to:codeFromLabel(selectedLabel('to'))}", source)
         self.assertIn("displayed_rate_text:String((document.querySelector('#current_rate')?.innerText || '').trim())", source)
         self.assertIn('"latest_dom_selection": ({', source)
         self.assertIn('samples[-1]["dom"].get("displayed_rate_text", "")', source)
