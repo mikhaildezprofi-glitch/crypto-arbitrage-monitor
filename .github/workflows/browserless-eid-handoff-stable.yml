@@ -52,7 +52,7 @@ concurrency:
 jobs:
   cloud-browser:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 65
     env:
       CHROMIUM_PROFILE_PASSPHRASE: ${{ secrets.CHROMIUM_PROFILE_PASSPHRASE }}
     steps:
@@ -116,7 +116,7 @@ jobs:
       # background processes when a step ends, which caused the earlier 1033.
       - name: Keep browser and Cloudflare tunnel alive during E-ID handoff
         shell: bash
-        timeout-minutes: 35
+        timeout-minutes: 60
         run: |
           set -euo pipefail
           umask 077
@@ -503,7 +503,7 @@ jobs:
           # navigation and Cloudflare/E-ID diagnostics remain invisible.
           BROWSER_LOG_LINES=0
           echo "BROWSER_DIAGNOSTIC_STREAM=STARTED"
-          for i in $(seq 1 900); do
+          for i in $(seq 1 1750); do
             STATUS="$(cat /tmp/eid-auth-status 2>/dev/null || echo WAITING_FOR_LOGIN)"
             if [ "$STATUS" = "FORM_INSPECTION_COMPLETE" ]; then
               echo "FORM_INSPECTION_COMPLETE: the page itself sent a request containing from=ECR&to=USDT; inspect PAGE_REQUEST for the exact endpoint and parameter location."
@@ -521,7 +521,7 @@ jobs:
               grep -E '^(SESSION_REUSE_CHECK=|EID_HANDOFF=|EID_STATE=|CLOUDFLARE_STATE=|SBERKASSA_SESSION=|SBERKASSA_SESSION_AUTHENTICATED=|SESSION_REUSE_OR_EID_TIMEOUT=|SBERKASSA_CAPTURE_|SBERKASSA_EXCHANGE_|NAV=|HTTP_DIAG |REQUEST |QUOTE_FIELDS |PAGE_UPDATE_MARKERS |EXCHANGE_JSON )' /tmp/eid-browser.log | tail -n 160 || true
               exit 0
             fi
-            if [ "$STATUS" = "OFFERS_READ_FAILED" ] || [ "$STATUS" = "AUTH_TIMEOUT" ] || [ "$STATUS" = "MONEY_STORAGE_RETURN_TIMEOUT" ] || [ "$STATUS" = "SBERKASSA_CAPTURE_FAILED" ] || [ "$STATUS" = "SBERKASSA_CAPTURE_TIMEOUT" ] || [ "$STATUS" = "SBERKASSA_EXCHANGE_AUTH_TIMEOUT" ]; then
+            if [ "$STATUS" = "OFFERS_READ_FAILED" ] || [ "$STATUS" = "AUTH_TIMEOUT" ] || [ "$STATUS" = "MONEY_STORAGE_RETURN_TIMEOUT" ] || [ "$STATUS" = "SBERKASSA_CAPTURE_FAILED" ] || [ "$STATUS" = "SBERKASSA_CAPTURE_TIMEOUT" ] || [ "$STATUS" = "SBERKASSA_EXCHANGE_AUTH_TIMEOUT" ] || [ "$STATUS" = "SBERKASSA_EXCHANGE_SELECTION_TIMEOUT" ]; then
               echo "BROWSER_DIAGNOSTICS:"
               grep -E 'OFFERS_READ_|AUTH_|SBERKASSA_|NAV=|REQUEST |QUOTE_FIELDS |PAGE_UPDATE_MARKERS |HTTP_DIAG ' /tmp/eid-browser.log | tail -n 120 || true
               exit 1
