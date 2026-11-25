@@ -309,6 +309,75 @@ def main() -> int:
         Path("money-storage-profile-ready.txt").write_text("profile_ready\n", encoding="utf-8")
         print("SBERKASSA_EXCHANGE_SESSION=AUTHENTICATED", flush=True)
 
+        # The user authorized only the two currency dropdowns. These real UI
+        # clicks select RUB -> USDT; the exchange submit button is never clicked.
+        # convert.js calculates locally from the page's preloaded rates matrix.
+        selection = probe.command("Runtime.evaluate", {
+            "expression": """(async () => {
+              const store = (window.walletsStore && window.walletsStore.getWallets)
+                ? window.walletsStore.getWallets() : {};
+              const entries = Object.entries(store);
+              const codes = [...new Set(entries.map(([,w]) => String(w.currency_code || '').toUpperCase()).filter(Boolean))].sort();
+              const currencyLabel = value => String(value || '').match(/RUB|RUR|USDT|ERUB|USD|E-Ruble|Российский рубль|рубль/ig) || [];
+              const menuLabels = dir => {
+                const menu = document.querySelector('#currency_' + dir + 'SelectBoxItOptions');
+                return menu ? [...menu.querySelectorAll('li')].map(li => currencyLabel(li.innerText || li.textContent).join(' ')).filter(Boolean).slice(0,40) : [];
+              };
+              const chooseByClick = async (dir, code) => {
+                const select = document.querySelector('#currency_' + dir);
+                const entry = entries.find(([,w]) => String(w.currency_code || '').toUpperCase() === code);
+                const button = document.querySelector('#currency_' + dir + 'SelectBoxIt');
+                if (!select || !entry || !button) return {code, clicked:false, reason:'control_or_wallet_missing'};
+                button.click();
+                await new Promise(resolve => setTimeout(resolve, 250));
+                const menu = document.querySelector('#currency_' + dir + 'SelectBoxItOptions')
+                  || document.querySelector('[id*="currency_' + dir + '"][id*="Options"]');
+                if (!menu) return {code, clicked:false, reason:'dropdown_not_found', visible_labels:menuLabels(dir)};
+                const option = [...menu.querySelectorAll('li')].find(li => {
+                  const anchor = li.querySelector('a');
+                  const value = li.getAttribute('data-val') || li.getAttribute('data-id')
+                    || (anchor && (anchor.getAttribute('data-val') || anchor.getAttribute('data-id')));
+                  return String(value || '') === String(entry[0]);
+                });
+                if (!option) return {code, clicked:false, reason:'matching_option_not_found',
+                  visible_labels:[...menu.querySelectorAll('li')].map(li => currencyLabel(li.innerText || li.textContent).join(' ')).filter(Boolean).slice(0,40)};
+                const target = option.querySelector('a') || option;
+                target.click();
+                await new Promise(resolve => setTimeout(resolve, 350));
+                const selected = entries.find(([id]) => String(id) === String(select.value));
+                return {code, clicked:true, selected_code:selected ? String(selected[1].currency_code || '').toUpperCase() : ''};
+              };
+              const from = await chooseByClick('from', 'RUB');
+              const to = await chooseByClick('to', 'USDT');
+              const fromEntry = entries.find(([,w]) => String(w.currency_code || '').toUpperCase() === 'RUB');
+              const toEntry = entries.find(([,w]) => String(w.currency_code || '').toUpperCase() === 'USDT');
+              let matrix = null;
+              try { if (typeof rates !== 'undefined') matrix = rates; } catch (_) {}
+              if (!matrix && window.rates) matrix = window.rates;
+              const matrixRate = (matrix && fromEntry && toEntry)
+                ? matrix[toEntry[1].currency_id] && matrix[toEntry[1].currency_id][fromEntry[1].currency_id]
+                : null;
+              const rateText = (document.querySelector('#current_rate')?.innerText || '').trim().slice(0,180);
+              return {
+                available_currency_codes:codes,
+                from_selection:from,
+                to_selection:to,
+                selected_pair: {
+                  from: String(document.querySelector('#currency_from')?.value || '') === String(fromEntry?.[0] || '') ? 'RUB' : '',
+                  to: String(document.querySelector('#currency_to')?.value || '') === String(toEntry?.[0] || '') ? 'USDT' : ''
+                },
+                rate_matrix_available:!!matrix,
+                matrix_pair_value:typeof matrixRate === 'number' && Number.isFinite(matrixRate) ? matrixRate : null,
+                displayed_rate_text:rateText,
+                sell_amount_entered:false,
+                exchange_submit_clicked:false
+              };
+            })()""",
+            "awaitPromise": True,
+            "returnByValue": True
+        }).get("result", {}).get("result", {}).get("value", {})
+        print("SBERKASSA_EXCHANGE_UI_SELECTION=" + json.dumps(selection, ensure_ascii=False), flush=True)
+
         samples = []
         last_signature = None
         last_capture = 0.0
@@ -373,11 +442,12 @@ def main() -> int:
             "read_only": True,
             "http_methods_allowed": ["GET"],
             "captured_at_utc": datetime.now(timezone.utc).isoformat(),
+            "ui_selection": selection,
             "dom_samples": samples,
             "responses": probe.responses,
             "blocked_non_get_request_count": len(probe.blocked_methods),
             "limitations": [
-                "No page controls were clicked or changed by the probe",
+                "Only the RUB and USDT currency dropdown buttons/options were clicked as authorized; no amounts were entered and the exchange submit button was never clicked",
                 "All non-GET requests to sberkassa.site were blocked",
                 "Only allowlisted numeric quote/time/currency fields and visible form state are retained",
                 "HTTP cache headers and browser timing are diagnostics only, not proof of quote freshness",
