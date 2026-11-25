@@ -152,3 +152,31 @@ The scheduled design must therefore be a separate, minimal headless read-only jo
 - This CI result is unit-test evidence only. It does not establish a currently valid Money Storage session or a live quote.
 - No new E-ID browser workflow was dispatched. The last live inspection showed the saved profile was rejected and required a normal interactive E-ID/Cloudflare flow. The next live step requires the owner's participation in that flow and a configured CHROMIUM_PROFILE_PASSPHRASE secret.
 - PR #7 remains open and non-Draft; PR #8 and PR #10 remain open Drafts. No PR was merged. No hourly schedule or Telegram delivery was enabled.
+
+
+## Latest verified state (2026-11-26; supersedes earlier status where noted)
+
+### Money Storage session reuse
+- Interactive browser workflow run `45688839011` completed successfully on 2026-11-25.
+- The encrypted Chromium profile was restored and decrypted in a separate job.
+- Three independent Chromium processes each read the real page-originated Everyone Offers response for USDT -> ECR, validated 20 offers, and passed the provider `create_time` freshness rule (newest offer ages: 10.9, 9.2, and 40.4 seconds).
+- Each attempt reported `MONEY_STORAGE_SESSION=AUTHENTICATED_AFTER_PROTECTED_READ`. The second attempt succeeded after the 120-second cooldown added for HTTP 429 handling.
+- This supersedes the earlier statement that no current authenticated session had been confirmed. The saved profile is reusable while the provider continues to accept it; session expiry/revocation or a new provider challenge may still require normal user authentication.
+
+### BlackBit live validation
+- Added `scripts/validate_blackbit_live.py` and the isolated `.github/workflows/blackbit-live-check.yml` workflow.
+- BlackBit adapter requests now include `Cache-Control: no-cache` and `Pragma: no-cache` to request revalidation rather than reuse an intermediary cached response.
+- Live workflow run `45690240533` completed successfully on the integrated branch. It resolved exactly one ECR/USDT pair (ID `6`), read only `last_rate`, and returned `1.311` at `2026-11-25T19:57:32.262185Z`.
+- The endpoint does not expose a quote timestamp. The recorded `observed_at` therefore means the UTC time of successful live HTTPS retrieval, not an independently published market-update timestamp. This limitation is explicit in the live report; no order-book levels, volumes, liquidity, or execution checks are used. The quote remains indicative only.
+- Unit test run `45690234316` passed all 127 tests, including the new cache-revalidation header assertions.
+
+### Remaining blockers
+1. Validate Winance through a live read-only retrieval of pair ID 18 and confirm the response semantics.
+2. Validate Sberkassa ERUB -> RUB direction, first-20 `back_rate` average, and 15-minute `create_time` freshness from a fresh authenticated capture.
+3. Identify and validate the Sberkassa RUB -> USDT numeric field and an independent successful-refresh freshness signal on `/exchange`.
+4. Complete one integrated five-source report. The current four-source diagnostic still intentionally omits the fifth source and cannot report final USDT, profit, or ROI.
+5. Confirm fee inputs or keep net final amount/profit/ROI unavailable. Unknown fees remain unknown.
+6. Select and implement a notification destination without exposing secrets.
+7. Measure free GitHub Actions runtime before considering the 18-runs/day hourly schedule. No recurring schedule or Telegram delivery is enabled.
+
+PR #10 remains Draft and unmerged. The Money Storage and BlackBit live validations do not clear the remaining Winance/Sberkassa blockers.
