@@ -91,6 +91,10 @@ def _extract_rate(item: dict) -> Decimal | None:
 
 
 def parse_winance_response(payload: object, observed_at: datetime | None = None) -> Quote:
+    if not isinstance(payload, dict):
+        raise WinanceQuoteError("Winance response must be a JSON object.")
+    if payload.get("result") != "ok" or payload.get("status") != 200:
+        raise WinanceQuoteError("Winance API response envelope is not successful.")
     matches = [item for item in _walk(payload) if _is_target_pair(item)]
     for item in matches:
         rate = _extract_rate(item)
@@ -111,7 +115,12 @@ def parse_winance_response(payload: object, observed_at: datetime | None = None)
 def fetch_quote(timeout_seconds: int = 15) -> Quote:
     request = Request(
         API_URL,
-        headers={"Accept": "application/json", "User-Agent": "CryptoArbitrageMonitor/0.1"},
+        headers={
+            "Accept": "application/json",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+            "User-Agent": "CryptoArbitrageMonitor/0.1",
+        },
     )
     try:
         with urlopen(request, timeout=timeout_seconds) as response:
