@@ -1,8 +1,8 @@
-"""Human-operated, read-only inspection of Sberkassa /exchange.
+"""Read-only inspection of Sberkassa /exchange with authorized currency selection.
 
-The probe never clicks, submits, changes form values, or sends non-GET
-requests. It records only sanitized visible form state, quote/time fields,
-and same-origin response metadata. E-ID/CAPTCHA/MFA remain manual.
+The probe clicks only the RUB and USDT currency dropdown controls/options.
+It never enters an amount or clicks exchange/submit controls. Non-GET
+requests are blocked. E-ID/CAPTCHA/MFA remain manual.
 """
 from __future__ import annotations
 
@@ -323,39 +323,74 @@ def main() -> int:
                 const menu = document.querySelector('#currency_' + dir + 'SelectBoxItOptions');
                 return menu ? [...menu.querySelectorAll('li')].map(li => currencyLabel(li.innerText || li.textContent).join(' ')).filter(Boolean).slice(0,40) : [];
               };
+              const codeFromLabel = value => {
+                const text = String(value || '').toUpperCase();
+                if (/\\bUSDT\\b|TETHER|ТЕЗЕР/.test(text)) return 'USDT';
+                if (/\\bERUB\\b|E-RUBLE/.test(text)) return 'ERUB';
+                if (/\\bRUB\\b|\\bRUR\\b|РОССИЙСКИЙ РУБЛЬ|РУБЛЬ|₽/.test(text)) return 'RUB';
+                if (/\\bUSD\\b/.test(text)) return 'USD';
+                return '';
+              };
               const chooseByClick = async (dir, code) => {
                 const select = document.querySelector('#currency_' + dir);
-                const entry = entries.find(([,w]) => String(w.currency_code || '').toUpperCase() === code);
-                const button = document.querySelector('#currency_' + dir + 'SelectBoxIt');
-                if (!select || !entry || !button) return {code, clicked:false, reason:'control_or_wallet_missing'};
+                const button = document.querySelector('#currency_' + dir + 'SelectBoxIt')
+                  || document.querySelector('#currency_' + dir + 'SelectBoxItText');
+                if (!select || !button) return {code, clicked:false, reason:'dropdown_control_missing'};
+                const nativeOption = [...(select.options || [])].find(opt =>
+                  codeFromLabel(opt.textContent) === code
+                  || (entries.some(([id,w]) => String(id) === String(opt.value)
+                      && String(w.currency_code || '').toUpperCase() === code))
+                );
+                if (!nativeOption) return {code, clicked:false, reason:'currency_option_missing',
+                  available_labels:[...(select.options || [])].map(opt => String(opt.textContent || '').trim()).slice(0,30)};
                 button.click();
-                await new Promise(resolve => setTimeout(resolve, 250));
+                await new Promise(resolve => setTimeout(resolve, 300));
                 const menu = document.querySelector('#currency_' + dir + 'SelectBoxItOptions')
                   || document.querySelector('[id*="currency_' + dir + '"][id*="Options"]');
-                if (!menu) return {code, clicked:false, reason:'dropdown_not_found', visible_labels:menuLabels(dir)};
+                if (!menu) return {code, clicked:false, reason:'dropdown_menu_missing'};
                 const option = [...menu.querySelectorAll('li')].find(li => {
                   const anchor = li.querySelector('a');
                   const value = li.getAttribute('data-val') || li.getAttribute('data-id')
                     || (anchor && (anchor.getAttribute('data-val') || anchor.getAttribute('data-id')));
-                  return String(value || '') === String(entry[0]);
+                  const label = (li.innerText || li.textContent || '') + ' '
+                    + (anchor ? anchor.getAttribute('title') || '' : '');
+                  return String(value || '') === String(nativeOption.value)
+                    || codeFromLabel(label) === code;
                 });
-                if (!option) return {code, clicked:false, reason:'matching_option_not_found',
-                  visible_labels:[...menu.querySelectorAll('li')].map(li => currencyLabel(li.innerText || li.textContent).join(' ')).filter(Boolean).slice(0,40)};
-                const target = option.querySelector('a') || option;
-                target.click();
-                await new Promise(resolve => setTimeout(resolve, 350));
-                const selected = entries.find(([id]) => String(id) === String(select.value));
-                return {code, clicked:true, selected_code:selected ? String(selected[1].currency_code || '').toUpperCase() : ''};
+                if (!option) return {code, clicked:false, reason:'matching_dropdown_option_missing',
+                  available_labels:[...menu.querySelectorAll('li')].map(li => String(li.innerText || li.textContent || '').trim()).slice(0,40)};
+                (option.querySelector('a') || option).click();
+                await new Promise(resolve => setTimeout(resolve, 650));
+                const selectedLabel = document.querySelector('#currency_' + dir + 'SelectBoxItText');
+                const selectedCode = codeFromLabel(
+                  (selectedLabel && (selectedLabel.innerText || selectedLabel.textContent)) ||
+                  (select.selectedOptions && select.selectedOptions[0] && select.selectedOptions[0].textContent)
+                ) || codeFromLabel(select.value);
+                return {code, clicked:true, selected_code:selectedCode,
+                  selection_confirmed:selectedCode === code};
               };
               const from = await chooseByClick('from', 'RUB');
               const to = await chooseByClick('to', 'USDT');
+              const selectedCode = dir => {
+                const select = document.querySelector('#currency_' + dir);
+                const label = document.querySelector('#currency_' + dir + 'SelectBoxItText');
+                return codeFromLabel((label && (label.innerText || label.textContent))
+                  || (select && select.selectedOptions && select.selectedOptions[0] && select.selectedOptions[0].textContent)
+                  || (select && select.value));
+              };
               const fromEntry = entries.find(([,w]) => String(w.currency_code || '').toUpperCase() === 'RUB');
               const toEntry = entries.find(([,w]) => String(w.currency_code || '').toUpperCase() === 'USDT');
               let matrix = null;
               try { if (typeof rates !== 'undefined') matrix = rates; } catch (_) {}
               if (!matrix && window.rates) matrix = window.rates;
-              const rawMatrixRate = (matrix && fromEntry && toEntry)
-                ? matrix[toEntry[1].currency_id] && matrix[toEntry[1].currency_id][fromEntry[1].currency_id]
+              const fromSelect = document.querySelector('#currency_from');
+              const toSelect = document.querySelector('#currency_to');
+              const actualFromId = fromSelect ? fromSelect.value : '';
+              const actualToId = toSelect ? toSelect.value : '';
+              const actualFromEntry = entries.find(([id]) => String(id) === String(actualFromId));
+              const actualToEntry = entries.find(([id]) => String(id) === String(actualToId));
+              const rawMatrixRate = (matrix && actualFromEntry && actualToEntry)
+                ? matrix[actualToEntry[1].currency_id] && matrix[actualToEntry[1].currency_id][actualFromEntry[1].currency_id]
                 : null;
               const matrixRate = rawMatrixRate === null || rawMatrixRate === undefined || rawMatrixRate === ''
                 ? null : Number(rawMatrixRate);
@@ -364,10 +399,7 @@ def main() -> int:
                 available_currency_codes:codes,
                 from_selection:from,
                 to_selection:to,
-                selected_pair: {
-                  from: String(document.querySelector('#currency_from')?.value || '') === String(fromEntry?.[0] || '') ? 'RUB' : '',
-                  to: String(document.querySelector('#currency_to')?.value || '') === String(toEntry?.[0] || '') ? 'USDT' : ''
-                },
+                selected_pair: {from:selectedCode('from'), to:selectedCode('to')},
                 rate_matrix_available:!!matrix,
                 matrix_pair_value:typeof matrixRate === 'number' && Number.isFinite(matrixRate) ? matrixRate : null,
                 displayed_rate_text:rateText,
@@ -389,6 +421,21 @@ def main() -> int:
                 "expression": """(() => {
                   const clean = v => String(v || '').trim().replace(/\\s+/g,' ').slice(0,180);
                   const currencyLabel = v => Array.from(String(v || '').matchAll(/(Российский рубль|E-Ruble|ERUB|USDT|RUB|RUR|USD|Tether|Тезер|рубль|₽)/gi)).map(x=>x[0]).slice(0,8).join(' ');
+                  const codeFromLabel = v => {
+                    const text = String(v || '').toUpperCase();
+                    if (/\\bUSDT\\b|TETHER|ТЕЗЕР/.test(text)) return 'USDT';
+                    if (/\\bERUB\\b|E-RUBLE/.test(text)) return 'ERUB';
+                    if (/\\bRUB\\b|\\bRUR\\b|РОССИЙСКИЙ РУБЛЬ|РУБЛЬ|₽/.test(text)) return 'RUB';
+                    if (/\\bUSD\\b/.test(text)) return 'USD';
+                    return '';
+                  };
+                  const selectedLabel = dir => {
+                    const label = document.querySelector('#currency_' + dir + 'SelectBoxItText');
+                    const select = document.querySelector('#currency_' + dir);
+                    return (label && (label.innerText || label.textContent))
+                      || (select && select.selectedOptions && select.selectedOptions[0] && select.selectedOptions[0].textContent)
+                      || '';
+                  };
                   const visible = el => !!(el && el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden' && getComputedStyle(el).display !== 'none');
                   const body = document.body ? document.body.innerText : '';
                   const selects = Array.from(document.querySelectorAll('select')).slice(0,20).map(el => ({
@@ -417,7 +464,13 @@ def main() -> int:
                     .map(el => currencyLabel(el.textContent)).filter(Boolean).slice(0,80);
                   const lines = body.split(/\\n/).map(x=>x.trim()).filter(x=>x && x.length<=180 && /(RUB|RUR|USDT|руб|₽|курс|rate|обмен|обновл|updated|refresh|last update)/i.test(x)).slice(0,60);
                   const timeLines = body.split(/\\n/).map(x=>x.trim()).filter(x=>x && /(обновл|updated|refresh|последн.*курс|last update)/i.test(x)).slice(0,15);
-                  return {url:location.href,title:document.title,lines,time_lines:timeLines,selects,inputs,custom_controls:customControls,dropdown_options:dropdownOptions};
+                  return {
+                    url:location.href,title:document.title,lines,time_lines:timeLines,selects,inputs,
+                    custom_controls:customControls,dropdown_options:dropdownOptions,
+                    selected_pair:{from:codeFromLabel(selectedLabel('from')),to:codeFromLabel(selectedLabel('to'))},
+                    selected_labels:{from:String(selectedLabel('from') || '').trim().slice(0,120),to:String(selectedLabel('to') || '').trim().slice(0,120)},
+                    displayed_rate_text:String((document.querySelector('#current_rate')?.innerText || '').trim()).slice(0,180)
+                  };
                 })()""",
                 "returnByValue": True,
             }).get("result", {}).get("value", {})
@@ -445,11 +498,18 @@ def main() -> int:
             "http_methods_allowed": ["GET"],
             "captured_at_utc": datetime.now(timezone.utc).isoformat(),
             "ui_selection": selection,
+            "latest_dom_selection": ({
+                "selected_pair": samples[-1]["dom"].get("selected_pair", {}) if samples else {},
+                "selected_labels": samples[-1]["dom"].get("selected_labels", {}) if samples else {},
+                "displayed_rate_text": samples[-1]["dom"].get("displayed_rate_text", "") if samples else "",
+                "observed_at_utc": samples[-1].get("observed_at_utc", "") if samples else "",
+            }),
             "dom_samples": samples,
             "responses": probe.responses,
             "blocked_non_get_request_count": len(probe.blocked_methods),
             "limitations": [
                 "Only the RUB and USDT currency dropdown buttons/options were clicked as authorized; no amounts were entered and the exchange submit button was never clicked",
+                "The final selected pair and displayed rate are read from the latest captured DOM snapshot, independently of click-attempt status",
                 "All non-GET requests to sberkassa.site were blocked",
                 "Only allowlisted numeric quote/time/currency fields and visible form state are retained",
                 "HTTP cache headers and browser timing are diagnostics only, not proof of quote freshness",
