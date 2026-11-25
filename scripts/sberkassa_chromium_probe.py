@@ -457,6 +457,9 @@ def main() -> int:
                 )
             },
         )
+        # Set the capture scope before navigation so the very first
+        # page-originated JSON responses are attributed to the deals tab.
+        cdp.current_path = "/deals"
         cdp.command("Page.navigate", {"url": "https://sberkassa.site/deals#tab-3"})
         print("SBERKASSA_PROBE_READY=YES", flush=True)
         print("SBERKASSA_SCOPE=DEALS_TAB_ERUB_TO_RUB_ONLY", flush=True)
@@ -486,6 +489,8 @@ def main() -> int:
             ).get("result", {}).get("value", {})
             auth_url = urlparse(auth_state.get("url", ""))
             auth_host = (auth_url.hostname or "").lower()
+            if auth_host == "sberkassa.site":
+                cdp.current_path = auth_url.path
             if auth_url.scheme == "https" and (
                 auth_host == "e-id.cards" or auth_host.endswith(".e-id.cards")
             ):
