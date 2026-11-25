@@ -35,7 +35,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: free-eid-cloud-browser-stable-${{ inputs.target }}
+  group: free-eid-cloud-browser-stable-shared-profile
   # Never kill a live authenticated browser session because another run starts.
   cancel-in-progress: false
 
