@@ -21,16 +21,16 @@ from arbitrage_monitor.providers.money_storage import (
 
 UPDATE_MARKER_RE = re.compile(r"(обновл|updated|refresh|last update|время обнов|последн.*курс)", re.I)
 ISO_TIMESTAMP_RE = re.compile(
-    r"\\b(20\\d{2}-\\d{1,2}-\\d{1,2}[ T]\\d{1,2}:\\d{2}(?::\\d{2})?(?:Z|[+-]\\d{2}:?\\d{2})?)"
+    r"\b(20\d{2}-\d{1,2}-\d{1,2}[ T]\d{1,2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:?\d{2})?)"
 )
 DMY_TIMESTAMP_RE = re.compile(
-    r"\\b(\\d{1,2})[./](\\d{1,2})[./](20\\d{2})[, ]+"
-    r"(\\d{1,2}):(\\d{2})(?::(\\d{2}))?\\b"
+    r"\b(\d{1,2})[./](\d{1,2})[./](20\d{2})[, ]+"
+    r"(\d{1,2}):(\d{2})(?::(\d{2}))?\b"
 )
-TIME_ONLY_RE = re.compile(r"\\b(\\d{1,2}):(\\d{2})(?::(\\d{2}))?\\b")
+TIME_ONLY_RE = re.compile(r"\b(\d{1,2}):(\d{2})(?::(\d{2}))?\b")
 RELATIVE_RE = re.compile(
-    r"(\\d+)\\s*(секунд(?:ы|у)?|сек\\.?|seconds?|s|мин(?:ут(?:ы|у)?)?\\.?|minutes?|mins?|"
-    r"час(?:а|ов)?|hours?|hrs?|д(?:ень|ня|ней)?|days?)\\s*(назад|ago)?",
+    r"(\d+)\s*(секунд(?:ы|у)?|сек\.?|seconds?|s|мин(?:ут(?:ы|у)?)?\.?|minutes?|mins?|"
+    r"час(?:а|ов)?|hours?|hrs?|д(?:ень|ня|ней)?|days?)\s*(назад|ago)?",
     re.I,
 )
 
