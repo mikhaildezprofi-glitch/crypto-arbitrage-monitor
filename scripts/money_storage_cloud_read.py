@@ -6,15 +6,114 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
+import re
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Mapping
 from urllib.parse import parse_qs, urlparse
+from zoneinfo import ZoneInfo
 
 from arbitrage_monitor.providers.money_storage import (
     average_first_20_offer_rate,
     parse_public_offers,
 )
+
+
+UPDATE_MARKER_RE = re.compile(r"(обновл|updated|refresh|last update|время обнов|последн.*курс)", re.I)
+ISO_TIMESTAMP_RE = re.compile(
+    r"\\b(20\\d{2}-\\d{1,2}-\\d{1,2}[ T]\\d{1,2}:\\d{2}(?::\\d{2})?(?:Z|[+-]\\d{2}:?\\d{2})?)"
+)
+DMY_TIMESTAMP_RE = re.compile(
+    r"\\b(\\d{1,2})[./](\\d{1,2})[./](20\\d{2})[, ]+"
+    r"(\\d{1,2}):(\\d{2})(?::(\\d{2}))?\\b"
+)
+TIME_ONLY_RE = re.compile(r"\\b(\\d{1,2}):(\\d{2})(?::(\\d{2}))?\\b")
+RELATIVE_RE = re.compile(
+    r"(\\d+)\\s*(секунд(?:ы|у)?|сек\\.?|seconds?|s|мин(?:ут(?:ы|у)?)?\\.?|minutes?|mins?|"
+    r"час(?:а|ов)?|hours?|hrs?|д(?:ень|ня|ней)?|days?)\\s*(назад|ago)?",
+    re.I,
+)
+
+
+def parse_page_update_timestamp(
+    lines: list[str] | tuple[str, ...],
+    *,
+    timezone_name: str,
+    browser_local_now: Mapping[str, int],
+) -> tuple[datetime, str]:
+    """Parse a visible page update marker without substituting scrape time."""
+    try:
+        page_zone = ZoneInfo(timezone_name)
+    except Exception as exc:
+        raise ValueError("Browser page timezone is unavailable or invalid.") from exc
+
+    try:
+        local_now = datetime(
+            int(browser_local_now["year"]),
+            int(browser_local_now["month"]),
+            int(browser_local_now["day"]),
+            int(browser_local_now["hour"]),
+            int(browser_local_now["minute"]),
+            int(browser_local_now.get("second", 0)),
+            tzinfo=page_zone,
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("Browser local clock metadata is incomplete or invalid.") from exc
+
+    for line in lines:
+        if not UPDATE_MARKER_RE.search(line):
+            continue
+
+        iso_match = ISO_TIMESTAMP_RE.search(line)
+        if iso_match:
+            raw = iso_match.group(1).replace("Z", "+00:00")
+            try:
+                parsed = datetime.fromisoformat(raw)
+            except ValueError:
+                parsed = None
+            if parsed is not None:
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=page_zone)
+                return parsed.astimezone(timezone.utc), line[:240]
+
+        dmy_match = DMY_TIMESTAMP_RE.search(line)
+        if dmy_match:
+            day, month, year, hour, minute, second = dmy_match.groups()
+            parsed = datetime(
+                int(year), int(month), int(day), int(hour), int(minute),
+                int(second or 0), tzinfo=page_zone
+            )
+            return parsed.astimezone(timezone.utc), line[:240]
+
+        relative_match = RELATIVE_RE.search(line)
+        if relative_match:
+            amount = int(relative_match.group(1))
+            unit = relative_match.group(2).lower()
+            if "сек" in unit or unit in ("s", "second", "seconds"):
+                delta = timedelta(seconds=amount)
+            elif "мин" in unit or unit.startswith(("min", "mins")):
+                delta = timedelta(minutes=amount)
+            elif "час" in unit or unit.startswith(("hour", "hr")):
+                delta = timedelta(hours=amount)
+            else:
+                delta = timedelta(days=amount)
+            return (local_now - delta).astimezone(timezone.utc), line[:240]
+
+        if re.search(r"(только что|just now|сейчас)", line, re.I):
+            return local_now.astimezone(timezone.utc), line[:240]
+
+        time_match = TIME_ONLY_RE.search(line)
+        if time_match:
+            hour, minute, second = time_match.groups()
+            parsed = local_now.replace(
+                hour=int(hour), minute=int(minute), second=int(second or 0), microsecond=0
+            )
+            if parsed - local_now > timedelta(hours=1):
+                parsed -= timedelta(days=1)
+            return parsed.astimezone(timezone.utc), line[:240]
+
+    raise ValueError("Page did not expose a parseable update timestamp.")
+
 
 OFFERS_URL = "https://storage.money/deals#tab-3"
 API_URL = "https://storage.money/public_deals/fetch?offset=0&limit=20&from=ECR&to=USDT"
