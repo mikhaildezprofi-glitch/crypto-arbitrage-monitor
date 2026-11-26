@@ -37,7 +37,18 @@ permissions:
   contents: read
 
 jobs:
+  reusable-call-graph-check:
+    if: inputs.target == 'graph_check'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Confirm reusable workflow graph resolution without starting a browser
+        run: |
+          echo "REUSABLE_WORKFLOW_GRAPH_RESOLUTION=OK"
+          echo "CHROMIUM_STARTED=NO"
+          echo "PROVIDER_SITES_OPENED=NO"
+
   cloud-browser:
+    if: inputs.target != 'graph_check'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
