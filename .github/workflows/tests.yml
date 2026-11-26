@@ -43,6 +43,8 @@ jobs:
     env:
       TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
     steps:
+      - uses: actions/checkout@v5
+
       - name: Validate Funnel DNS and browser health-check scripts
         shell: bash
         run: |
