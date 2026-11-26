@@ -33,7 +33,7 @@ from arbitrage_monitor.providers.sberkassa import (
 
 DEBUG_ENDPOINT = "http://127.0.0.1:9222/json/list"
 STATUS_FILE = Path(os.environ.get("SBERKASSA_STATUS_FILE", "/tmp/eid-auth-status"))
-DEADLINE_SECONDS = 1800
+DEADLINE_SECONDS = 600
 MAX_BODY_BYTES = 1_000_000
 VALUE_KEYS = re.compile(
     r"(rate|price|updated|timestamp|date|time)",
