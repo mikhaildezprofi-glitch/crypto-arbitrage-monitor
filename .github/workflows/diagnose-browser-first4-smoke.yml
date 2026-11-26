@@ -1,0 +1,14 @@
+name: Diagnose first four browser workflow steps (no browser)
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    uses: ./.github/workflows/reusable-browser-first4-smoke.yml
+    with:
+      target: graph_check
+    secrets: inherit
