@@ -6,7 +6,10 @@ from pathlib import Path
 from decimal import Decimal
 
 from arbitrage_monitor.providers.money_storage import MoneyStorageSnapshotQuoteProvider
-from arbitrage_monitor.providers.sberkassa import (\n    SberkassaSnapshotQuoteProvider,\n    SberkassaExchangeSnapshotQuoteProvider,\n)
+from arbitrage_monitor.providers.sberkassa import (
+    SberkassaSnapshotQuoteProvider,
+    SberkassaExchangeSnapshotQuoteProvider,
+)
 
 
 NOW = datetime.now(timezone.utc)
