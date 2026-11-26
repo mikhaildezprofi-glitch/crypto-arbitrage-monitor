@@ -32,6 +32,8 @@ on:
     secrets:
       CHROMIUM_PROFILE_PASSPHRASE:
         required: true
+      CLOUDFLARE_TUNNEL_TOKEN:
+        required: false
 
 permissions:
   contents: read
@@ -43,6 +45,8 @@ jobs:
     timeout-minutes: 40
     env:
       CHROMIUM_PROFILE_PASSPHRASE: ${{ secrets.CHROMIUM_PROFILE_PASSPHRASE }}
+      CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
+      CLOUDFLARE_TUNNEL_HOSTNAME: ${{ vars.CLOUDFLARE_TUNNEL_HOSTNAME }}
     steps:
       - uses: actions/checkout@v5
 
