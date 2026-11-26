@@ -1,0 +1,1 @@
+One-time trigger: launch the auth_only browser session with exact target URL validation. No quote collectors or data collection.
