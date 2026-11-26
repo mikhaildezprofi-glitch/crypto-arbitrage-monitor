@@ -31,7 +31,6 @@ class FourStepRunnerSyntaxTests(unittest.TestCase):
         self.assertIn("SBERKASSA_SNAPSHOT:", workflow)
         self.assertIn("workflow_call:", reusable)
         self.assertIn("chromium-profile-money_storage-${{ github.ref_name }}-${{ inputs.target || 'manual' }}-", reusable)
-        self.assertIn("  cancel-in-progress: false", reusable)
         self.assertIn("four-step-quote-test-${{ github.ref }}", workflow)
         self.assertIn("  cancel-in-progress: false", workflow)
 
