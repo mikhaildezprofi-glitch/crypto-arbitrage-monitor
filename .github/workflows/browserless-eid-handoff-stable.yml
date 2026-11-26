@@ -1,6 +1,11 @@
 name: Free E-ID cloud browser (stable tunnel)
 
 on:
+  push:
+    branches:
+      - feat/tailscale-funnel-ci-20261126
+    paths:
+      - .github/workflows/browserless-eid-handoff-stable.yml
   workflow_dispatch:
     inputs:
       target:
@@ -41,7 +46,7 @@ permissions:
 
 jobs:
   cloud-browser:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
@@ -134,7 +139,7 @@ jobs:
         shell: bash
         timeout-minutes: 35
         env:
-          TARGET: ${{ inputs.target != '' && inputs.target || (github.event_name == 'push' && 'sberkassa' || 'all') }}
+          TARGET: ${{ inputs.target != '' && inputs.target || 'all' }}
           INSPECT_CURRENCY_FORM: ${{ inputs.inspect_currency_form }}
           COLLECTION_EVENT_NAME: ${{ github.event_name }}
         run: bash scripts/keep_browser_and_tunnel_alive.sh
