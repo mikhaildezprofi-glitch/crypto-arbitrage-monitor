@@ -43,6 +43,14 @@ jobs:
     env:
       TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
     steps:
+      - name: Validate Funnel DNS and browser health-check scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/keep_browser_and_tunnel_alive.sh
+          python3 -m py_compile scripts/resolve_tailscale_funnel_ipv4.py
+          echo "FUNNEL_HEALTHCHECK_SYNTAX=OK"
+
       - name: Require Tailscale auth key
         shell: bash
         run: |
