@@ -15,14 +15,6 @@ on:
         required: true
         type: boolean
         default: false
-  push:
-    branches:
-      - feat/integrated-arbitrage-automation-20261123
-    paths:
-      - .github/workflows/full-read-only-collection.yml
-      - .github/workflows/browserless-eid-handoff-stable.yml
-      - scripts/run_full_collection.py
-      - src/arbitrage_monitor/providers/**
 
 permissions:
   contents: read
