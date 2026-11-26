@@ -1,0 +1,32 @@
+name: Full read-only five-source collection (one shared Chromium, three tabs)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Select the collection target"
+        required: true
+        type: choice
+        options:
+          - all
+        default: all
+      inspect_currency_form:
+        description: "Inspect the currency form (kept false for the integrated run)"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  bootstrap-notice:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Explain the bootstrap workflow
+        run: |
+          echo "This default-branch workflow is only a dispatch bootstrap."
+          echo "Select feat/integrated-arbitrage-automation-20261123 in the Run workflow branch selector."
+          echo "The experimental branch contains the actual read-only collection workflow."
