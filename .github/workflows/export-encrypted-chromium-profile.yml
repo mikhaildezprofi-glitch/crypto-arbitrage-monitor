@@ -1,0 +1,41 @@
+name: Export encrypted Chromium profile cache
+
+on:
+  push:
+    branches:
+      - feat/integrated-arbitrage-automation-20261123
+    paths:
+      - .github/workflows/export-encrypted-chromium-profile.yml
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  export-encrypted-profile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Restore exact previously verified encrypted profile cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/chromium-profile-money_storage.gpg
+          key: Linux-chromium-profile-money_storage-feat/integrated-arbitrage-automation-20261123-45688839011
+
+      - name: Validate encrypted profile archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/chromium-profile-money_storage.gpg"
+          test -s "$archive"
+          gpg --list-packets "$archive" >/dev/null 2>&1
+          echo "ENCRYPTED_PROFILE_ARCHIVE=VALID"
+
+      - name: Export encrypted profile as short-lived artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: encrypted-chromium-profile-cache-run-45688839011
+          path: ${{ runner.temp }}/chromium-profile-money_storage.gpg
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
