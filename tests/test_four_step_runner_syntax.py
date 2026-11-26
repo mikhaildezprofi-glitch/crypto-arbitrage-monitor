@@ -17,7 +17,7 @@ class FourStepRunnerSyntaxTests(unittest.TestCase):
         self.assertIn("BlackBitQuoteProvider", source)
         self.assertIn("WinanceQuoteProvider", source)
 
-    def test_combined_workflow_serializes_both_targets_on_shared_browser_profile(self):
+    def test_combined_workflow_keeps_provider_sessions_isolated(self):
         root = Path(__file__).resolve().parents[1]
         workflow = (root / ".github" / "workflows" / "four-step-quote-test.yml").read_text(encoding="utf-8")
         reusable = (root / ".github" / "workflows" / "browserless-eid-handoff-stable.yml").read_text(encoding="utf-8")
@@ -30,8 +30,8 @@ class FourStepRunnerSyntaxTests(unittest.TestCase):
         self.assertIn("MONEY_STORAGE_SNAPSHOT:", workflow)
         self.assertIn("SBERKASSA_SNAPSHOT:", workflow)
         self.assertIn("workflow_call:", reusable)
-        self.assertIn("free-eid-cloud-browser-stable-shared-profile", reusable)
-        self.assertNotIn("free-eid-cloud-browser-stable-${{ inputs.target }}", reusable)
+        self.assertIn("group: free-eid-cloud-browser-${{ inputs.target || 'manual' }}", reusable)
+        self.assertIn("chromium-profile-money_storage-${{ github.ref_name }}-${{ inputs.target || 'manual' }}-", reusable)
         self.assertIn("  cancel-in-progress: false", reusable)
         self.assertIn("four-step-quote-test-${{ github.ref }}", workflow)
         self.assertIn("  cancel-in-progress: false", workflow)
