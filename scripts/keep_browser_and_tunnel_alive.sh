@@ -574,7 +574,7 @@ echo "PUBLIC_WEBSOCKET_HEALTHCHECK=HTTP_101"
 echo "REMOTE_BROWSER_URL=$TUNNEL_URL/$ACCESS_TOKEN/token-vnc.html"
 echo "REMOTE_BROWSER_AUTH=automatic via temporary per-run access token"
 echo "VNC_AUTH=automatic; credentials are not printed"
-echo if [ "$TARGET" = "auth_only" ]; then
+if [ "$TARGET" = "auth_only" ]; then
   echo "MANUAL_AUTH_BUTTON=AVAILABLE; complete provider sign-in in all three tabs, then press 'Авторизация завершена' to save the encrypted session."
   echo "AUTH_ONLY_WAIT_LIMIT_SECONDS=600"
 else
