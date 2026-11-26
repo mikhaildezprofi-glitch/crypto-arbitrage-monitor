@@ -381,6 +381,9 @@ start_all_probes() {
   SBERKASSA_EXCHANGE_PID=$!
   BRIDGE_PID="$MONEY_PID $SBERKASSA_SELL_PID $SBERKASSA_EXCHANGE_PID"
 }
+# The shared monitor reads this file even in all-tabs mode; create it before polling.
+: > /tmp/eid-browser.log
+
 if [ "$TARGET" = "all" ]; then
   : > /tmp/money-storage-browser.log
   : > /tmp/sberkassa-sell-browser.log
