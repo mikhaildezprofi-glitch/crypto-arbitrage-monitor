@@ -58,7 +58,7 @@ jobs:
   cloud-browser:
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
     runs-on: ubuntu-latest
-    timeout-minutes: 55
+    timeout-minutes: 42
     env:
       CHROMIUM_PROFILE_PASSPHRASE: ${{ secrets.CHROMIUM_PROFILE_PASSPHRASE }}
       TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
@@ -151,7 +151,7 @@ jobs:
       # background processes when a step ends, which caused the earlier 1033.
       - name: Keep browser and Tailscale Funnel alive during E-ID handoff
         shell: bash
-        timeout-minutes: 48
+        timeout-minutes: 35
         env:
           TARGET: ${{ inputs.target != '' && inputs.target || 'all' }}
           INSPECT_CURRENCY_FORM: ${{ inputs.inspect_currency_form }}
