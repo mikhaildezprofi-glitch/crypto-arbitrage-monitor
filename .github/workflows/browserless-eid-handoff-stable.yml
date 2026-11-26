@@ -371,6 +371,8 @@ jobs:
             CHROMIUM_START_URLS=("$CHROMIUM_START_URL")
             BRIDGE_SCRIPT="scripts/sberkassa_exchange_chromium_probe.py"
           else
+            # Reuse the saved authenticated session first
+            # Default Money Storage mode is the original authenticated, read-only quote capture.
             CHROMIUM_START_URL="https://storage.money/deals#tab-3"
             CHROMIUM_START_URLS=("$CHROMIUM_START_URL")
             BRIDGE_SCRIPT="scripts/money_storage_chromium_bridge.py"
