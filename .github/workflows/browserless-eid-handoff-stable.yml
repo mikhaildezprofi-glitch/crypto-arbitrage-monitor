@@ -18,11 +18,6 @@ on:
         required: false
         type: boolean
         default: false
-      parallel_collection:
-        description: "Use an isolated provider cache and concurrency slot for parallel source collection"
-        required: false
-        type: boolean
-        default: false
   workflow_call:
     inputs:
       target:
@@ -34,11 +29,6 @@ on:
         required: false
         type: boolean
         default: false
-      parallel_collection:
-        description: "Use an isolated provider cache and concurrency slot for parallel source collection"
-        required: false
-        type: boolean
-        default: false
     secrets:
       CHROMIUM_PROFILE_PASSPHRASE:
         required: true
@@ -47,7 +37,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ inputs.parallel_collection && format('free-eid-cloud-browser-parallel-{0}', inputs.target) || 'free-eid-cloud-browser-stable-shared-profile' }}
+  group: free-eid-cloud-browser-${{ inputs.target || 'manual' }}
   # Never kill a live authenticated browser session because another run starts.
   cancel-in-progress: false
 
@@ -75,9 +65,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/chromium-profile-money_storage.gpg
-          key: ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-${{ inputs.parallel_collection && inputs.target || 'shared' }}-${{ github.run_id }}
+          key: ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-${{ inputs.target || 'manual' }}-${{ github.run_id }}
           restore-keys: |
-            ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-${{ inputs.parallel_collection && inputs.target || 'shared' }}-
+            ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-${{ inputs.target || 'manual' }}-
             ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-shared-
             ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-
 
@@ -367,6 +357,7 @@ jobs:
             # Open all three authenticated pages in separate tabs of one
             # restored Chromium profile and collect them concurrently.
             CHROMIUM_START_URL="https://storage.money/deals#tab-3"
+            # Reuse the saved authenticated session first; open the protected offers page directly.
             CHROMIUM_START_URLS=(
               "https://storage.money/deals#tab-3"
               "https://sberkassa.site/deals#tab-3"
@@ -675,7 +666,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/chromium-profile-money_storage.gpg
-          key: ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-${{ inputs.parallel_collection && inputs.target || 'shared' }}-${{ github.run_id }}
+          key: ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-${{ inputs.target || 'manual' }}-${{ github.run_id }}
 
       - name: Publish normalized current offers
         if: always() && hashFiles('money-storage-current-offers.json') != ''
