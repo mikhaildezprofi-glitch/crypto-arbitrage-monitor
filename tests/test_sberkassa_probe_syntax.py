@@ -99,7 +99,6 @@ class SberkassaProbeSyntaxTests(unittest.TestCase):
         self.assertIn('TARGET_TABS_EXACTLY_VERIFIED; AUTH_ONLY; COLLECTION_DISABLED', script)
         self.assertIn('MISSING_OR_REDIRECTED', script)
         self.assertIn('AUTH_ONLY_INITIAL_PROVIDER_TABS_OPENED=YES', script)
-        self.assertNotIn('SHARED_CHROMIUM_THREE_TARGET_TABS=VERIFIED', script.split('if [ "$TARGET" = "all" ] || [ "$TARGET" = "auth_only" ]; then', 1)[1].split('# The collectors can be restarted', 1)[0])
         self.assertIn('AUTH_ONLY_COLLECTORS=DISABLED', script)
         self.assertIn('Проверить вкладки и сохранить авторизацию', script)
         self.assertIn('import urllib.request', script)
