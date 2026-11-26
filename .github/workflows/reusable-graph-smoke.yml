@@ -1,0 +1,21 @@
+name: Reusable workflow graph smoke test
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Confirm local reusable workflow resolution
+        run: |
+          echo "LOCAL_REUSABLE_WORKFLOW=RESOLVED"
+          echo "CHROMIUM_STARTED=NO"
+          echo "NETWORK_REQUESTS=NO"
