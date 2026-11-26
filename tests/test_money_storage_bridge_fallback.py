@@ -66,6 +66,7 @@ class MoneyStorageBridgeFallbackTests(unittest.TestCase):
     def test_default_workflow_mode_uses_quote_reader_and_restored_session_first(self):
         root = Path(__file__).resolve().parents[1]
         workflow = (root / ".github" / "workflows" / "browserless-eid-handoff-stable.yml").read_text(encoding="utf-8")
+        workflow += "\n" + (root / "scripts" / "keep_browser_and_tunnel_alive.sh").read_text(encoding="utf-8")
         self.assertIn('MONEY_STORAGE_FORM_INSPECTION=1 python3 "$BRIDGE_SCRIPT"', workflow)
         self.assertIn('CHROMIUM_START_URL="https://storage.money/deals#tab-3"', workflow)
         self.assertRegex(
