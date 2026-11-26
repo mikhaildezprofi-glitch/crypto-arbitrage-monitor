@@ -39,6 +39,8 @@ class FourStepRunnerSyntaxTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         workflow = (root / ".github" / "workflows" / "full-read-only-collection.yml").read_text(encoding="utf-8")
         reusable = (root / ".github" / "workflows" / "browserless-eid-handoff-stable.yml").read_text(encoding="utf-8")
+        browser_script = (root / "scripts" / "keep_browser_and_tunnel_alive.sh").read_text(encoding="utf-8")
+        reusable += "\n" + browser_script
         self.assertIn("target: all", workflow)
         self.assertIn("needs: [shared-authenticated-browser]", workflow)
         self.assertIn("one shared Chromium, three tabs", workflow)
