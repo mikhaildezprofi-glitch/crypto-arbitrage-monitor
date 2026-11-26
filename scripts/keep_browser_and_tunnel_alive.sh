@@ -50,9 +50,40 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path != "/session-ready":
             self.send_error(404); return
+        import json
+        from urllib.parse import urlparse
+        expected = {
+            ("storage.money", "/deals", "tab-3"),
+            ("sberkassa.site", "/deals", "tab-3"),
+            ("sberkassa.site", "/exchange", ""),
+        }
+        try:
+            with urllib.request.urlopen("http://127.0.0.1:9222/json/list", timeout=4) as response:
+                targets = json.load(response)
+        except Exception as exc:
+            self.send_response(503); self.end_headers()
+            self.wfile.write(("CDP_UNAVAILABLE: " + str(exc)).encode("utf-8", "replace")); return
+        actual = set()
+        for item in targets:
+            if item.get("type") != "page":
+                continue
+            parsed = urlparse(item.get("url", ""))
+            if parsed.hostname in {"storage.money", "sberkassa.site"}:
+                actual.add((parsed.hostname, parsed.path.rstrip("/") or "/", parsed.fragment))
+        missing = sorted(expected - actual)
+        if missing:
+            lines = ["TARGET_TABS_NOT_READY"]
+            for host, path, fragment in sorted(expected):
+                state = "OK" if (host, path, fragment) in actual else "MISSING_OR_REDIRECTED"
+                lines.append(f"{state}: https://{host}{path}" + (f"#{fragment}" if fragment else ""))
+            for host, path, fragment in sorted(actual):
+                lines.append(f"ACTUAL: https://{host}{path}" + (f"#{fragment}" if fragment else ""))
+            body = "\n".join(lines).encode("utf-8")
+            self.send_response(409); self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body); return
         Path("/tmp/manual-auth-ready").write_text("ready\n", encoding="utf-8")
         self.send_response(200); self.send_header("Content-Type", "text/plain")
-        self.end_headers(); self.wfile.write(b"OK")
+        self.end_headers(); self.wfile.write(b"TARGET_TABS_EXACTLY_VERIFIED; AUTH_ONLY; COLLECTION_DISABLED")
     def do_GET(self):
         if self.path != "/health":
             self.send_error(404); return
@@ -76,7 +107,7 @@ html,body,#screen{width:100%;height:100%;margin:0;background:#111;overflow:hidde
 #mobileInput{display:none;position:fixed;left:8px;right:8px;bottom:8px;width:calc(100% - 32px);height:44px;box-sizing:border-box;padding:8px 12px;border:2px solid #2463eb;border-radius:8px;background:white;color:#111;font-size:18px;z-index:5}
 #mobileInput.visible{display:block}
 </style></head>
-<body><div id="status">Connecting to remote browser…</div><div id="tools"><button id="keyboardToggle" type="button">⌨ Клавиатура</button><button id="sessionReadyButton" type="button">Авторизация завершена</button></div><div id="screen"></div>
+<body><div id="status">Connecting to remote browser…</div><div id="tools"><button id="keyboardToggle" type="button">⌨ Клавиатура</button><button id="sessionReadyButton" type="button">Проверить вкладки и сохранить авторизацию</button></div><div id="screen"></div>
 <input id="mobileInput" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Нажмите здесь и вводите текст">
 <script type="module">
 import RFB from '/ACCESS_TOKEN_PLACEHOLDER/core/rfb.js';
@@ -135,13 +166,14 @@ sessionReadyButton.addEventListener('click', async () => {
     const response = await fetch('/ACCESS_TOKEN_PLACEHOLDER/session-ready', {
       method: 'POST', credentials: 'same-origin'
     });
-    if (!response.ok) throw new Error('HTTP ' + response.status);
-    sessionReadyButton.textContent = 'Сбор данных запущен';
-    status.textContent = 'Авторизация отмечена. Запускаю сбор данных…';
+    const detail = await response.text();
+    if (!response.ok) throw new Error(detail || ('HTTP ' + response.status));
+    sessionReadyButton.textContent = 'Сессия проверена';
+    status.textContent = 'Точные адреса вкладок подтверждены. Сохраняю зашифрованную сессию…';
   } catch (error) {
     sessionReadyButton.disabled = false;
-    sessionReadyButton.textContent = 'Повторить сигнал';
-    status.textContent = 'Не удалось передать сигнал: ' + String(error);
+    sessionReadyButton.textContent = 'Проверить вкладки ещё раз';
+    status.textContent = 'Проверка не пройдена: ' + String(error);
   }
 });
 mobileInput.addEventListener('blur', () => {
@@ -262,9 +294,11 @@ echo "STANDALONE_CHROMIUM=$(basename "$(dirname "$CHROMIUM_BIN")")/chrome"
 "$CHROMIUM_BIN" --version
 : "${TARGET:?TARGET must be set}"
 if [ "$TARGET" = "auth_only" ]; then
-  # Load only provider home pages for sign-in. Do not open quote/deals pages.
-  CHROMIUM_START_URL="https://storage.money/"
-  EXTRA_START_URLS=("https://sberkassa.site/")
+  # Open the exact three required destinations. If a provider redirects to
+  # /login, the manual handoff cannot complete until the user returns to
+  # these exact URLs after signing in.
+  CHROMIUM_START_URL="https://storage.money/deals#tab-3"
+  EXTRA_START_URLS=("https://sberkassa.site/deals#tab-3" "https://sberkassa.site/exchange")
   BRIDGE_SCRIPT="auth_only"
 elif [ "$TARGET" = "all" ]; then
   CHROMIUM_START_URL="https://storage.money/deals#tab-3"
@@ -344,11 +378,9 @@ echo "STANDALONE_CHROMIUM_HEALTHCHECK=OK"
 if [ "$TARGET" = "all" ] || [ "$TARGET" = "auth_only" ]; then
   python3 - <<'PY'
 import json, os, time, urllib.request
-expected = (
-    {"storage.money", "sberkassa.site"}
-    if os.environ.get("TARGET") == "auth_only"
-    else {("storage.money", "/deals"), ("sberkassa.site", "/deals"), ("sberkassa.site", "/exchange")}
-)
+expected_hosts = {"storage.money", "sberkassa.site"}
+expected = {("storage.money", "/deals"), ("sberkassa.site", "/deals"), ("sberkassa.site", "/exchange")}
+auth_only = os.environ.get("TARGET") == "auth_only"
 deadline = time.monotonic() + 30
 while time.monotonic() < deadline:
     try:
@@ -360,12 +392,20 @@ while time.monotonic() < deadline:
                 continue
             from urllib.parse import urlparse
             parsed = urlparse(item.get("url", ""))
-            if parsed.hostname in {"storage.money", "sberkassa.site"}:
-                found.add(parsed.hostname if os.environ.get("TARGET") == "auth_only" else (parsed.hostname, parsed.path.rstrip("/") or "/"))
-        if expected.issubset(found):
-            print("SHARED_CHROMIUM_THREE_TARGET_TABS=VERIFIED")
-            for host, path in sorted(expected):
-                print(f"SHARED_CHROMIUM_TAB={host}{path}")
+            if parsed.hostname in expected_hosts:
+                found.add(parsed.hostname if auth_only else (parsed.hostname, parsed.path.rstrip("/") or "/"))
+        if (expected_hosts.issubset(found) if auth_only else expected.issubset(found)):
+            if auth_only:
+                print("AUTH_ONLY_INITIAL_PROVIDER_TABS_OPENED=YES")
+                for item in targets:
+                    if item.get("type") == "page":
+                        parsed = urlparse(item.get("url", ""))
+                        if parsed.hostname in expected_hosts:
+                            print(f"AUTH_ONLY_INITIAL_TAB={parsed.hostname}{parsed.path}" + (f"#{parsed.fragment}" if parsed.fragment else ""))
+            else:
+                print("SHARED_CHROMIUM_THREE_TARGET_TABS=VERIFIED")
+                for host, path in sorted(expected):
+                    print(f"SHARED_CHROMIUM_TAB={host}{path}")
             break
     except Exception:
         pass
@@ -584,7 +624,7 @@ echo "REMOTE_BROWSER_URL=$TUNNEL_URL/$ACCESS_TOKEN/token-vnc.html"
 echo "REMOTE_BROWSER_AUTH=automatic via temporary per-run access token"
 echo "VNC_AUTH=automatic; credentials are not printed"
 if [ "$TARGET" = "auth_only" ]; then
-  echo "MANUAL_AUTH_BUTTON=AVAILABLE; complete provider sign-in in all three tabs, then press 'Авторизация завершена' to save the encrypted session."
+  echo "MANUAL_AUTH_BUTTON=AVAILABLE; sign in manually, return all three tabs to their exact required URLs, then press 'Проверить вкладки и сохранить авторизацию'. The server validates exact host/path/fragment before accepting."
   echo "AUTH_ONLY_WAIT_LIMIT_SECONDS=600"
 else
   echo "MANUAL_AUTH_BUTTON=AVAILABLE; inspect all three tabs, complete provider sign-in manually, then press 'Авторизация завершена'."
