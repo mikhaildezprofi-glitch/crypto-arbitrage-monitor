@@ -69,7 +69,7 @@ class Handler(BaseHTTPRequestHandler):
             if item.get("type") != "page":
                 continue
             parsed = urlparse(item.get("url", ""))
-            if parsed.hostname in {"storage.money", "sberkassa.site"}:
+            if parsed.scheme == "https" and not parsed.query and parsed.hostname in {"storage.money", "sberkassa.site"}:
                 actual.add((parsed.hostname, parsed.path.rstrip("/") or "/", parsed.fragment))
         missing = sorted(expected - actual)
         if missing:
@@ -380,7 +380,7 @@ if [ "$TARGET" = "all" ] || [ "$TARGET" = "auth_only" ]; then
   python3 - <<'PY'
 import json, os, time, urllib.request
 expected_hosts = {"storage.money", "sberkassa.site"}
-expected = {("storage.money", "/deals"), ("sberkassa.site", "/deals"), ("sberkassa.site", "/exchange")}
+expected = {("storage.money", "/deals", "tab-3"), ("sberkassa.site", "/deals", "tab-3"), ("sberkassa.site", "/exchange", "")}
 auth_only = os.environ.get("TARGET") == "auth_only"
 deadline = time.monotonic() + 30
 while time.monotonic() < deadline:
@@ -394,7 +394,7 @@ while time.monotonic() < deadline:
             from urllib.parse import urlparse
             parsed = urlparse(item.get("url", ""))
             if parsed.hostname in expected_hosts:
-                found.add(parsed.hostname if auth_only else (parsed.hostname, parsed.path.rstrip("/") or "/"))
+                found.add(parsed.hostname if auth_only else (parsed.hostname, parsed.path.rstrip("/") or "/", parsed.fragment))
         if (expected_hosts.issubset(found) if auth_only else expected.issubset(found)):
             if auth_only:
                 print("AUTH_ONLY_INITIAL_PROVIDER_TABS_OPENED=YES")
