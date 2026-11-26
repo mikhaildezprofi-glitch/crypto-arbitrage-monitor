@@ -225,3 +225,14 @@ PR #10 remains Draft and unmerged. The Money Storage and BlackBit live validatio
 - Sanitized artifact `sberkassa-current-inspection`, ID `15061472918`, was uploaded successfully. No raw response body, cookies, or session tokens were published.
 - Unit-test run [45697606894](https://github.com/mikhaildezprofi-glitch/crypto-arbitrage-monitor/actions/runs/45697606894) passed all 134 tests.
 - This clears only Sberkassa ERUB -> RUB. RUB -> USDT remains uncollected and is outside the current deals-only scope; do not open `/exchange`. The five-source report, fee inputs, notification destination, and free-runner cost still require work. No recurring schedule or fund-moving operation is enabled.
+
+## Browser timeout and diagnostic policy (2026-11-26)
+
+- Shared-browser collection control loop: maximum 20 minutes (1,200 seconds).
+- Manual authentication handoff: maximum 10 minutes (600 seconds); the handoff time is included in the overall control-loop limit.
+- Money Storage, Sberkassa deals, and Sberkassa exchange collectors use 10-minute internal deadlines in normal interactive mode. Explicit noninteractive/session-check Money Storage mode retains its shorter 180-second limit.
+- GitHub Actions browser step timeout: 35 minutes; complete cloud-browser job timeout: 42 minutes.
+- The browser workflow is manual-dispatch only. Editing workflow files must not start an authenticated browser session automatically.
+- The shared diagnostic artifact records each tab's final status, inferred failure class, process PID and liveness at diagnostic time, log line count, last log line, last progress marker, the last 30 progress markers, and the last 100 log lines. A timeout also emits each collector's final log tail into the Actions log.
+- The collector logs are intended to identify the last completed navigation, authentication, HTTP response, page capture, quote validation, or artifact-write stage. A missing status plus an exited process is reported as a collector that stopped before writing its status.
+- No collector timeout or diagnostic change authorizes non-GET operations, challenge bypass, or quote calculation with stale/invalid data.
