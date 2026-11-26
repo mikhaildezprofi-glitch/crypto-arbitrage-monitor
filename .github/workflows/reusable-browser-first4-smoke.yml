@@ -41,4 +41,38 @@ jobs:
     if: inputs.target == 'graph_check'
     runs-on: ubuntu-24.04
     steps:
+      - name: Confirm reusable workflow graph resolution without starting a browser
+        run: |
+          echo "REUSABLE_WORKFLOW_GRAPH_RESOLUTION=OK"
+          echo "CHROMIUM_STARTED=NO"
+          echo "PROVIDER_SITES_OPENED=NO"
+
+  cloud-browser:
+    if: inputs.target != 'graph_check'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      CHROMIUM_PROFILE_PASSPHRASE: ${{ secrets.CHROMIUM_PROFILE_PASSPHRASE }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Verify runner UTC clock against independent HTTPS time references
+        run: python3 scripts/check_runner_clock.py
+      - name: Require Chromium profile encryption secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$CHROMIUM_PROFILE_PASSPHRASE" ]; then
+            echo "Missing repository secret CHROMIUM_PROFILE_PASSPHRASE. Add a random passphrase of at least 32 characters in Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
+      - name: Restore encrypted Chromium profile cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/chromium-profile-money_storage.gpg
+          key: ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-${{ inputs.target || 'manual' }}-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-${{ inputs.target || 'manual' }}-
+            ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-
 
