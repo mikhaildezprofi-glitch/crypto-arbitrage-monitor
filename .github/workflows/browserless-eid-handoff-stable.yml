@@ -86,7 +86,6 @@ jobs:
           source="${RUNNER_TEMP}/imported-chromium-profile/chromium-profile-money_storage.gpg"
           destination="${RUNNER_TEMP}/chromium-profile-money_storage.gpg"
           test -s "$source"
-          test ! -e "$destination"
           install -m 600 "$source" "$destination"
           size="$(stat -c '%s' "$destination")"
           test "$size" -gt 1024
