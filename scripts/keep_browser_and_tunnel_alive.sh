@@ -654,23 +654,23 @@ for i in $(seq 1 600); do
   else
     STATUS="$(cat /tmp/eid-auth-status 2>/dev/null || echo WAITING_FOR_LOGIN)"
   fi
-  if [ "$TARGET" != "all" ] && [ "$TARGET" != "auth_only" ] && [ "$TARGET" != "auth_only" ] && [ "$STATUS" = "FORM_INSPECTION_COMPLETE" ]; then
+  if [ "$TARGET" != "all" ] && [ "$TARGET" != "auth_only" ] && [ "$STATUS" = "FORM_INSPECTION_COMPLETE" ]; then
     echo "FORM_INSPECTION_COMPLETE: the page itself sent a request containing from=ECR&to=USDT; inspect PAGE_REQUEST for the exact endpoint and parameter location."
     grep -E "^(PAGE_DIAG deals_form=|PAGE_REQUEST |FORM_INSPECTION_READY)" /tmp/eid-browser.log | tail -n 120 || true
     exit 0
   fi
-  if [ "$TARGET" != "all" ] && { [ "$STATUS" = "MONEY_STORAGE_RETURNED" ] || [ "$STATUS" = "MONEY_STORAGE_SESSION_CANDIDATE" ]; }; then
+  if [ "$TARGET" != "all" ] && [ "$TARGET" != "auth_only" ] && { [ "$STATUS" = "MONEY_STORAGE_RETURNED" ] || [ "$STATUS" = "MONEY_STORAGE_SESSION_CANDIDATE" ]; }; then
     echo "Money Storage profile handoff milestone completed: $STATUS"
     grep -E '^(EID_STATE=|CLOUDFLARE_STATE=|NAV=|PAGE_DIAG deals_form=|PAGE_REQUEST |FORM_INSPECTION_READY|MONEY_STORAGE_RETURNED |MONEY_STORAGE_SESSION_CANDIDATE )' /tmp/eid-browser.log | tail -n 120 || true
     exit 0
   fi
-  if [ "$TARGET" != "all" ] && { [ "$STATUS" = "OFFERS_READ_OK" ] || [ "$STATUS" = "SBERKASSA_CAPTURE_COMPLETE" ] || [ "$STATUS" = "SBERKASSA_EXCHANGE_INSPECTION_COMPLETE" ]; }; then
+  if [ "$TARGET" != "all" ] && [ "$TARGET" != "auth_only" ] && { [ "$STATUS" = "OFFERS_READ_OK" ] || [ "$STATUS" = "SBERKASSA_CAPTURE_COMPLETE" ] || [ "$STATUS" = "SBERKASSA_EXCHANGE_INSPECTION_COMPLETE" ]; }; then
     echo "Authenticated read-only browser inspection completed for target=$TARGET."
     echo "BROWSER_DIAGNOSTICS_FINAL:"
     grep -E '^(SESSION_REUSE_CHECK=|EID_HANDOFF=|EID_STATE=|CLOUDFLARE_STATE=|SBERKASSA_SESSION=|SBERKASSA_SESSION_AUTHENTICATED=|SESSION_REUSE_OR_EID_TIMEOUT=|SBERKASSA_CAPTURE_|SBERKASSA_EXCHANGE_|NAV=|HTTP_DIAG |REQUEST |QUOTE_FIELDS |PAGE_UPDATE_MARKERS |EXCHANGE_JSON )' /tmp/eid-browser.log | tail -n 160 || true
     exit 0
   fi
-  if [ "$TARGET" != "all" ] && { [ "$STATUS" = "OFFERS_READ_FAILED" ] || [ "$STATUS" = "AUTH_TIMEOUT" ] || [ "$STATUS" = "MONEY_STORAGE_RETURN_TIMEOUT" ] || [ "$STATUS" = "SBERKASSA_CAPTURE_FAILED" ] || [ "$STATUS" = "SBERKASSA_CAPTURE_TIMEOUT" ] || [ "$STATUS" = "SBERKASSA_EXCHANGE_AUTH_TIMEOUT" ] || [ "$STATUS" = "SBERKASSA_EXCHANGE_SELECTION_TIMEOUT" ]; }; then
+  if [ "$TARGET" != "all" ] && [ "$TARGET" != "auth_only" ] && { [ "$STATUS" = "OFFERS_READ_FAILED" ] || [ "$STATUS" = "AUTH_TIMEOUT" ] || [ "$STATUS" = "MONEY_STORAGE_RETURN_TIMEOUT" ] || [ "$STATUS" = "SBERKASSA_CAPTURE_FAILED" ] || [ "$STATUS" = "SBERKASSA_CAPTURE_TIMEOUT" ] || [ "$STATUS" = "SBERKASSA_EXCHANGE_AUTH_TIMEOUT" ] || [ "$STATUS" = "SBERKASSA_EXCHANGE_SELECTION_TIMEOUT" ]; }; then
     echo "BROWSER_DIAGNOSTICS:"
     grep -E 'OFFERS_READ_|AUTH_|SBERKASSA_|NAV=|REQUEST |QUOTE_FIELDS |PAGE_UPDATE_MARKERS |HTTP_DIAG ' /tmp/eid-browser.log | tail -n 120 || true
     exit 1
@@ -685,7 +685,7 @@ for i in $(seq 1 600); do
     tail -n 100 /tmp/chromium.log || true
     exit 1
   fi
-  if [ "$TARGET" != "all" ] && ! kill -0 "$BRIDGE_PID" 2>/dev/null; then
+  if [ "$TARGET" != "all" ] && [ "$TARGET" != "auth_only" ] && ! kill -0 "$BRIDGE_PID" 2>/dev/null; then
     echo "CHROMIUM_SESSION_BRIDGE_EXITED"
     tail -n 100 /tmp/eid-browser.log || true
     exit 1
