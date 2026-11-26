@@ -60,6 +60,7 @@ class SberkassaExchangeProbeTests(unittest.TestCase):
     def test_workflow_has_separate_exchange_target_and_artifact(self):
         root = Path(__file__).resolve().parents[1]
         workflow = (root / ".github" / "workflows" / "browserless-eid-handoff-stable.yml").read_text(encoding="utf-8")
+        workflow += "\n" + (root / "scripts" / "keep_browser_and_tunnel_alive.sh").read_text(encoding="utf-8")
         self.assertIn("- sberkassa_exchange", workflow)
         self.assertIn('BRIDGE_SCRIPT="scripts/sberkassa_exchange_chromium_probe.py"', workflow)
         self.assertIn("name: sberkassa-exchange-inspection", workflow)
