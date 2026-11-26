@@ -1,0 +1,113 @@
+name: Tailscale Funnel smoke test
+
+on:
+  push:
+    branches:
+      - feat/tailscale-funnel-ci-20261126
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  funnel-smoke-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+    steps:
+      - name: Require Tailscale auth key
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$TAILSCALE_AUTHKEY" ]; then
+            echo "TAILSCALE_AUTHKEY_SECRET_MISSING"
+            exit 1
+          fi
+
+      - name: Install Tailscale
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 https://tailscale.com/install.sh | sh
+          sudo systemctl enable --now tailscaled
+          sudo tailscale up \
+            --authkey="$TAILSCALE_AUTHKEY" \
+            --hostname="gha-funnel-smoke-${GITHUB_RUN_ID}" \
+            --advertise-tags=tag:ci \
+            --accept-dns=false
+
+      - name: Start a minimal non-sensitive health endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/funnel-health.py <<'PY'
+          from http.server import BaseHTTPRequestHandler, HTTPServer
+
+          class Handler(BaseHTTPRequestHandler):
+              def do_GET(self):
+                  if self.path != "/health":
+                      self.send_error(404)
+                      return
+                  body = b"tailscale-funnel-ok"
+                  self.send_response(200)
+                  self.send_header("Content-Type", "text/plain")
+                  self.send_header("Content-Length", str(len(body)))
+                  self.end_headers()
+                  self.wfile.write(body)
+
+              def log_message(self, *_):
+                  pass
+
+          HTTPServer(("127.0.0.1", 8080), Handler).serve_forever()
+          PY
+          python3 /tmp/funnel-health.py >/tmp/funnel-health.log 2>&1 &
+          echo $! > /tmp/funnel-health.pid
+          for i in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:8080/health | grep -qx "tailscale-funnel-ok"; then
+              echo "LOCAL_HEALTH_ENDPOINT=OK"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "LOCAL_HEALTH_ENDPOINT_FAILED"
+          exit 1
+
+      - name: Publish and verify Tailscale Funnel
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo tailscale funnel --bg --https=443 http://127.0.0.1:8080
+          HOST="$(sudo tailscale status --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["Self"]["DNSName"].rstrip("."))')"
+          if [ -z "$HOST" ] || [[ ! "$HOST" =~ \.ts\.net$ ]]; then
+            echo "TAILSCALE_FUNNEL_HOSTNAME_INVALID"
+            sudo tailscale status
+            exit 1
+          fi
+          echo "TAILSCALE_FUNNEL_HOSTNAME=$HOST"
+          VERIFIED=""
+          for i in $(seq 1 90); do
+            BODY="$(curl -fsS --connect-timeout 8 --max-time 15 "https://$HOST/health" 2>/dev/null || true)"
+            if [ "$BODY" = "tailscale-funnel-ok" ]; then
+              VERIFIED=yes
+              break
+            fi
+            echo "FUNNEL_PUBLIC_HEALTH_WAIT attempt=$i/90"
+            sleep 5
+          done
+          if [ -z "$VERIFIED" ]; then
+            echo "TAILSCALE_FUNNEL_PUBLIC_HEALTH_FAILED"
+            sudo tailscale funnel status || true
+            exit 1
+          fi
+          echo "TAILSCALE_FUNNEL_PUBLIC_HEALTH=OK"
+
+      - name: Clean up ephemeral Tailscale node
+        if: always()
+        shell: bash
+        run: |
+          sudo tailscale funnel --https=443 off >/dev/null 2>&1 || true
+          sudo tailscale down >/dev/null 2>&1 || true
+          if [ -f /tmp/funnel-health.pid ]; then
+            kill "$(cat /tmp/funnel-health.pid)" 2>/dev/null || true
+          fi
