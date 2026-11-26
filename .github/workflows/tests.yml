@@ -3,7 +3,7 @@ name: tests
 on:
   workflow_dispatch:
   push:
-    branches: [main, feat/money-storage-eid-cloudflare-state-machine-20261122, feat/integrated-arbitrage-automation-20261123]
+    branches: [main, feat/money-storage-eid-cloudflare-state-machine-20261122, feat/integrated-arbitrage-automation-20261123, feat/tailscale-funnel-ci-20261126]
   pull_request:
 
 jobs:
