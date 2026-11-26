@@ -7,6 +7,7 @@ controls. Non-GET requests are blocked. E-ID/CAPTCHA/MFA remain manual.
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 import time
@@ -19,7 +20,7 @@ import websocket
 
 DEBUG_ENDPOINT = "http://127.0.0.1:9222/json/list"
 TARGET_URL = "https://sberkassa.site/exchange"
-STATUS_FILE = Path("/tmp/eid-auth-status")
+STATUS_FILE = Path(os.environ.get("SBERKASSA_EXCHANGE_STATUS_FILE", "/tmp/eid-auth-status"))
 MAX_BODY_BYTES = 1_000_000
 SAFE_KEYS = re.compile(
     r"^(rate|back_rate|exchange_rate|buy_rate|sell_rate|rate_value|price|"
@@ -256,7 +257,7 @@ def main() -> int:
         try:
             targets = page_targets()
             target = next((x for x in targets
-                           if "sberkassa.site" in x.get("url", "")),
+                           if "sberkassa.site" in x.get("url", "") and urlparse(x.get("url", "")).path.rstrip("/") == "/exchange"),
                           targets[0] if targets else None)
             if target:
                 break
