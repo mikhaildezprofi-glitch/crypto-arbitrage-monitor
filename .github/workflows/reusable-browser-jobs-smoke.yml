@@ -1,0 +1,65 @@
+name: Reusable browser jobs smoke test
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Which authenticated quote source to inspect"
+        required: true
+        type: choice
+        default: money_storage
+        options:
+          - all
+          - money_storage
+          - sberkassa
+          - sberkassa_exchange
+      inspect_currency_form:
+        description: "Keep the browser open for manual inspection"
+        required: false
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      target:
+        description: "Which authenticated quote source to inspect"
+        required: true
+        type: string
+      inspect_currency_form:
+        description: "Keep the browser open for manual inspection"
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      CHROMIUM_PROFILE_PASSPHRASE:
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: free-eid-cloud-browser-stable-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  cloud-browser:
+    if: inputs.target != 'graph_check'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      CHROMIUM_PROFILE_PASSPHRASE: ${{ secrets.CHROMIUM_PROFILE_PASSPHRASE }}
+    steps:
+      - name: Safe no-browser placeholder
+        run: echo "BROWSER_JOB_WOULD_RUN"
+
+  verify-restored-money-storage-session:
+    if: inputs.target == 'money_storage'
+    needs: cloud-browser
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    env:
+      CHROMIUM_PROFILE_PASSPHRASE: ${{ secrets.CHROMIUM_PROFILE_PASSPHRASE }}
+    steps:
+      - name: Safe verification placeholder
+        run: echo "SESSION_VERIFY_WOULD_RUN"
