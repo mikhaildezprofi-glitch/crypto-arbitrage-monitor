@@ -32,8 +32,8 @@ on:
     secrets:
       CHROMIUM_PROFILE_PASSPHRASE:
         required: true
-      CLOUDFLARE_TUNNEL_TOKEN:
-        required: false
+      TAILSCALE_AUTHKEY:
+        required: true
 
 permissions:
   contents: read
@@ -45,8 +45,7 @@ jobs:
     timeout-minutes: 40
     env:
       CHROMIUM_PROFILE_PASSPHRASE: ${{ secrets.CHROMIUM_PROFILE_PASSPHRASE }}
-      CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
-      CLOUDFLARE_TUNNEL_HOSTNAME: ${{ vars.CLOUDFLARE_TUNNEL_HOSTNAME }}
+      TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
     steps:
       - uses: actions/checkout@v5
 
@@ -107,7 +106,7 @@ jobs:
 
       # All long-lived processes stay inside this step. The runner tears down
       # background processes when a step ends, which caused the earlier 1033.
-      - name: Keep browser and Cloudflare tunnel alive during E-ID handoff
+      - name: Keep browser and Tailscale Funnel alive during E-ID handoff
         shell: bash
         timeout-minutes: 35
         env:
