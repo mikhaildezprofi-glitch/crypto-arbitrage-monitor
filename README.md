@@ -100,3 +100,5 @@ PYTHONPATH=src python -m unittest discover -s tests -v
 - `WINANCE_POLL_SECONDS` (must be explicitly selected between 900 and 3600 before polling)
 - `QUOTE_MAX_AGE_SECONDS` (must be explicitly selected after the polling cadence is chosen)
 - `CHROMIUM_PROFILE_PASSPHRASE` (GitHub Actions secret; never place its value in source control or logs)
+- `CLOUDFLARE_TUNNEL_TOKEN` (optional GitHub Actions secret for a stable named Cloudflare Tunnel; recommended after Quick Tunnel HTTP 429 errors)
+- `CLOUDFLARE_TUNNEL_HOSTNAME` (GitHub Actions repository variable; the public hostname configured in the named tunnel to route to `http://127.0.0.1:8080`)
