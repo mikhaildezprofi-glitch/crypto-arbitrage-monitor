@@ -261,7 +261,12 @@ fi
 echo "STANDALONE_CHROMIUM=$(basename "$(dirname "$CHROMIUM_BIN")")/chrome"
 "$CHROMIUM_BIN" --version
 : "${TARGET:?TARGET must be set}"
-if [ "$TARGET" = "auth_only" ] || [ "$TARGET" = "all" ]; then
+if [ "$TARGET" = "auth_only" ]; then
+  # Load only provider home pages for sign-in. Do not open quote/deals pages.
+  CHROMIUM_START_URL="https://storage.money/"
+  EXTRA_START_URLS=("https://sberkassa.site/")
+  BRIDGE_SCRIPT="auth_only"
+elif [ "$TARGET" = "all" ]; then
   CHROMIUM_START_URL="https://storage.money/deals#tab-3"
   EXTRA_START_URLS=("https://sberkassa.site/deals#tab-3" "https://sberkassa.site/exchange")
   BRIDGE_SCRIPT="all"
@@ -338,8 +343,12 @@ echo "STANDALONE_CHROMIUM_HEALTHCHECK=OK"
 
 if [ "$TARGET" = "all" ] || [ "$TARGET" = "auth_only" ]; then
   python3 - <<'PY'
-import json, time, urllib.request
-expected = {("storage.money", "/deals"), ("sberkassa.site", "/deals"), ("sberkassa.site", "/exchange")}
+import json, os, time, urllib.request
+expected = (
+    {("storage.money", "/"), ("sberkassa.site", "/")}
+    if os.environ.get("TARGET") == "auth_only"
+    else {("storage.money", "/deals"), ("sberkassa.site", "/deals"), ("sberkassa.site", "/exchange")}
+)
 deadline = time.monotonic() + 30
 while time.monotonic() < deadline:
     try:
