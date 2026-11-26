@@ -567,13 +567,18 @@ echo "TAILSCALE_FUNNEL_HOSTNAME=$TUNNEL_HOST"
 
 PUBLIC_OK=""
 TUNNEL_IP=""
-for i in $(seq 1 90); do
-  # The runner's configured resolver can retain a negative answer for a
-  # newly-created *.ts.net name. Resolve through independent public DoH,
-  # then pin curl to that IP while preserving HTTPS SNI and Host.
-  TUNNEL_IP="$(python3 scripts/resolve_tailscale_funnel_ipv4.py "$TUNNEL_HOST" || true)"
+FUNNEL_DEADLINE=$((SECONDS + 600))
+FUNNEL_ATTEMPT=0
+echo "FUNNEL_DNS_PROPAGATION_WINDOW_SECONDS=600"
+while (( SECONDS < FUNNEL_DEADLINE )); do
+  FUNNEL_ATTEMPT=$((FUNNEL_ATTEMPT + 1))
+  # Tailscale documents up to 10 minutes for public DNS publication.
+  # Use independent public DoH, then pin curl to the resolved IP while
+  # preserving HTTPS SNI and Host. Do not publish the browser URL until
+  # both the public HTTP and WebSocket checks succeed.
+  TUNNEL_IP="$(timeout 5 python3 scripts/resolve_tailscale_funnel_ipv4.py "$TUNNEL_HOST" || true)"
   if [ -n "$TUNNEL_IP" ]; then
-    CODE="$(curl --resolve "$TUNNEL_HOST:443:$TUNNEL_IP" -sS --connect-timeout 8 --max-time 15 -o /dev/null -w '%{http_code}' "$TUNNEL_URL/$ACCESS_TOKEN/token-vnc.html" || true)"
+    CODE="$(curl --resolve "$TUNNEL_HOST:443:$TUNNEL_IP" -sS --connect-timeout 5 --max-time 8 -o /dev/null -w '%{http_code}' "$TUNNEL_URL/$ACCESS_TOKEN/token-vnc.html" || true)"
   else
     CODE="DNS_WAIT"
   fi
@@ -583,8 +588,8 @@ for i in $(seq 1 90); do
     tail -n 100 /tmp/tailscale-funnel.log
     exit 1
   fi
-  echo "PUBLIC_TUNNEL_WAIT http=$CODE attempt=$i/90"
-  sleep 2
+  echo "PUBLIC_TUNNEL_WAIT http=$CODE attempt=$FUNNEL_ATTEMPT"
+  sleep 5
 done
 if [ -z "$PUBLIC_OK" ]; then
   echo "TAILSCALE_FUNNEL_HEALTHCHECK_FAILED"

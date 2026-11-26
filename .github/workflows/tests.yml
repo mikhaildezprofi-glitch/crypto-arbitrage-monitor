@@ -39,7 +39,10 @@ jobs:
   tailscale-funnel-smoke-test:
     if: github.event_name == 'push' && github.ref == 'refs/heads/feat/tailscale-funnel-ci-20261126'
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
+    concurrency:
+      group: tailscale-funnel-${{ github.repository }}
+      cancel-in-progress: false
     env:
       TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
     steps:
@@ -129,12 +132,17 @@ jobs:
           echo "TAILSCALE_FUNNEL_HOSTNAME=$HOST"
           VERIFIED=""
           RESOLVED_IP=""
-          for i in $(seq 1 30); do
-            # Use independent public DNS-over-HTTPS instead of the runner's
-            # potentially negative-cached resolver for newly-created ts.net names.
-            RESOLVED_IP="$(python3 scripts/resolve_tailscale_funnel_ipv4.py "$HOST" || true)"
+          FUNNEL_DEADLINE=$((SECONDS + 600))
+          ATTEMPT=0
+          echo "FUNNEL_DNS_PROPAGATION_WINDOW_SECONDS=600"
+          while (( SECONDS < FUNNEL_DEADLINE )); do
+            ATTEMPT=$((ATTEMPT + 1))
+            # Tailscale documents that public DNS publication can take up to
+            # 10 minutes. Query independent public DoH resolvers until that
+            # bounded propagation window expires.
+            RESOLVED_IP="$(timeout 5 python3 scripts/resolve_tailscale_funnel_ipv4.py "$HOST" || true)"
             if [ -n "$RESOLVED_IP" ]; then
-              BODY="$(curl --resolve "$HOST:443:$RESOLVED_IP" -fsS --connect-timeout 5 --max-time 8 "https://$HOST/health" || true)"
+              BODY="$(curl --resolve "$HOST:443:$RESOLVED_IP" -fsS --connect-timeout 3 --max-time 5 "https://$HOST/health" || true)"
             else
               BODY=""
             fi
@@ -143,7 +151,7 @@ jobs:
               echo "FUNNEL_PUBLIC_DNS_RESOLUTION=OK"
               break
             fi
-            echo "FUNNEL_PUBLIC_HEALTH_WAIT attempt=$i/30"
+            echo "FUNNEL_PUBLIC_HEALTH_WAIT attempt=$ATTEMPT elapsed_seconds=$((600 - FUNNEL_DEADLINE + SECONDS))"
             sleep 5
           done
           if [ -z "$VERIFIED" ]; then

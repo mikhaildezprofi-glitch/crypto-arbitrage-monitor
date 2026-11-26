@@ -12,10 +12,28 @@ class TailscaleDnsResolverTests(unittest.TestCase):
         self.assertIn("DNS_RESOLVER_RESULT", resolver)
         self.assertIn("PUBLIC_DNS_A_RECORD_NOT_READY", resolver)
 
+    def test_funnel_readiness_uses_documented_dns_window_and_serializes_nodes(self):
+        root = Path(__file__).resolve().parents[1]
+        script = (root / "scripts" / "keep_browser_and_tunnel_alive.sh").read_text(encoding="utf-8")
+        smoke = (root / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
+        browser = (root / ".github" / "workflows" / "browserless-eid-handoff-stable.yml").read_text(encoding="utf-8")
+        self.assertIn("FUNNEL_DEADLINE=$((SECONDS + 600))", script)
+        self.assertIn("FUNNEL_DEADLINE=$((SECONDS + 600))", smoke)
+        self.assertIn("FUNNEL_DNS_PROPAGATION_WINDOW_SECONDS=600", script)
+        self.assertIn("FUNNEL_DNS_PROPAGATION_WINDOW_SECONDS=600", smoke)
+        self.assertIn("sleep 5", script)
+        self.assertIn("sleep 5", smoke)
+        self.assertIn("timeout 5 python3 scripts/resolve_tailscale_funnel_ipv4.py", script)
+        self.assertIn("timeout 5 python3 scripts/resolve_tailscale_funnel_ipv4.py", smoke)
+        self.assertIn("group: tailscale-funnel-${{ github.repository }}", smoke)
+        self.assertIn("group: tailscale-funnel-${{ github.repository }}", browser)
+        self.assertIn("cancel-in-progress: false", smoke)
+        self.assertIn("cancel-in-progress: false", browser)
+
     def test_funnel_loop_does_not_silence_dns_diagnostics(self):
         root = Path(__file__).resolve().parents[1]
         script = (root / "scripts" / "keep_browser_and_tunnel_alive.sh").read_text(encoding="utf-8")
-        self.assertIn('TUNNEL_IP="$(python3 scripts/resolve_tailscale_funnel_ipv4.py "$TUNNEL_HOST" || true)"', script)
+        self.assertIn('TUNNEL_IP="$(timeout 5 python3 scripts/resolve_tailscale_funnel_ipv4.py "$TUNNEL_HOST" || true)"', script)
         self.assertNotIn('resolve_tailscale_funnel_ipv4.py "$TUNNEL_HOST" 2>/dev/null', script)
 
 
