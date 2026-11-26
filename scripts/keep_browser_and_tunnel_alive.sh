@@ -345,8 +345,7 @@ curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 \
   https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
   -o /tmp/cloudflared
 sudo install -m 0755 /tmp/cloudflared /usr/local/bin/cloudflared
-cloudflared tunnel --no-autoupdate --url http://127.0.0.1:8080 >/tmp/cloudflared.log 2>&1 &
-TUNNEL_PID=$!
+TUNNEL_PID=""
 
 cleanup_all() {
   # Stop Chromium first and wait for it to flush profile databases
@@ -368,15 +367,36 @@ cleanup_all() {
 trap cleanup_all EXIT
 
 TUNNEL_URL=""
-for i in $(seq 1 90); do
-  TUNNEL_URL="$(grep -Eo 'https://[a-zA-Z0-9.-]+\.trycloudflare\.com' /tmp/cloudflared.log | head -n 1 || true)"
-  if [ -n "$TUNNEL_URL" ]; then break; fi
-  if ! kill -0 "$TUNNEL_PID" 2>/dev/null; then
-    echo "CLOUDFLARED_EXITED_BEFORE_TUNNEL_URL"
-    tail -n 80 /tmp/cloudflared.log
+for tunnel_attempt in 1 2 3; do
+  : > /tmp/cloudflared.log
+  cloudflared tunnel --no-autoupdate --url http://127.0.0.1:8080 >/tmp/cloudflared.log 2>&1 &
+  TUNNEL_PID=$!
+  for i in $(seq 1 60); do
+    TUNNEL_URL="$(grep -Eo 'https://[a-zA-Z0-9.-]+\.trycloudflare\.com' /tmp/cloudflared.log | head -n 1 || true)"
+    if [ -n "$TUNNEL_URL" ]; then break; fi
+    if ! kill -0 "$TUNNEL_PID" 2>/dev/null; then break; fi
+    sleep 2
+  done
+  if [ -n "$TUNNEL_URL" ]; then
+    echo "CLOUDFLARE_QUICK_TUNNEL_CREATED attempt=$tunnel_attempt"
+    break
+  fi
+  wait "$TUNNEL_PID" 2>/dev/null || true
+  TUNNEL_PID=""
+  if grep -Eq 'status 429|HTTP 429| 429:' /tmp/cloudflared.log; then
+    if [ "$tunnel_attempt" -lt 3 ]; then
+      BACKOFF_SECONDS=$((tunnel_attempt * 30))
+      echo "CLOUDFLARE_QUICK_TUNNEL_RATE_LIMITED retry=$((tunnel_attempt + 1))/3 backoff_seconds=$BACKOFF_SECONDS"
+      sleep "$BACKOFF_SECONDS"
+      continue
+    fi
+    echo "CLOUDFLARE_QUICK_TUNNEL_RATE_LIMIT_EXHAUSTED"
+    tail -n 100 /tmp/cloudflared.log
     exit 1
   fi
-  sleep 2
+  echo "CLOUDFLARED_EXITED_BEFORE_TUNNEL_URL attempt=$tunnel_attempt"
+  tail -n 100 /tmp/cloudflared.log
+  exit 1
 done
 if [ -z "$TUNNEL_URL" ]; then
   echo "TUNNEL_URL_NOT_CREATED"
