@@ -91,6 +91,7 @@ class SberkassaProbeSyntaxTests(unittest.TestCase):
     def test_sberkassa_workflow_starts_from_its_own_login_page(self):
         project_root = Path(__file__).resolve().parents[1]
         workflow = (project_root / ".github" / "workflows" / "browserless-eid-handoff-stable.yml").read_text(encoding="utf-8")
+        workflow += "\n" + (project_root / "scripts" / "keep_browser_and_tunnel_alive.sh").read_text(encoding="utf-8")
         self.assertIn('CHROMIUM_START_URL="about:blank"', workflow)
         self.assertIn("hashFiles('money-storage-profile-ready.txt')", workflow)
         self.assertIn("steps.encrypt-profile.outcome == 'success'", workflow)
