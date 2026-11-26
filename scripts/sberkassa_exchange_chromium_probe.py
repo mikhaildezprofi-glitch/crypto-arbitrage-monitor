@@ -287,7 +287,7 @@ def main() -> int:
         eid_seen = False
         callback_returned = False
         authenticated = False
-        auth_deadline = time.monotonic() + 1800
+        auth_deadline = time.monotonic() + 600
         while time.monotonic() < auth_deadline:
             state = probe.command("Runtime.evaluate", {
                 "expression": """(() => ({url: location.href, body: document.body ? document.body.innerText.slice(0,10000) : ''}))()""",
