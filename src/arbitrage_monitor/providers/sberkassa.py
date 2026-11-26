@@ -256,3 +256,115 @@ class SberkassaSnapshotQuoteProvider:
             rate=result.rate,
             observed_at=captured_at,
         )
+
+
+class SberkassaExchangeSnapshotQuoteProvider:
+    """Validate the sanitized /exchange browser artifact for RUB -> USDT.
+
+    The approved freshness anchor is Chromium's Page.loadEventFired timestamp
+    for /exchange. This is deliberately distinct from the artifact write time.
+    """
+
+    def __init__(
+        self,
+        snapshot_path: str = "sberkassa-exchange-inspection.json",
+        *,
+        max_snapshot_age_seconds: int = 900,
+    ):
+        if max_snapshot_age_seconds <= 0:
+            raise ValueError("max_snapshot_age_seconds must be positive.")
+        self.snapshot_path = snapshot_path
+        self.max_snapshot_age_seconds = max_snapshot_age_seconds
+
+    @staticmethod
+    def _timestamp(value: Any, field: str) -> datetime:
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(f"Sberkassa exchange {field} is missing or invalid.") from exc
+        if parsed.tzinfo is None:
+            raise RuntimeError(f"Sberkassa exchange {field} must include a timezone.")
+        return parsed.astimezone(timezone.utc)
+
+    @staticmethod
+    def _displayed_rate(value: Any) -> Decimal:
+        import re
+
+        if not isinstance(value, str):
+            raise RuntimeError("Sberkassa exchange displayed rate text is missing.")
+        match = re.fullmatch(
+            r"\\s*1\\s*RUB\\s*=\\s*([0-9]+(?:[.,][0-9]+)?)\\s*USDT\\s*",
+            value,
+            flags=re.IGNORECASE,
+        )
+        if not match:
+            raise RuntimeError("Sberkassa exchange displayed rate text is not a RUB -> USDT rate.")
+        try:
+            rate = Decimal(match.group(1).replace(",", "."))
+        except InvalidOperation as exc:
+            raise RuntimeError("Sberkassa exchange displayed rate is invalid.") from exc
+        if not rate.is_finite() or rate <= 0:
+            raise RuntimeError("Sberkassa exchange displayed rate must be finite and positive.")
+        return rate
+
+    def fetch_quote(self):
+        import json
+        from pathlib import Path
+
+        from ..models import Quote
+
+        try:
+            artifact = json.loads(Path(self.snapshot_path).read_text(encoding="utf-8"))
+        except FileNotFoundError as exc:
+            raise RuntimeError("Sberkassa exchange inspection snapshot is missing.") from exc
+        except (OSError, json.JSONDecodeError) as exc:
+            raise RuntimeError("Sberkassa exchange inspection snapshot cannot be read.") from exc
+
+        if not isinstance(artifact, dict):
+            raise RuntimeError("Sberkassa exchange snapshot must be a JSON object.")
+        if (
+            artifact.get("source") != "sberkassa.site"
+            or artifact.get("page") != "/exchange"
+            or artifact.get("read_only") is not True
+        ):
+            raise RuntimeError("Sberkassa exchange snapshot source, page, or read-only marker is invalid.")
+        if artifact.get("http_methods_allowed") != ["GET"]:
+            raise RuntimeError("Sberkassa exchange snapshot is not verified GET-only.")
+        if artifact.get("blocked_non_get_request_count") != 0:
+            raise RuntimeError("Sberkassa exchange snapshot reports blocked non-GET requests.")
+        if artifact.get("freshness_basis") != "successful_exchange_page_load_time":
+            raise RuntimeError("Sberkassa exchange freshness basis is invalid.")
+        if artifact.get("rate_capture_mode") != "single_displayed_rate":
+            raise RuntimeError("Sberkassa exchange rate capture mode is invalid.")
+
+        page_loaded_at = self._timestamp(artifact.get("page_loaded_at_utc"), "page load time")
+        observed_at = self._timestamp(artifact.get("observed_at_utc"), "observation time")
+        captured_at = self._timestamp(artifact.get("captured_at_utc"), "capture time")
+        if observed_at != page_loaded_at:
+            raise RuntimeError("Sberkassa exchange observation time does not match the page load time.")
+
+        now = datetime.now(timezone.utc)
+        age = (now - page_loaded_at).total_seconds()
+        capture_age = (now - captured_at).total_seconds()
+        if age < -60 or age > self.max_snapshot_age_seconds:
+            raise RuntimeError("Sberkassa exchange page load is future-dated or stale.")
+        if capture_age < -60 or capture_age > self.max_snapshot_age_seconds:
+            raise RuntimeError("Sberkassa exchange artifact capture is future-dated or stale.")
+
+        selection = artifact.get("ui_selection")
+        if not isinstance(selection, dict) or selection.get("selection_confirmed") is not True:
+            raise RuntimeError("Sberkassa exchange currency selection is not confirmed.")
+        if selection.get("selected_pair") != {"from": "RUB", "to": "USDT"}:
+            raise RuntimeError("Sberkassa exchange selected pair is not RUB -> USDT.")
+        if selection.get("sell_amount_entered") is not False or selection.get("exchange_submit_clicked") is not False:
+            raise RuntimeError("Sberkassa exchange inspection exceeded the approved read-only scope.")
+
+        rate = self._displayed_rate(selection.get("displayed_rate_text"))
+        return Quote(
+            source="Sberkassa Exchange",
+            pair="RUB/USDT",
+            base_currency="RUB",
+            quote_currency="USDT",
+            rate=rate,
+            observed_at=page_loaded_at,
+        )
