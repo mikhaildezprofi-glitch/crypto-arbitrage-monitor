@@ -1,7 +1,7 @@
 name: Diagnose reusable browser workflow call (no browser)
 
 on:
-  workflow_dispatch:
+  pull_request:
 
 permissions:
   contents: read
