@@ -1,0 +1,14 @@
+name: Diagnose browser reusable contract (no browser)
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    uses: ./.github/workflows/reusable-browser-contract-smoke.yml
+    with:
+      target: graph_check
+    secrets: inherit
