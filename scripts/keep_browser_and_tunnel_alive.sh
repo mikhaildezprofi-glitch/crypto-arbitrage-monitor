@@ -594,8 +594,12 @@ for i in $(seq 1 600); do
       echo "AUTH_ONLY_PROFILE_SAVE=NEXT_WORKFLOW_STEP"
       exit 0
     fi
+    if [ "$i" -ge 300 ]; then
+      echo "AUTH_ONLY_TIMEOUT=600_SECONDS"
+      exit 1
+    fi
     if [ $((i % 15)) -eq 0 ]; then
-      echo "AUTH_ONLY_WAIT elapsed_seconds=$((i * 2)) limit_seconds=1200"
+      echo "AUTH_ONLY_WAIT elapsed_seconds=$((i * 2)) limit_seconds=600"
     fi
   elif [ "$TARGET" = "all" ]; then
     MS_STATUS="$(cat /tmp/money-storage-status 2>/dev/null || echo WAITING)"
