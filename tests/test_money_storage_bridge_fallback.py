@@ -22,7 +22,7 @@ class MoneyStorageBridgeFallbackTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         source = (root / "scripts" / "money_storage_chromium_bridge.py").read_text(encoding="utf-8")
         self.assertIn('SESSION_CHECK = os.environ.get("MONEY_STORAGE_SESSION_CHECK") == "1"', source)
-        self.assertIn("DEADLINE_SECONDS = 180 if SESSION_CHECK or NONINTERACTIVE else 1800", source)
+        self.assertIn("DEADLINE_SECONDS = 180 if SESSION_CHECK or NONINTERACTIVE else 600", source)
         self.assertIn('STATUS_FILE.write_text("AUTH_REQUIRED"', source)
         self.assertIn('final_status = "SESSION_CHECK_TIMEOUT" if SESSION_CHECK else ("AUTH_REQUIRED" if NONINTERACTIVE else "MONEY_STORAGE_RETURN_TIMEOUT")', source)
 
@@ -43,7 +43,7 @@ class MoneyStorageBridgeFallbackTests(unittest.TestCase):
         source = (root / "scripts" / "money_storage_chromium_bridge.py").read_text(encoding="utf-8")
         ast.parse(source)
         self.assertIn('NONINTERACTIVE = os.environ.get("MONEY_STORAGE_NONINTERACTIVE") == "1"', source)
-        self.assertIn("DEADLINE_SECONDS = 180 if SESSION_CHECK or NONINTERACTIVE else 1800", source)
+        self.assertIn("DEADLINE_SECONDS = 180 if SESSION_CHECK or NONINTERACTIVE else 600", source)
         self.assertIn("if SESSION_CHECK or NONINTERACTIVE:", source)
         self.assertIn("not NONINTERACTIVE", source)
         self.assertIn("AUTH_REQUIRED", source)
