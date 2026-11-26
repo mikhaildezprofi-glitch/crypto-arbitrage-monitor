@@ -417,8 +417,8 @@ sudo tailscale up \
 TUNNEL_PID=""
 
 write_run_diagnostics() {
-  python3 - <<'PY'
-import json, os
+  MONEY_PID="${MONEY_PID:-}" SBERKASSA_SELL_PID="${SBERKASSA_SELL_PID:-}" SBERKASSA_EXCHANGE_PID="${SBERKASSA_EXCHANGE_PID:-}" python3 - <<'PY'
+import json, os, signal
 from pathlib import Path
 workspace = Path(os.environ.get("GITHUB_WORKSPACE", "."))
 targets = {
@@ -445,9 +445,26 @@ for name, (status_path, log_path) in targets.items():
     elif "TIMEOUT" in status: diagnosis = "timeout"
     elif "FAILED" in status: diagnosis = "collector_failure"
     else: diagnosis = "stopped_at_last_recorded_stage"
+    pid_env = {
+        "money_storage": "MONEY_PID",
+        "sberkassa_erub_rub": "SBERKASSA_SELL_PID",
+        "sberkassa_rub_usdt": "SBERKASSA_EXCHANGE_PID"
+    }[name]
+    raw_pid = os.environ.get(pid_env, "")
+    process_alive = None
+    if raw_pid.isdigit():
+        try:
+            os.kill(int(raw_pid), 0)
+            process_alive = True
+        except ProcessLookupError:
+            process_alive = False
+        except PermissionError:
+            process_alive = True
     result["tabs"][name] = {
-        "status": status, "diagnosis": diagnosis, "log_exists": log_file.exists(),
+        "status": status, "diagnosis": diagnosis, "process_pid": int(raw_pid) if raw_pid.isdigit() else None,
+        "process_alive_at_diagnostic_time": process_alive, "log_exists": log_file.exists(),
         "log_line_count": len(lines), "last_log_line": lines[-1] if lines else None,
+        "last_stage_marker": markers[-1] if markers else None,
         "last_progress_markers": markers[-30:], "diagnostic_tail": lines[-100:]
     }
 (workspace / "browser-session-diagnostics.json").write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
