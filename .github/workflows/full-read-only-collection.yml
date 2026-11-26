@@ -1,4 +1,4 @@
-name: Full read-only five-source collection (parallel authenticated provider pages)
+name: Full read-only five-source collection (one shared Chromium, three tabs)
 
 on:
   workflow_dispatch:
@@ -19,29 +19,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  money-storage:
+  shared-authenticated-browser:
     uses: ./.github/workflows/browserless-eid-handoff-stable.yml
     with:
-      target: money_storage
-      inspect_currency_form: false
-    secrets: inherit
-
-  sberkassa-sell:
-    uses: ./.github/workflows/browserless-eid-handoff-stable.yml
-    with:
-      target: sberkassa
-      inspect_currency_form: false
-    secrets: inherit
-
-  sberkassa-exchange:
-    uses: ./.github/workflows/browserless-eid-handoff-stable.yml
-    with:
-      target: sberkassa_exchange
+      target: all
       inspect_currency_form: false
     secrets: inherit
 
   collect:
-    needs: [money-storage, sberkassa-sell, sberkassa-exchange]
+    needs: [shared-authenticated-browser]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 10
