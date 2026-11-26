@@ -36,13 +36,11 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: free-eid-cloud-browser-${{ inputs.target || 'manual' }}
-  # Never kill a live authenticated browser session because another run starts.
-  cancel-in-progress: false
-
 jobs:
   cloud-browser:
+    concurrency:
+      group: free-eid-cloud-browser-${{ inputs.target || 'manual' }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
@@ -357,7 +355,7 @@ jobs:
             # Open all three authenticated pages in separate tabs of one
             # restored Chromium profile and collect them concurrently.
             CHROMIUM_START_URL="https://storage.money/deals#tab-3"
-            # Reuse the saved authenticated session first; open the protected offers page directly.
+            # Reuse the saved authenticated session first
             CHROMIUM_START_URLS=(
               "https://storage.money/deals#tab-3"
               "https://sberkassa.site/deals#tab-3"
