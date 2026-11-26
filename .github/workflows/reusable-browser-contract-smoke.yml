@@ -1,0 +1,47 @@
+name: Reusable browser contract smoke test
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Which authenticated quote source to inspect"
+        required: true
+        type: choice
+        default: money_storage
+        options:
+          - all
+          - money_storage
+          - sberkassa
+          - sberkassa_exchange
+      inspect_currency_form:
+        description: "Keep the browser open for manual inspection"
+        required: false
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      target:
+        description: "Which authenticated quote source to inspect"
+        required: true
+        type: string
+      inspect_currency_form:
+        description: "Keep the browser open for manual inspection"
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      CHROMIUM_PROFILE_PASSPHRASE:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Confirm contract resolution without browser
+        run: |
+          echo "BROWSER_WORKFLOW_CONTRACT=RESOLVED"
+          echo "CHROMIUM_STARTED=NO"
+          echo "PROVIDER_SITES_OPENED=NO"
