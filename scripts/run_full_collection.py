@@ -53,7 +53,11 @@ def main() -> int:
         },
         "fund_moving_operations": False,
     }
-    print(json.dumps(report, ensure_ascii=False, indent=2))
+    rendered = json.dumps(report, ensure_ascii=False, indent=2) + "\\n"
+    output_path = os.getenv("FULL_COLLECTION_REPORT_PATH", "full-collection-report.json")
+    with open(output_path, "w", encoding="utf-8") as handle:
+        handle.write(rendered)
+    print(rendered, end="")
     return 0 if batch.complete else 2
 
 
