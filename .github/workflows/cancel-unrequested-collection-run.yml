@@ -1,0 +1,18 @@
+name: Cancel unrequested full collection run
+
+on:
+  pull_request:
+
+concurrency:
+  group: full-read-only-collection-refs/heads/feat/integrated-arbitrage-automation-20261123
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  confirm:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Confirm the collection concurrency slot is released
+        run: echo "UNREQUESTED_COLLECTION_RUN_CANCEL_REQUESTED"
