@@ -1,4 +1,4 @@
-"""Run one read-only five-source collection cycle and emit a sanitized report."""
+"""Run one read-only five-source collection cycle after parallel provider-page capture."""
 from __future__ import annotations
 
 import json
