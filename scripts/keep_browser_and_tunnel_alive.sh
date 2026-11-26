@@ -745,7 +745,7 @@ for i in $(seq 1 600); do
     exit 1
   fi
   if [ $((i % 15)) -eq 0 ]; then
-    TUNNEL_IP="$(python3 scripts/resolve_tailscale_funnel_ipv4.py "$TUNNEL_HOST" 2>/dev/null || true)"
+    TUNNEL_IP="$(python3 scripts/resolve_tailscale_funnel_ipv4.py "$TUNNEL_HOST" || true)"
     CODE="DNS_WAIT"
     if [ -n "$TUNNEL_IP" ]; then
       CODE="$(curl --resolve "$TUNNEL_HOST:443:$TUNNEL_IP" -sS --connect-timeout 8 --max-time 15 -o /dev/null -w '%{http_code}' "$TUNNEL_URL/$ACCESS_TOKEN/token-vnc.html" || true)"
