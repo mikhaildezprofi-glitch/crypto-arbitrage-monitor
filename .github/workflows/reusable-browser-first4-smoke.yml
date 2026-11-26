@@ -1,0 +1,44 @@
+name: Free E-ID cloud browser (stable tunnel)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Which authenticated quote source to inspect"
+        required: true
+        type: choice
+        default: money_storage
+        options:
+          - all
+          - money_storage
+          - sberkassa
+          - sberkassa_exchange
+      inspect_currency_form:
+        description: "Keep the browser open for manual Money Storage currency-form inspection"
+        required: false
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      target:
+        description: "Which authenticated quote source to inspect"
+        required: true
+        type: string
+      inspect_currency_form:
+        description: "Keep the browser open for manual Money Storage currency-form inspection"
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      CHROMIUM_PROFILE_PASSPHRASE:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  reusable-call-graph-check:
+    if: inputs.target == 'graph_check'
+    runs-on: ubuntu-24.04
+    steps:
+
