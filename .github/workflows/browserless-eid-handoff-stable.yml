@@ -37,6 +37,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   cloud-browser:
@@ -68,6 +69,30 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-${{ inputs.target || 'manual' }}-
             ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-
+
+      - name: Import previously authenticated encrypted Chromium profile
+        uses: actions/download-artifact@v5
+        with:
+          name: encrypted-chromium-profile-cache-run-45688839011
+          repository: mikhaildezprofi-glitch/crypto-arbitrage-monitor
+          run-id: 45880238949
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/imported-chromium-profile
+
+      - name: Install imported profile for decryption
+        shell: bash
+        run: |
+          set -euo pipefail
+          source="${RUNNER_TEMP}/imported-chromium-profile/chromium-profile-money_storage.gpg"
+          destination="${RUNNER_TEMP}/chromium-profile-money_storage.gpg"
+          test -s "$source"
+          test ! -e "$destination"
+          install -m 600 "$source" "$destination"
+          size="$(stat -c '%s' "$destination")"
+          test "$size" -gt 1024
+          rm -rf "${RUNNER_TEMP}/imported-chromium-profile"
+          echo "CHROMIUM_PROFILE_IMPORT=ENCRYPTED_ARCHIVE_READY"
+          echo "CHROMIUM_PROFILE_IMPORT_SIZE_BYTES=$size"
 
       - name: Install browser and tunnel dependencies
         shell: bash
