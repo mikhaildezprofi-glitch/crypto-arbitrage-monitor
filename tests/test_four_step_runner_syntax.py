@@ -35,14 +35,20 @@ class FourStepRunnerSyntaxTests(unittest.TestCase):
         self.assertIn("  cancel-in-progress: false", workflow)
 
 
-    def test_full_collection_starts_all_three_provider_jobs_in_parallel(self):
+    def test_full_collection_uses_one_chromium_process_with_three_tabs(self):
         root = Path(__file__).resolve().parents[1]
         workflow = (root / ".github" / "workflows" / "full-read-only-collection.yml").read_text(encoding="utf-8")
-        self.assertIn("target: money_storage", workflow)
-        self.assertIn("target: sberkassa", workflow)
-        self.assertIn("target: sberkassa_exchange", workflow)
-        self.assertIn("needs: [money-storage, sberkassa-sell, sberkassa-exchange]", workflow)
-        self.assertIn("parallel authenticated provider pages", workflow)
+        reusable = (root / ".github" / "workflows" / "browserless-eid-handoff-stable.yml").read_text(encoding="utf-8")
+        self.assertIn("target: all", workflow)
+        self.assertIn("needs: [shared-authenticated-browser]", workflow)
+        self.assertIn("one shared Chromium, three tabs", workflow)
+        self.assertIn('EXTRA_START_URLS=("https://sberkassa.site/deals#tab-3" "https://sberkassa.site/exchange")', reusable)
+        self.assertIn("CHROMIUM_SINGLE_PROCESS=YES", reusable)
+        self.assertIn("SHARED_CHROMIUM_THREE_TARGET_TABS=VERIFIED", reusable)
+        self.assertIn("MONEY_STORAGE_STATUS_FILE=/tmp/money-storage-status", reusable)
+        self.assertIn("SBERKASSA_STATUS_FILE=/tmp/sberkassa-sell-status", reusable)
+        self.assertIn("SBERKASSA_EXCHANGE_STATUS_FILE=/tmp/sberkassa-exchange-status", reusable)
+        self.assertIn("ALL_THREE_SHARED_BROWSER_TABS_COMPLETE=YES", reusable)
 
 
 
