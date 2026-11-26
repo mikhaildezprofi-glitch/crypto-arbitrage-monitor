@@ -20,7 +20,6 @@ jobs:
     with:
       target: money_storage
       inspect_currency_form: false
-      parallel_collection: true
     secrets: inherit
 
   sberkassa-sell:
@@ -28,7 +27,6 @@ jobs:
     with:
       target: sberkassa
       inspect_currency_form: false
-      parallel_collection: true
     secrets: inherit
 
   sberkassa-exchange:
@@ -36,7 +34,6 @@ jobs:
     with:
       target: sberkassa_exchange
       inspect_currency_form: false
-      parallel_collection: true
     secrets: inherit
 
   collect:
