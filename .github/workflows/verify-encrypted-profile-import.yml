@@ -1,0 +1,36 @@
+name: Verify imported encrypted Chromium profile
+
+on:
+  push:
+    branches:
+      - feat/tailscale-funnel-ci-20261126
+    paths:
+      - .github/workflows/verify-encrypted-profile-import.yml
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  verify-import:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download encrypted profile from export run
+        uses: actions/download-artifact@v5
+        with:
+          name: encrypted-chromium-profile-cache-run-45688839011
+          repository: mikhaildezprofi-glitch/crypto-arbitrage-monitor
+          run-id: 45880238949
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/imported-profile
+
+      - name: Validate imported encrypted archive without decrypting it
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/imported-profile/chromium-profile-money_storage.gpg"
+          test -s "$archive"
+          size="$(stat -c '%s' "$archive")"
+          test "$size" -gt 1024
+          echo "CROSS_RUN_ARTIFACT_IMPORT=SUCCESS"
+          echo "ENCRYPTED_ARCHIVE_SIZE_BYTES=$size"
