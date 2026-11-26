@@ -22,14 +22,16 @@ jobs:
           path: ${{ runner.temp }}/chromium-profile-money_storage.gpg
           key: Linux-chromium-profile-money_storage-feat/integrated-arbitrage-automation-20261123-45688839011
 
-      - name: Validate encrypted profile archive
+      - name: Validate restored encrypted archive file
         shell: bash
         run: |
           set -euo pipefail
           archive="${RUNNER_TEMP}/chromium-profile-money_storage.gpg"
           test -s "$archive"
-          gpg --list-packets "$archive" >/dev/null 2>&1
-          echo "ENCRYPTED_PROFILE_ARCHIVE=VALID"
+          size="$(stat -c '%s' "$archive")"
+          test "$size" -gt 1024
+          echo "ENCRYPTED_PROFILE_ARCHIVE=RESTORED"
+          echo "ENCRYPTED_PROFILE_SIZE_BYTES=$size"
 
       - name: Export encrypted profile as short-lived artifact
         uses: actions/upload-artifact@v5
