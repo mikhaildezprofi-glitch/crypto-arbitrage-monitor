@@ -20,6 +20,12 @@ map $http_upgrade $connection_upgrade {
 server {
   listen 8080;
   server_name _;
+  location = /ACCESS_TOKEN_PLACEHOLDER/session-ready {
+    proxy_pass http://127.0.0.1:8081/session-ready;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_read_timeout 10s;
+  }
   location ^~ /ACCESS_TOKEN_PLACEHOLDER/ {
     rewrite ^/ACCESS_TOKEN_PLACEHOLDER/(.*)$ /$1 break;
     proxy_pass http://127.0.0.1:6080;
@@ -36,6 +42,25 @@ server {
 NGINX
 sudo sed -i "s/ACCESS_TOKEN_PLACEHOLDER/$ACCESS_TOKEN/g" /etc/nginx/sites-available/eid-browser
 
+python3 -u - <<'PY' >/tmp/manual-auth-signal.log 2>&1 &
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+class Handler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        if self.path != "/session-ready":
+            self.send_error(404); return
+        Path("/tmp/manual-auth-ready").write_text("ready\n", encoding="utf-8")
+        self.send_response(200); self.send_header("Content-Type", "text/plain")
+        self.end_headers(); self.wfile.write(b"OK")
+    def do_GET(self):
+        if self.path != "/health":
+            self.send_error(404); return
+        self.send_response(200); self.end_headers(); self.wfile.write(b"OK")
+    def log_message(self, *_args): pass
+HTTPServer(("127.0.0.1", 8081), Handler).serve_forever()
+PY
+AUTH_SIGNAL_PID=$!
+
 sudo tee /usr/share/novnc/token-vnc.html >/dev/null <<'HTML'
 <!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
@@ -44,16 +69,19 @@ sudo tee /usr/share/novnc/token-vnc.html >/dev/null <<'HTML'
 html,body,#screen{width:100%;height:100%;margin:0;background:#111;overflow:hidden}
 #status{position:fixed;top:8px;left:8px;color:white;background:#222c;padding:6px 9px;border-radius:6px;font:14px sans-serif;z-index:3}
 #tools{position:fixed;right:10px;top:8px;z-index:4}
-#keyboardToggle{padding:10px 14px;border:0;border-radius:8px;background:#2463eb;color:white;font-size:15px}
+#keyboardToggle,#sessionReadyButton{padding:10px 14px;border:0;border-radius:8px;background:#2463eb;color:white;font-size:15px}
+#sessionReadyButton{background:#16803c;margin-left:6px}
+#sessionReadyButton:disabled{opacity:.65}
 #mobileInput{display:none;position:fixed;left:8px;right:8px;bottom:8px;width:calc(100% - 32px);height:44px;box-sizing:border-box;padding:8px 12px;border:2px solid #2463eb;border-radius:8px;background:white;color:#111;font-size:18px;z-index:5}
 #mobileInput.visible{display:block}
 </style></head>
-<body><div id="status">Connecting to remote browser…</div><div id="tools"><button id="keyboardToggle" type="button">⌨ Клавиатура</button></div><div id="screen"></div>
+<body><div id="status">Connecting to remote browser…</div><div id="tools"><button id="keyboardToggle" type="button">⌨ Клавиатура</button><button id="sessionReadyButton" type="button">Авторизация завершена</button></div><div id="screen"></div>
 <input id="mobileInput" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Нажмите здесь и вводите текст">
 <script type="module">
 import RFB from '/ACCESS_TOKEN_PLACEHOLDER/core/rfb.js';
 const status = document.getElementById('status');
 const keyboardToggle = document.getElementById('keyboardToggle');
+const sessionReadyButton = document.getElementById('sessionReadyButton');
 const mobileInput = document.getElementById('mobileInput');
 const rfb = new RFB(document.getElementById('screen'), 'wss://' + location.host + '/ACCESS_TOKEN_PLACEHOLDER/websockify');
 rfb.scaleViewport = true;
@@ -99,6 +127,22 @@ keyboardToggle.addEventListener('click', () => {
   mobileInput.classList.add('visible');
   mobileInput.focus();
 });
+sessionReadyButton.addEventListener('click', async () => {
+  sessionReadyButton.disabled = true;
+  sessionReadyButton.textContent = 'Передаю сигнал…';
+  try {
+    const response = await fetch('/ACCESS_TOKEN_PLACEHOLDER/session-ready', {
+      method: 'POST', credentials: 'same-origin'
+    });
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    sessionReadyButton.textContent = 'Сбор данных запущен';
+    status.textContent = 'Авторизация отмечена. Запускаю сбор данных…';
+  } catch (error) {
+    sessionReadyButton.disabled = false;
+    sessionReadyButton.textContent = 'Повторить сигнал';
+    status.textContent = 'Не удалось передать сигнал: ' + String(error);
+  }
+});
 mobileInput.addEventListener('blur', () => {
   // Keep the input available; the user can reopen the keyboard button.
 });
@@ -114,6 +158,7 @@ Xvfb :99 -screen 0 1440x900x24 -ac +extension RANDR >/tmp/xvfb.log 2>&1 &
 XVFB_PID=$!
 
 cleanup() {
+  [ -n "${AUTH_SIGNAL_PID:-}" ] && kill "$AUTH_SIGNAL_PID" 2>/dev/null || true
   [ -n "${WEBSOCKIFY_PID:-}" ] && kill "$WEBSOCKIFY_PID" 2>/dev/null || true
   [ -n "${VNC_PID:-}" ] && kill "$VNC_PID" 2>/dev/null || true
   [ -n "${XVFB_PID:-}" ] && kill "$XVFB_PID" 2>/dev/null || true
@@ -318,18 +363,26 @@ else:
 PY
 fi
 
-# All three collectors attach to separate tabs in this one Chromium process.
-if [ "$TARGET" = "all" ]; then
+# The collectors can be restarted after the user confirms that all three tabs
+# are manually authenticated. They always attach to the same Chromium profile.
+start_all_probes() {
+  rm -f /tmp/money-storage-status /tmp/sberkassa-sell-status /tmp/sberkassa-exchange-status
   MONEY_STORAGE_STATUS_FILE=/tmp/money-storage-status \
-    python3 scripts/money_storage_chromium_bridge.py >/tmp/money-storage-browser.log 2>&1 &
+    python3 scripts/money_storage_chromium_bridge.py >>/tmp/money-storage-browser.log 2>&1 &
   MONEY_PID=$!
   SBERKASSA_STATUS_FILE=/tmp/sberkassa-sell-status \
-    python3 scripts/sberkassa_chromium_probe.py >/tmp/sberkassa-sell-browser.log 2>&1 &
+    python3 scripts/sberkassa_chromium_probe.py >>/tmp/sberkassa-sell-browser.log 2>&1 &
   SBERKASSA_SELL_PID=$!
   SBERKASSA_EXCHANGE_STATUS_FILE=/tmp/sberkassa-exchange-status \
-    python3 scripts/sberkassa_exchange_chromium_probe.py >/tmp/sberkassa-exchange-browser.log 2>&1 &
+    python3 scripts/sberkassa_exchange_chromium_probe.py >>/tmp/sberkassa-exchange-browser.log 2>&1 &
   SBERKASSA_EXCHANGE_PID=$!
   BRIDGE_PID="$MONEY_PID $SBERKASSA_SELL_PID $SBERKASSA_EXCHANGE_PID"
+}
+if [ "$TARGET" = "all" ]; then
+  : > /tmp/money-storage-browser.log
+  : > /tmp/sberkassa-sell-browser.log
+  : > /tmp/sberkassa-exchange-browser.log
+  start_all_probes
   echo "CHROMIUM_SINGLE_PROCESS=YES"
   echo "CHROMIUM_SHARED_PROFILE=YES"
   echo "CHROMIUM_EXPECTED_TABS=3"
@@ -357,7 +410,27 @@ sudo tailscale up \
   --accept-dns=false
 TUNNEL_PID=""
 
+write_run_diagnostics() {
+  python3 - <<'PY'
+import json, os
+from pathlib import Path
+workspace = Path(os.environ.get("GITHUB_WORKSPACE", "."))
+targets = {
+  "money_storage": ("/tmp/money-storage-status", "/tmp/money-storage-browser.log"),
+  "sberkassa_erub_rub": ("/tmp/sberkassa-sell-status", "/tmp/sberkassa-sell-browser.log"),
+  "sberkassa_rub_usdt": ("/tmp/sberkassa-exchange-status", "/tmp/sberkassa-exchange-browser.log"),
+}
+result = {"schema_version": 1, "target": os.environ.get("TARGET", "all"), "read_only": True, "tabs": {}}
+for name, (status_path, log_path) in targets.items():
+    status = Path(status_path).read_text(errors="replace").strip() if Path(status_path).exists() else "NO_STATUS"
+    lines = Path(log_path).read_text(errors="replace").splitlines()[-80:] if Path(log_path).exists() else []
+    result["tabs"][name] = {"status": status, "diagnostic_tail": lines}
+(workspace / "browser-session-diagnostics.json").write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+PY
+}
+
 cleanup_all() {
+  write_run_diagnostics || true
   # Stop Chromium first and wait for it to flush profile databases
   # before the following workflow step encrypts the profile.
   if [ "$TARGET" = "all" ]; then
@@ -449,7 +522,7 @@ echo "PUBLIC_WEBSOCKET_HEALTHCHECK=HTTP_101"
 echo "REMOTE_BROWSER_URL=$TUNNEL_URL/$ACCESS_TOKEN/token-vnc.html"
 echo "REMOTE_BROWSER_AUTH=automatic via temporary per-run access token"
 echo "VNC_AUTH=automatic; credentials are not printed"
-echo "Complete E-ID only in this remote browser. Treat the URL as a temporary secret."
+echo "MANUAL_AUTH_BUTTON=AVAILABLE; inspect all three tabs, complete provider sign-in manually, then press 'Авторизация завершена'."
 
 # Forward only the browser's sanitized diagnostic lines into Actions logs.
 # The browser process writes to a private file; without this relay its
@@ -467,9 +540,47 @@ for i in $(seq 1 900); do
       grep -hE '^(OFFERS_READ_OK|SBERKASSA_CAPTURE_|SBERKASSA_EXCHANGE_INSPECTION_COMPLETE=|SBERKASSA_EXCHANGE_DISPLAYED_RATE=|SBERKASSA_SESSION=|SBERKASSA_SESSION_AUTHENTICATED=)' /tmp/money-storage-browser.log /tmp/sberkassa-sell-browser.log /tmp/sberkassa-exchange-browser.log | tail -n 160 || true
       exit 0
     fi
-    case "$MS_STATUS" in OFFERS_READ_FAILED|AUTH_REQUIRED|AUTH_TIMEOUT) echo "MONEY_STORAGE_TAB_FAILED=$MS_STATUS"; cat /tmp/money-storage-browser.log; exit 1;; esac
-    case "$SS_STATUS" in SBERKASSA_CAPTURE_FAILED|SBERKASSA_CAPTURE_TIMEOUT|AUTH_TIMEOUT) echo "SBERKASSA_SELL_TAB_FAILED=$SS_STATUS"; cat /tmp/sberkassa-sell-browser.log; exit 1;; esac
-    case "$SX_STATUS" in SBERKASSA_EXCHANGE_AUTH_TIMEOUT|SBERKASSA_EXCHANGE_SESSION_EXPIRED|SBERKASSA_EXCHANGE_SELECTION_TIMEOUT) echo "SBERKASSA_EXCHANGE_TAB_FAILED=$SX_STATUS"; cat /tmp/sberkassa-exchange-browser.log; exit 1;; esac
+    AUTH_FAILURE=NO
+    case "$MS_STATUS" in AUTH_REQUIRED|AUTH_TIMEOUT|MONEY_STORAGE_RETURN_TIMEOUT) AUTH_FAILURE=YES;; esac
+    case "$SS_STATUS" in AUTH_TIMEOUT) AUTH_FAILURE=YES;; esac
+    case "$SX_STATUS" in SBERKASSA_EXCHANGE_AUTH_TIMEOUT|SBERKASSA_EXCHANGE_SESSION_EXPIRED) AUTH_FAILURE=YES;; esac
+    if [ "$AUTH_FAILURE" = "YES" ] && [ "${MANUAL_AUTH_WAITED:-no}" = "no" ]; then
+      echo "MANUAL_AUTH_REQUIRED=YES"
+      echo "MANUAL_AUTH_INSTRUCTIONS=Complete sign-in in all three tabs, verify the pages, then press the green 'Авторизация завершена' button in the remote browser."
+      kill -TERM "${MONEY_PID:-}" "${SBERKASSA_SELL_PID:-}" "${SBERKASSA_EXCHANGE_PID:-}" 2>/dev/null || true
+      wait "${MONEY_PID:-}" 2>/dev/null || true
+      wait "${SBERKASSA_SELL_PID:-}" 2>/dev/null || true
+      wait "${SBERKASSA_EXCHANGE_PID:-}" 2>/dev/null || true
+      rm -f /tmp/manual-auth-ready
+      MANUAL_AUTH_WAITED=yes
+      AUTH_SIGNAL_RECEIVED=no
+      for wait_index in $(seq 1 450); do
+        if [ -f /tmp/manual-auth-ready ]; then AUTH_SIGNAL_RECEIVED=yes; break; fi
+        if ! kill -0 "$BROWSER_PID" 2>/dev/null || ! sudo tailscale status >/dev/null 2>&1; then
+          echo "MANUAL_AUTH_HANDOFF_INTERRUPTED browser_or_tunnel_unavailable"
+          break
+        fi
+        if [ $((wait_index % 15)) -eq 0 ]; then
+          echo "MANUAL_AUTH_WAIT elapsed_seconds=$((wait_index * 2)) limit_seconds=900"
+        fi
+        sleep 2
+      done
+      if [ "$AUTH_SIGNAL_RECEIVED" != "yes" ]; then
+        echo "MANUAL_AUTH_TIMEOUT=900_SECONDS"
+        exit 1
+      fi
+      echo "MANUAL_AUTH_SIGNAL=RECEIVED"
+      start_all_probes
+      continue
+    fi
+    case "$MS_STATUS" in OFFERS_READ_FAILED) echo "MONEY_STORAGE_TAB_FAILED=$MS_STATUS"; cat /tmp/money-storage-browser.log; exit 1;; esac
+    case "$SS_STATUS" in SBERKASSA_CAPTURE_FAILED|SBERKASSA_CAPTURE_TIMEOUT) echo "SBERKASSA_SELL_TAB_FAILED=$SS_STATUS"; cat /tmp/sberkassa-sell-browser.log; exit 1;; esac
+    case "$SX_STATUS" in SBERKASSA_EXCHANGE_SELECTION_TIMEOUT) echo "SBERKASSA_EXCHANGE_TAB_FAILED=$SX_STATUS"; cat /tmp/sberkassa-exchange-browser.log; exit 1;; esac
+    if [ "$AUTH_FAILURE" = "YES" ] && [ "${MANUAL_AUTH_WAITED:-no}" = "yes" ]; then
+      echo "MANUAL_AUTH_RETRY_FAILED money_storage=$MS_STATUS sberkassa_sell=$SS_STATUS sberkassa_exchange=$SX_STATUS"
+      grep -hE '^(OFFERS_READ_|AUTH_REQUIRED|AUTH_TIMEOUT|MONEY_STORAGE_RETURN_TIMEOUT|SBERKASSA_CAPTURE_|SBERKASSA_EXCHANGE_|HTTP_DIAG |NAV=)' /tmp/money-storage-browser.log /tmp/sberkassa-sell-browser.log /tmp/sberkassa-exchange-browser.log | tail -n 180 || true
+      exit 1
+    fi
     if ! kill -0 "$MONEY_PID" 2>/dev/null && [ "$MS_STATUS" != "OFFERS_READ_OK" ]; then cat /tmp/money-storage-browser.log; exit 1; fi
     if ! kill -0 "$SBERKASSA_SELL_PID" 2>/dev/null && [ "$SS_STATUS" != "SBERKASSA_CAPTURE_COMPLETE" ]; then cat /tmp/sberkassa-sell-browser.log; exit 1; fi
     if ! kill -0 "$SBERKASSA_EXCHANGE_PID" 2>/dev/null && [ "$SX_STATUS" != "SBERKASSA_EXCHANGE_INSPECTION_COMPLETE" ]; then cat /tmp/sberkassa-exchange-browser.log; exit 1; fi
