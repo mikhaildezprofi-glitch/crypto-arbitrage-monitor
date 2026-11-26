@@ -42,7 +42,7 @@ class FourStepRunnerSyntaxTests(unittest.TestCase):
         self.assertIn("target: sberkassa", workflow)
         self.assertIn("target: sberkassa_exchange", workflow)
         self.assertIn("needs: [money-storage, sberkassa-sell, sberkassa-exchange]", workflow)
-        self.assertIn("parallel provider pages", workflow)
+        self.assertIn("parallel authenticated provider pages", workflow)
 
 
 
