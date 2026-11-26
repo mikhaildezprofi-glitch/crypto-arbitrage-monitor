@@ -1,14 +1,9 @@
 set -euo pipefail
 umask 077
 
-CLOUDFLARE_TUNNEL_TOKEN="${CLOUDFLARE_TUNNEL_TOKEN:-}"
-CLOUDFLARE_TUNNEL_HOSTNAME="${CLOUDFLARE_TUNNEL_HOSTNAME:-}"
-if [ -n "$CLOUDFLARE_TUNNEL_TOKEN" ] && [ -z "$CLOUDFLARE_TUNNEL_HOSTNAME" ]; then
-  echo "CLOUDFLARE_TUNNEL_HOSTNAME_REQUIRED_FOR_NAMED_TUNNEL"
-  exit 1
-fi
-if [ -n "$CLOUDFLARE_TUNNEL_HOSTNAME" ] && [[ ! "$CLOUDFLARE_TUNNEL_HOSTNAME" =~ ^[A-Za-z0-9.-]+$ ]]; then
-  echo "CLOUDFLARE_TUNNEL_HOSTNAME_INVALID"
+TAILSCALE_AUTHKEY="${TAILSCALE_AUTHKEY:-}"
+if [ -z "$TAILSCALE_AUTHKEY" ]; then
+  echo "TAILSCALE_AUTHKEY_SECRET_MISSING"
   exit 1
 fi
 
@@ -352,10 +347,14 @@ fi
 BRIDGE_PID=$!
 
 
-curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 \
-  https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
-  -o /tmp/cloudflared
-sudo install -m 0755 /tmp/cloudflared /usr/local/bin/cloudflared
+# Join this ephemeral GitHub-hosted runner to the tailnet.
+curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 https://tailscale.com/install.sh | sh
+sudo systemctl enable --now tailscaled
+sudo tailscale up \
+  --authkey="$TAILSCALE_AUTHKEY" \
+  --hostname="gha-${GITHUB_RUN_ID}" \
+  --advertise-tags=tag:ci \
+  --accept-dns=false
 TUNNEL_PID=""
 
 cleanup_all() {
@@ -370,80 +369,48 @@ cleanup_all() {
     kill -TERM "${BRIDGE_PID:-}" 2>/dev/null || true
     wait "${BRIDGE_PID:-}" 2>/dev/null || true
   fi
-  kill -TERM "$BROWSER_PID" "$TUNNEL_PID" 2>/dev/null || true
+  kill -TERM "$BROWSER_PID" 2>/dev/null || true
   wait "$BROWSER_PID" 2>/dev/null || true
-  wait "$TUNNEL_PID" 2>/dev/null || true
+  sudo tailscale funnel --https=443 off >/dev/null 2>&1 || true
+  sudo tailscale down >/dev/null 2>&1 || true
   cleanup
 }
 trap cleanup_all EXIT
 
 TUNNEL_URL=""
-if [ -n "$CLOUDFLARE_TUNNEL_TOKEN" ]; then
-  TUNNEL_URL="https://$CLOUDFLARE_TUNNEL_HOSTNAME"
-  cloudflared tunnel --no-autoupdate run --token "$CLOUDFLARE_TUNNEL_TOKEN" >/tmp/cloudflared.log 2>&1 &
-  TUNNEL_PID=$!
-  echo "CLOUDFLARE_NAMED_TUNNEL_START=YES"
-else
-  echo "CLOUDFLARE_NAMED_TUNNEL_NOT_CONFIGURED; using temporary Quick Tunnel fallback"
-  for tunnel_attempt in 1 2 3; do
-    : > /tmp/cloudflared.log
-    cloudflared tunnel --no-autoupdate --url http://127.0.0.1:8080 >/tmp/cloudflared.log 2>&1 &
-    TUNNEL_PID=$!
-    for i in $(seq 1 60); do
-      TUNNEL_URL="$(grep -Eo 'https://[a-zA-Z0-9.-]+\.trycloudflare\.com' /tmp/cloudflared.log | head -n 1 || true)"
-      if [ -n "$TUNNEL_URL" ]; then break; fi
-      if ! kill -0 "$TUNNEL_PID" 2>/dev/null; then break; fi
-      sleep 2
-    done
-    if [ -n "$TUNNEL_URL" ]; then
-      echo "CLOUDFLARE_QUICK_TUNNEL_CREATED attempt=$tunnel_attempt"
-      break
-    fi
-    wait "$TUNNEL_PID" 2>/dev/null || true
-    TUNNEL_PID=""
-    if grep -Eq 'status 429|HTTP 429| 429:' /tmp/cloudflared.log; then
-      if [ "$tunnel_attempt" -lt 3 ]; then
-        BACKOFF_SECONDS=$((tunnel_attempt * 30))
-        echo "CLOUDFLARE_QUICK_TUNNEL_RATE_LIMITED retry=$((tunnel_attempt + 1))/3 backoff_seconds=$BACKOFF_SECONDS"
-        sleep "$BACKOFF_SECONDS"
-        continue
-      fi
-      echo "CLOUDFLARE_QUICK_TUNNEL_RATE_LIMIT_EXHAUSTED"
-      tail -n 100 /tmp/cloudflared.log
-      exit 1
-    fi
-    echo "CLOUDFLARED_EXITED_BEFORE_TUNNEL_URL attempt=$tunnel_attempt"
-    tail -n 100 /tmp/cloudflared.log
-    exit 1
-  done
-fi
-if [ -z "$TUNNEL_URL" ]; then
-  echo "TUNNEL_URL_NOT_CREATED"
-  tail -n 100 /tmp/cloudflared.log
+: > /tmp/tailscale-funnel.log
+sudo tailscale funnel --bg --https=443 http://127.0.0.1:8080 2>&1 | tee /tmp/tailscale-funnel.log
+TUNNEL_HOST="$(sudo tailscale status --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["Self"]["DNSName"].rstrip("."))')"
+if [ -z "$TUNNEL_HOST" ] || [[ ! "$TUNNEL_HOST" =~ \.ts\.net$ ]]; then
+  echo "TAILSCALE_FUNNEL_HOSTNAME_NOT_AVAILABLE"
+  cat /tmp/tailscale-funnel.log
   exit 1
 fi
+TUNNEL_URL="https://$TUNNEL_HOST"
+echo "TAILSCALE_FUNNEL_CREATED=YES"
+echo "TAILSCALE_FUNNEL_HOSTNAME=$TUNNEL_HOST"
 
 PUBLIC_OK=""
 for i in $(seq 1 90); do
   CODE="$(curl -sS --connect-timeout 8 --max-time 15 -o /dev/null -w '%{http_code}' "$TUNNEL_URL/$ACCESS_TOKEN/token-vnc.html" || true)"
   if [ "$CODE" = "200" ]; then PUBLIC_OK=yes; break; fi
-  if ! kill -0 "$TUNNEL_PID" 2>/dev/null; then
-    echo "CLOUDFLARED_EXITED_DURING_HEALTHCHECK"
-    tail -n 100 /tmp/cloudflared.log
+  if ! sudo tailscale status >/dev/null 2>&1; then
+    echo "TAILSCALE_DAEMON_UNAVAILABLE_DURING_HEALTHCHECK"
+    tail -n 100 /tmp/tailscale-funnel.log
     exit 1
   fi
   echo "PUBLIC_TUNNEL_WAIT http=$CODE attempt=$i/90"
   sleep 2
 done
 if [ -z "$PUBLIC_OK" ]; then
-  echo "PUBLIC_TUNNEL_HEALTHCHECK_FAILED"
-  tail -n 100 /tmp/cloudflared.log
+  echo "TAILSCALE_FUNNEL_HEALTHCHECK_FAILED"
+  tail -n 100 /tmp/tailscale-funnel.log
   exit 1
 fi
 
 echo "PUBLIC_TUNNEL_HEALTHCHECK=HTTP_200"
 
-# Verify the actual WebSocket upgrade through Cloudflare and Nginx.
+# Verify the actual WebSocket upgrade through Tailscale Funnel and Nginx.
 # A page-only HTTP 200 is not enough: it was the source of the
 # misleading green health checks in the previous run.
 WS_OK=""
@@ -521,9 +488,9 @@ for i in $(seq 1 900); do
     grep -E 'OFFERS_READ_|AUTH_|SBERKASSA_|NAV=|REQUEST |QUOTE_FIELDS |PAGE_UPDATE_MARKERS |HTTP_DIAG ' /tmp/eid-browser.log | tail -n 120 || true
     exit 1
   fi
-  if ! kill -0 "$TUNNEL_PID" 2>/dev/null; then
-    echo "CLOUDFLARED_PROCESS_EXITED"
-    tail -n 100 /tmp/cloudflared.log
+  if ! sudo tailscale status >/dev/null 2>&1; then
+    echo "TAILSCALE_DAEMON_UNAVAILABLE"
+    tail -n 100 /tmp/tailscale-funnel.log
     exit 1
   fi
   if ! kill -0 "$BROWSER_PID" 2>/dev/null; then
@@ -558,7 +525,7 @@ for i in $(seq 1 900); do
       BROWSER_LOG_LINES="$CURRENT_BROWSER_LINES"
     fi
     if [ "$CODE" != "200" ] || [ "$WS_STATUS" != "101" ]; then
-      tail -n 30 /tmp/cloudflared.log || true
+      tail -n 30 /tmp/tailscale-funnel.log || true
       cat /tmp/eid-ws-headers || true
       ss -ltnp '( sport = :5900 or sport = :6080 )' || true
       tail -n 40 /tmp/websockify.log || true
