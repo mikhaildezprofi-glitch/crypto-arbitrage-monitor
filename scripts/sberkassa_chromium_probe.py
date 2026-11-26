@@ -32,7 +32,7 @@ from arbitrage_monitor.providers.sberkassa import (
 )
 
 DEBUG_ENDPOINT = "http://127.0.0.1:9222/json/list"
-STATUS_FILE = Path("/tmp/eid-auth-status")
+STATUS_FILE = Path(os.environ.get("SBERKASSA_STATUS_FILE", "/tmp/eid-auth-status"))
 DEADLINE_SECONDS = 1800
 MAX_BODY_BYTES = 1_000_000
 VALUE_KEYS = re.compile(
@@ -420,7 +420,7 @@ def connect() -> CDP:
         try:
             targets = page_targets()
             target = next(
-                (item for item in targets if "sberkassa.site" in item.get("url", "")),
+                (item for item in targets if "sberkassa.site" in item.get("url", "") and urlparse(item.get("url", "")).path.rstrip("/") == "/deals"),
                 targets[0] if targets else None,
             )
             if target:
