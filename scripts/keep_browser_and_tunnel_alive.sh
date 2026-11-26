@@ -426,11 +426,30 @@ targets = {
   "sberkassa_erub_rub": ("/tmp/sberkassa-sell-status", "/tmp/sberkassa-sell-browser.log"),
   "sberkassa_rub_usdt": ("/tmp/sberkassa-exchange-status", "/tmp/sberkassa-exchange-browser.log"),
 }
-result = {"schema_version": 1, "target": os.environ.get("TARGET", "all"), "read_only": True, "tabs": {}}
+result = {
+  "schema_version": 2, "target": os.environ.get("TARGET", "all"), "read_only": True,
+  "overall_limit_seconds": 1200, "manual_auth_limit_seconds": 600, "tabs": {}
+}
 for name, (status_path, log_path) in targets.items():
-    status = Path(status_path).read_text(errors="replace").strip() if Path(status_path).exists() else "NO_STATUS"
-    lines = Path(log_path).read_text(errors="replace").splitlines()[-80:] if Path(log_path).exists() else []
-    result["tabs"][name] = {"status": status, "diagnostic_tail": lines}
+    status_file, log_file = Path(status_path), Path(log_path)
+    status = status_file.read_text(errors="replace").strip() if status_file.exists() else "NO_STATUS"
+    lines = log_file.read_text(errors="replace").splitlines() if log_file.exists() else []
+    markers = [line for line in lines if any(token in line for token in (
+        "START", "READY", "NAV=", "HTTP_DIAG", "REQUEST", "AUTH_", "EID_",
+        "OFFERS_READ_", "SBERKASSA_CAPTURE_", "SBERKASSA_EXCHANGE_", "QUOTE_FIELDS",
+        "PAGE_UPDATE_MARKERS", "JSON_SCHEMA", "ERROR", "TIMEOUT"
+    ))]
+    if status.endswith("_COMPLETE") or status == "OFFERS_READ_OK": diagnosis = "completed"
+    elif status in ("NO_STATUS", "", "WAITING"): diagnosis = "collector_did_not_write_status"
+    elif "AUTH" in status or "LOGIN" in status: diagnosis = "authentication_or_session"
+    elif "TIMEOUT" in status: diagnosis = "timeout"
+    elif "FAILED" in status: diagnosis = "collector_failure"
+    else: diagnosis = "stopped_at_last_recorded_stage"
+    result["tabs"][name] = {
+        "status": status, "diagnosis": diagnosis, "log_exists": log_file.exists(),
+        "log_line_count": len(lines), "last_log_line": lines[-1] if lines else None,
+        "last_progress_markers": markers[-30:], "diagnostic_tail": lines[-100:]
+    }
 (workspace / "browser-session-diagnostics.json").write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 PY
 }
@@ -535,12 +554,13 @@ echo "MANUAL_AUTH_BUTTON=AVAILABLE; inspect all three tabs, complete provider si
 # navigation and Cloudflare/E-ID diagnostics remain invisible.
 BROWSER_LOG_LINES=0
 echo "BROWSER_DIAGNOSTIC_STREAM=STARTED"
-for i in $(seq 1 900); do
+for i in $(seq 1 600); do
   if [ "$TARGET" = "all" ]; then
     MS_STATUS="$(cat /tmp/money-storage-status 2>/dev/null || echo WAITING)"
     SS_STATUS="$(cat /tmp/sberkassa-sell-status 2>/dev/null || echo WAITING)"
     SX_STATUS="$(cat /tmp/sberkassa-exchange-status 2>/dev/null || echo WAITING)"
     echo "SHARED_BROWSER_TAB_STATUS money_storage=$MS_STATUS sberkassa_sell=$SS_STATUS sberkassa_exchange=$SX_STATUS"
+     echo "SHARED_BROWSER_PROCESS_STATE money_storage=$(kill -0 "$MONEY_PID" 2>/dev/null && echo alive || echo exited) sberkassa_sell=$(kill -0 "$SBERKASSA_SELL_PID" 2>/dev/null && echo alive || echo exited) sberkassa_exchange=$(kill -0 "$SBERKASSA_EXCHANGE_PID" 2>/dev/null && echo alive || echo exited)"
     if [ "$MS_STATUS" = "OFFERS_READ_OK" ] && [ "$SS_STATUS" = "SBERKASSA_CAPTURE_COMPLETE" ] && [ "$SX_STATUS" = "SBERKASSA_EXCHANGE_INSPECTION_COMPLETE" ]; then
       echo "ALL_THREE_SHARED_BROWSER_TABS_COMPLETE=YES"
       grep -hE '^(OFFERS_READ_OK|SBERKASSA_CAPTURE_|SBERKASSA_EXCHANGE_INSPECTION_COMPLETE=|SBERKASSA_EXCHANGE_DISPLAYED_RATE=|SBERKASSA_SESSION=|SBERKASSA_SESSION_AUTHENTICATED=)' /tmp/money-storage-browser.log /tmp/sberkassa-sell-browser.log /tmp/sberkassa-exchange-browser.log | tail -n 160 || true
@@ -559,19 +579,19 @@ for i in $(seq 1 900); do
       wait "${SBERKASSA_EXCHANGE_PID:-}" 2>/dev/null || true
       MANUAL_AUTH_WAITED=yes
       AUTH_SIGNAL_RECEIVED=no
-      for wait_index in $(seq 1 450); do
+      for wait_index in $(seq 1 300); do
         if [ -f /tmp/manual-auth-ready ]; then AUTH_SIGNAL_RECEIVED=yes; break; fi
         if ! kill -0 "$BROWSER_PID" 2>/dev/null || ! sudo tailscale status >/dev/null 2>&1; then
           echo "MANUAL_AUTH_HANDOFF_INTERRUPTED browser_or_tunnel_unavailable"
           break
         fi
         if [ $((wait_index % 15)) -eq 0 ]; then
-          echo "MANUAL_AUTH_WAIT elapsed_seconds=$((wait_index * 2)) limit_seconds=900"
+          echo "MANUAL_AUTH_WAIT elapsed_seconds=$((wait_index * 2)) limit_seconds=600"
         fi
         sleep 2
       done
       if [ "$AUTH_SIGNAL_RECEIVED" != "yes" ]; then
-        echo "MANUAL_AUTH_TIMEOUT=900_SECONDS"
+        echo "MANUAL_AUTH_TIMEOUT=600_SECONDS"
         exit 1
       fi
       echo "MANUAL_AUTH_SIGNAL=RECEIVED"
@@ -667,6 +687,8 @@ for i in $(seq 1 900); do
   fi
   sleep 2
 done
-echo "EID_SESSION_TIMEOUT"
+echo "EID_SESSION_TIMEOUT limit_seconds=1200"
+write_run_diagnostics || true
+for LOG in /tmp/money-storage-browser.log /tmp/sberkassa-sell-browser.log /tmp/sberkassa-exchange-browser.log; do echo "FINAL_DIAGNOSTIC_LOG=$LOG"; tail -n 100 "$LOG" 2>/dev/null || true; done
 tail -n 80 /tmp/eid-browser.log || true
 exit 1
