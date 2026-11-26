@@ -391,8 +391,17 @@ echo "TAILSCALE_FUNNEL_CREATED=YES"
 echo "TAILSCALE_FUNNEL_HOSTNAME=$TUNNEL_HOST"
 
 PUBLIC_OK=""
+TUNNEL_IP=""
 for i in $(seq 1 90); do
-  CODE="$(curl -sS --connect-timeout 8 --max-time 15 -o /dev/null -w '%{http_code}' "$TUNNEL_URL/$ACCESS_TOKEN/token-vnc.html" || true)"
+  # The runner's configured resolver can retain a negative answer for a
+  # newly-created *.ts.net name. Resolve through independent public DoH,
+  # then pin curl to that IP while preserving HTTPS SNI and Host.
+  TUNNEL_IP="$(python3 scripts/resolve_tailscale_funnel_ipv4.py "$TUNNEL_HOST" 2>/dev/null || true)"
+  if [ -n "$TUNNEL_IP" ]; then
+    CODE="$(curl --resolve "$TUNNEL_HOST:443:$TUNNEL_IP" -sS --connect-timeout 8 --max-time 15 -o /dev/null -w '%{http_code}' "$TUNNEL_URL/$ACCESS_TOKEN/token-vnc.html" || true)"
+  else
+    CODE="DNS_WAIT"
+  fi
   if [ "$CODE" = "200" ]; then PUBLIC_OK=yes; break; fi
   if ! sudo tailscale status >/dev/null 2>&1; then
     echo "TAILSCALE_DAEMON_UNAVAILABLE_DURING_HEALTHCHECK"
@@ -415,7 +424,7 @@ echo "PUBLIC_TUNNEL_HEALTHCHECK=HTTP_200"
 # misleading green health checks in the previous run.
 WS_OK=""
 for i in $(seq 1 10); do
-  curl --http1.1 -sS -D /tmp/eid-ws-headers -o /dev/null --max-time 4 \
+  curl --resolve "$TUNNEL_HOST:443:$TUNNEL_IP" --http1.1 -sS -D /tmp/eid-ws-headers -o /dev/null --max-time 4 \
     -H "Connection: Upgrade" \
     -H "Upgrade: websocket" \
     -H "Sec-WebSocket-Version: 13" \
@@ -504,12 +513,19 @@ for i in $(seq 1 900); do
     exit 1
   fi
   if [ $((i % 15)) -eq 0 ]; then
-    CODE="$(curl -sS --connect-timeout 8 --max-time 15 -o /dev/null -w '%{http_code}' "$TUNNEL_URL/$ACCESS_TOKEN/token-vnc.html" || true)"
-    WS_CODE="$(curl --http1.1 -sS -D /tmp/eid-ws-headers -o /dev/null --max-time 4 \
+    TUNNEL_IP="$(python3 scripts/resolve_tailscale_funnel_ipv4.py "$TUNNEL_HOST" 2>/dev/null || true)"
+    CODE="DNS_WAIT"
+    if [ -n "$TUNNEL_IP" ]; then
+      CODE="$(curl --resolve "$TUNNEL_HOST:443:$TUNNEL_IP" -sS --connect-timeout 8 --max-time 15 -o /dev/null -w '%{http_code}' "$TUNNEL_URL/$ACCESS_TOKEN/token-vnc.html" || true)"
+    fi
+    WS_CODE="DNS_WAIT"
+    if [ -n "$TUNNEL_IP" ]; then
+      WS_CODE="$(curl --resolve "$TUNNEL_HOST:443:$TUNNEL_IP" --http1.1 -sS -D /tmp/eid-ws-headers -o /dev/null --max-time 4 \
       -H "Connection: Upgrade" -H "Upgrade: websocket" \
       -H "Sec-WebSocket-Version: 13" \
       -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
       "$TUNNEL_URL/$ACCESS_TOKEN/websockify" >/dev/null 2>&1 || true)"
+    fi
     if grep -qE '^HTTP/[0-9.]+ 101' /tmp/eid-ws-headers; then WS_STATUS=101; else WS_STATUS=FAILED; fi
     echo "PUBLIC_TUNNEL_HEALTHCHECK interval=30s http=$CODE websocket=$WS_STATUS"
     if [ "$TARGET" = "all" ]; then
