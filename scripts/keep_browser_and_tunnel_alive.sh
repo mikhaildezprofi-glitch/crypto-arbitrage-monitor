@@ -261,7 +261,7 @@ fi
 echo "STANDALONE_CHROMIUM=$(basename "$(dirname "$CHROMIUM_BIN")")/chrome"
 "$CHROMIUM_BIN" --version
 : "${TARGET:?TARGET must be set}"
-if [ "$TARGET" = "all" ]; then
+if [ "$TARGET" = "auth_only" ] || [ "$TARGET" = "all" ]; then
   CHROMIUM_START_URL="https://storage.money/deals#tab-3"
   EXTRA_START_URLS=("https://sberkassa.site/deals#tab-3" "https://sberkassa.site/exchange")
   BRIDGE_SCRIPT="all"
@@ -299,7 +299,7 @@ for lock_name in SingletonLock SingletonCookie SingletonSocket; do
 done
 
 CHROMIUM_START_ARGS=("$CHROMIUM_START_URL")
-if [ "$TARGET" = "all" ]; then
+if [ "$TARGET" = "all" ] || [ "$TARGET" = "auth_only" ]; then
   CHROMIUM_START_ARGS+=("${EXTRA_START_URLS[@]}")
 fi
 DISPLAY=:99 "$CHROMIUM_BIN" \
@@ -384,7 +384,16 @@ start_all_probes() {
 # The shared monitor reads this file even in all-tabs mode; create it before polling.
 : > /tmp/eid-browser.log
 
-if [ "$TARGET" = "all" ]; then
+if [ "$TARGET" = "auth_only" ]; then
+  : > /tmp/money-storage-browser.log
+  : > /tmp/sberkassa-sell-browser.log
+  : > /tmp/sberkassa-exchange-browser.log
+  echo "AUTH_ONLY_MODE=YES"
+  echo "AUTH_ONLY_COLLECTORS=DISABLED"
+  echo "CHROMIUM_SINGLE_PROCESS=YES"
+  echo "CHROMIUM_SHARED_PROFILE=YES"
+  echo "CHROMIUM_EXPECTED_TABS=3"
+elif [ "$TARGET" = "all" ]; then
   : > /tmp/money-storage-browser.log
   : > /tmp/sberkassa-sell-browser.log
   : > /tmp/sberkassa-exchange-browser.log
@@ -439,7 +448,8 @@ for name, (status_path, log_path) in targets.items():
         "OFFERS_READ_", "SBERKASSA_CAPTURE_", "SBERKASSA_EXCHANGE_", "QUOTE_FIELDS",
         "PAGE_UPDATE_MARKERS", "JSON_SCHEMA", "ERROR", "TIMEOUT"
     ))]
-    if status.endswith("_COMPLETE") or status == "OFFERS_READ_OK": diagnosis = "completed"
+    if os.environ.get("TARGET") == "auth_only": diagnosis = "not_run_auth_only"
+    elif status.endswith("_COMPLETE") or status == "OFFERS_READ_OK": diagnosis = "completed"
     elif status in ("NO_STATUS", "", "WAITING"): diagnosis = "collector_did_not_write_status"
     elif "AUTH" in status or "LOGIN" in status: diagnosis = "authentication_or_session"
     elif "TIMEOUT" in status: diagnosis = "timeout"
@@ -564,7 +574,12 @@ echo "PUBLIC_WEBSOCKET_HEALTHCHECK=HTTP_101"
 echo "REMOTE_BROWSER_URL=$TUNNEL_URL/$ACCESS_TOKEN/token-vnc.html"
 echo "REMOTE_BROWSER_AUTH=automatic via temporary per-run access token"
 echo "VNC_AUTH=automatic; credentials are not printed"
-echo "MANUAL_AUTH_BUTTON=AVAILABLE; inspect all three tabs, complete provider sign-in manually, then press 'Авторизация завершена'."
+echo if [ "$TARGET" = "auth_only" ]; then
+  echo "MANUAL_AUTH_BUTTON=AVAILABLE; complete provider sign-in in all three tabs, then press 'Авторизация завершена' to save the encrypted session."
+  echo "AUTH_ONLY_WAIT_LIMIT_SECONDS=600"
+else
+  echo "MANUAL_AUTH_BUTTON=AVAILABLE; inspect all three tabs, complete provider sign-in manually, then press 'Авторизация завершена'."
+fi
 
 # Forward only the browser's sanitized diagnostic lines into Actions logs.
 # The browser process writes to a private file; without this relay its
@@ -572,7 +587,17 @@ echo "MANUAL_AUTH_BUTTON=AVAILABLE; inspect all three tabs, complete provider si
 BROWSER_LOG_LINES=0
 echo "BROWSER_DIAGNOSTIC_STREAM=STARTED"
 for i in $(seq 1 600); do
-  if [ "$TARGET" = "all" ]; then
+  if [ "$TARGET" = "auth_only" ]; then
+    if [ -f /tmp/manual-auth-ready ]; then
+      echo "AUTH_ONLY_MANUAL_CONFIRMATION=RECEIVED"
+      echo "AUTH_ONLY_COLLECTION=NOT_STARTED"
+      echo "AUTH_ONLY_PROFILE_SAVE=NEXT_WORKFLOW_STEP"
+      exit 0
+    fi
+    if [ $((i % 15)) -eq 0 ]; then
+      echo "AUTH_ONLY_WAIT elapsed_seconds=$((i * 2)) limit_seconds=1200"
+    fi
+  elif [ "$TARGET" = "all" ]; then
     MS_STATUS="$(cat /tmp/money-storage-status 2>/dev/null || echo WAITING)"
     SS_STATUS="$(cat /tmp/sberkassa-sell-status 2>/dev/null || echo WAITING)"
     SX_STATUS="$(cat /tmp/sberkassa-exchange-status 2>/dev/null || echo WAITING)"
