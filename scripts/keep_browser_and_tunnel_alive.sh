@@ -518,6 +518,7 @@ for i in $(seq 1 900); do
     if [ -n "$TUNNEL_IP" ]; then
       CODE="$(curl --resolve "$TUNNEL_HOST:443:$TUNNEL_IP" -sS --connect-timeout 8 --max-time 15 -o /dev/null -w '%{http_code}' "$TUNNEL_URL/$ACCESS_TOKEN/token-vnc.html" || true)"
     fi
+    rm -f /tmp/eid-ws-headers
     WS_CODE="DNS_WAIT"
     if [ -n "$TUNNEL_IP" ]; then
       WS_CODE="$(curl --resolve "$TUNNEL_HOST:443:$TUNNEL_IP" --http1.1 -sS -D /tmp/eid-ws-headers -o /dev/null --max-time 4 \
