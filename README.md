@@ -111,3 +111,11 @@ PYTHONPATH=src python -m unittest discover -s tests -v
 - `CHROMIUM_PROFILE_PASSPHRASE` (GitHub Actions secret; never place its value in source control or logs)
 - `CLOUDFLARE_TUNNEL_TOKEN` (optional GitHub Actions secret for a stable named Cloudflare Tunnel; recommended after Quick Tunnel HTTP 429 errors)
 - `CLOUDFLARE_TUNNEL_HOSTNAME` (GitHub Actions repository variable; the public hostname configured in the named tunnel to route to `http://127.0.0.1:8080`)
+
+### Shared browser run limits and failure diagnostics
+
+- The shared three-tab browser workflow is started manually only; editing workflow files does not launch an authenticated browser session.
+- The overall collection loop is limited to 20 minutes, including any manual-authentication handoff. The handoff itself is limited to 10 minutes.
+- Each normal interactive quote collector has a 10-minute internal deadline; explicit noninteractive/session-check Money Storage mode retains its 180-second deadline.
+- The GitHub Actions browser step is limited to 35 minutes and the complete browser job to 42 minutes.
+- On success, failure, interruption, or timeout, the workflow uploads `browser-session-diagnostics.json` when the browser step has started. It reports each source's final status, last stage marker, recent progress markers, last log line, recent log tail, and process liveness at diagnostic time. Timeout logs are also printed to the Actions job log.
