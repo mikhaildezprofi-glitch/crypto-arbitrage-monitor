@@ -88,6 +88,22 @@ class SberkassaProbeSyntaxTests(unittest.TestCase):
         self.assertIn("ignore `rate` completely", readme)
         self.assertIn("single rate", readme)
 
+    def test_auth_only_opens_and_requires_the_three_exact_target_urls(self):
+        project_root = Path(__file__).resolve().parents[1]
+        script = (project_root / "scripts" / "keep_browser_and_tunnel_alive.sh").read_text(encoding="utf-8")
+        self.assertIn('CHROMIUM_START_URL="https://storage.money/deals#tab-3"', script)
+        self.assertIn('EXTRA_START_URLS=("https://sberkassa.site/deals#tab-3" "https://sberkassa.site/exchange")', script)
+        self.assertIn('("storage.money", "/deals", "tab-3")', script)
+        self.assertIn('("sberkassa.site", "/deals", "tab-3")', script)
+        self.assertIn('("sberkassa.site", "/exchange", "")', script)
+        self.assertIn('TARGET_TABS_EXACTLY_VERIFIED; AUTH_ONLY; COLLECTION_DISABLED', script)
+        self.assertIn('MISSING_OR_REDIRECTED', script)
+        self.assertIn('AUTH_ONLY_INITIAL_PROVIDER_TABS_OPENED=YES', script)
+        self.assertNotIn('SHARED_CHROMIUM_THREE_TARGET_TABS=VERIFIED', script.split('if [ "$TARGET" = "all" ] || [ "$TARGET" = "auth_only" ]; then', 1)[1].split('# The collectors can be restarted', 1)[0])
+        self.assertIn('AUTH_ONLY_COLLECTORS=DISABLED', script)
+        self.assertIn('Проверить вкладки и сохранить авторизацию', script)
+        self.assertIn('import urllib.request', script)
+
     def test_sberkassa_workflow_starts_from_its_own_login_page(self):
         project_root = Path(__file__).resolve().parents[1]
         workflow = (project_root / ".github" / "workflows" / "browserless-eid-handoff-stable.yml").read_text(encoding="utf-8")
