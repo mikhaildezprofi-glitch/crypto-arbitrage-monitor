@@ -18,15 +18,6 @@ on:
         required: false
         type: boolean
         default: false
-  push:
-    branches:
-      - feat/integrated-arbitrage-automation-20261123
-    paths:
-      - scripts/sberkassa_chromium_probe.py
-      - src/arbitrage_monitor/providers/sberkassa.py
-      - tests/test_sberkassa_offer_quote.py
-      - tests/test_sberkassa_probe_syntax.py
-      - .github/workflows/browserless-eid-handoff-stable.yml
   workflow_call:
     inputs:
       target:
