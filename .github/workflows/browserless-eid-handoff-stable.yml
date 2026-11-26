@@ -386,6 +386,36 @@ jobs:
           fi
           echo "STANDALONE_CHROMIUM_HEALTHCHECK=OK"
 
+          if [ "$TARGET" = "all" ]; then
+            python3 - <<'PY'
+          import json, time, urllib.request
+          expected = {("storage.money", "/deals"), ("sberkassa.site", "/deals"), ("sberkassa.site", "/exchange")}
+          deadline = time.monotonic() + 30
+          while time.monotonic() < deadline:
+              try:
+                  with urllib.request.urlopen("http://127.0.0.1:9222/json/list", timeout=3) as response:
+                      targets = json.load(response)
+                  found = set()
+                  for item in targets:
+                      if item.get("type") != "page":
+                          continue
+                      from urllib.parse import urlparse
+                      parsed = urlparse(item.get("url", ""))
+                      if parsed.hostname in {"storage.money", "sberkassa.site"}:
+                          found.add((parsed.hostname, parsed.path.rstrip("/") or "/"))
+                  if expected.issubset(found):
+                      print("SHARED_CHROMIUM_THREE_TARGET_TABS=VERIFIED")
+                      for host, path in sorted(expected):
+                          print(f"SHARED_CHROMIUM_TAB={host}{path}")
+                      break
+              except Exception:
+                  pass
+              time.sleep(1)
+          else:
+              raise SystemExit("SHARED_CHROMIUM_THREE_TARGET_TABS_NOT_FOUND")
+          PY
+          fi
+
           # All three collectors attach to separate tabs in this one Chromium process.
           if [ "$TARGET" = "all" ]; then
             MONEY_STORAGE_STATUS_FILE=/tmp/money-storage-status \
@@ -425,10 +455,17 @@ jobs:
           cleanup_all() {
             # Stop Chromium first and wait for it to flush profile databases
             # before the following workflow step encrypts the profile.
-            kill -TERM "$BROWSER_PID" 2>/dev/null || true
+            if [ "$TARGET" = "all" ]; then
+              kill -TERM "${MONEY_PID:-}" "${SBERKASSA_SELL_PID:-}" "${SBERKASSA_EXCHANGE_PID:-}" 2>/dev/null || true
+              wait "${MONEY_PID:-}" 2>/dev/null || true
+              wait "${SBERKASSA_SELL_PID:-}" 2>/dev/null || true
+              wait "${SBERKASSA_EXCHANGE_PID:-}" 2>/dev/null || true
+            else
+              kill -TERM "${BRIDGE_PID:-}" 2>/dev/null || true
+              wait "${BRIDGE_PID:-}" 2>/dev/null || true
+            fi
+            kill -TERM "$BROWSER_PID" "$TUNNEL_PID" 2>/dev/null || true
             wait "$BROWSER_PID" 2>/dev/null || true
-            kill -TERM "${BRIDGE_PID:-}" "$TUNNEL_PID" 2>/dev/null || true
-            wait "${BRIDGE_PID:-}" 2>/dev/null || true
             wait "$TUNNEL_PID" 2>/dev/null || true
             cleanup
           }
