@@ -104,6 +104,38 @@ jobs:
             echo "CHROMIUM_PROFILE_CACHE=EMPTY_FIRST_AUTHENTICATION_REQUIRED"
           fi
 
+      - name: Diagnose restored provider-session cookie metadata
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import glob, os, sqlite3, time
+          roots = ["/tmp/eid-chromium-profile/Default/Cookies",
+                   "/tmp/eid-chromium-profile/Default/Network/Cookies"]
+          found = False
+          now = (time.time() + 11644473600) * 1_000_000
+          for path in roots:
+              if not os.path.isfile(path):
+                  continue
+              found = True
+              try:
+                  db = sqlite3.connect("file:" + path + "?mode=ro", uri=True, timeout=2)
+                  rows = db.execute(
+                      "SELECT host_key, COUNT(*), SUM(CASE WHEN expires_utc=0 OR expires_utc>? THEN 1 ELSE 0 END) "
+                      "FROM cookies WHERE host_key LIKE ? OR host_key LIKE ? OR host_key LIKE ? GROUP BY host_key",
+                      (now, "%storage.money%", "%sberkassa.site%", "%e-id.cards%")
+                  ).fetchall()
+                  db.close()
+                  for host, count, live in rows:
+                      print("RESTORED_COOKIE_METADATA host=%s total=%s unexpired=%s" %
+                            (host, count, live or 0))
+              except Exception as exc:
+                  print("RESTORED_COOKIE_METADATA database=%s error=%s" %
+                        (os.path.basename(path), type(exc).__name__))
+          if not found:
+              print("RESTORED_COOKIE_METADATA=NO_COOKIE_DATABASE_FOUND")
+          PY
+
       # All long-lived processes stay inside this step. The runner tears down
       # background processes when a step ends, which caused the earlier 1033.
       - name: Keep browser and Cloudflare tunnel alive during E-ID handoff
