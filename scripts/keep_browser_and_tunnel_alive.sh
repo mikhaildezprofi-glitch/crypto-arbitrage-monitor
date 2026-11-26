@@ -571,7 +571,7 @@ for i in $(seq 1 90); do
   # The runner's configured resolver can retain a negative answer for a
   # newly-created *.ts.net name. Resolve through independent public DoH,
   # then pin curl to that IP while preserving HTTPS SNI and Host.
-  TUNNEL_IP="$(python3 scripts/resolve_tailscale_funnel_ipv4.py "$TUNNEL_HOST" 2>/dev/null || true)"
+  TUNNEL_IP="$(python3 scripts/resolve_tailscale_funnel_ipv4.py "$TUNNEL_HOST" || true)"
   if [ -n "$TUNNEL_IP" ]; then
     CODE="$(curl --resolve "$TUNNEL_HOST:443:$TUNNEL_IP" -sS --connect-timeout 8 --max-time 15 -o /dev/null -w '%{http_code}' "$TUNNEL_URL/$ACCESS_TOKEN/token-vnc.html" || true)"
   else
