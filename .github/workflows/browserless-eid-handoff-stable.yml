@@ -12,12 +12,20 @@ on:
           - money_storage
           - sberkassa
           - sberkassa_exchange
-          - all
       inspect_currency_form:
         description: "Keep the browser open for manual Money Storage currency-form inspection"
         required: false
         type: boolean
         default: false
+  push:
+    branches:
+      - feat/integrated-arbitrage-automation-20261123
+    paths:
+      - scripts/sberkassa_chromium_probe.py
+      - src/arbitrage_monitor/providers/sberkassa.py
+      - tests/test_sberkassa_offer_quote.py
+      - tests/test_sberkassa_probe_syntax.py
+      - .github/workflows/browserless-eid-handoff-stable.yml
   workflow_call:
     inputs:
       target:
@@ -63,7 +71,6 @@ jobs:
           key: ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-${{ inputs.target || 'manual' }}-${{ github.run_id }}
           restore-keys: |
             ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-${{ inputs.target || 'manual' }}-
-            ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-shared-
             ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-
 
       - name: Install browser and tunnel dependencies
@@ -100,38 +107,6 @@ jobs:
           else
             echo "CHROMIUM_PROFILE_CACHE=EMPTY_FIRST_AUTHENTICATION_REQUIRED"
           fi
-
-      - name: Diagnose restored provider-session cookie metadata
-        if: always()
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          import glob, os, sqlite3, time
-          roots = ["/tmp/eid-chromium-profile/Default/Cookies",
-                   "/tmp/eid-chromium-profile/Default/Network/Cookies"]
-          found = False
-          now = (time.time() + 11644473600) * 1_000_000
-          for path in roots:
-              if not os.path.isfile(path):
-                  continue
-              found = True
-              try:
-                  db = sqlite3.connect("file:" + path + "?mode=ro", uri=True, timeout=2)
-                  rows = db.execute(
-                      "SELECT host_key, COUNT(*), SUM(CASE WHEN expires_utc=0 OR expires_utc>? THEN 1 ELSE 0 END) "
-                      "FROM cookies WHERE host_key LIKE ? OR host_key LIKE ? OR host_key LIKE ? GROUP BY host_key",
-                      (now, "%storage.money%", "%sberkassa.site%", "%e-id.cards%")
-                  ).fetchall()
-                  db.close()
-                  for host, count, live in rows:
-                      print("RESTORED_COOKIE_METADATA host=%s total=%s unexpired=%s" %
-                            (host, count, live or 0))
-              except Exception as exc:
-                  print("RESTORED_COOKIE_METADATA database=%s error=%s" %
-                        (os.path.basename(path), type(exc).__name__))
-          if not found:
-              print("RESTORED_COOKIE_METADATA=NO_COOKIE_DATABASE_FOUND")
-          PY
 
       # All long-lived processes stay inside this step. The runner tears down
       # background processes when a step ends, which caused the earlier 1033.
@@ -348,30 +323,19 @@ jobs:
           echo "STANDALONE_CHROMIUM=$(basename "$(dirname "$CHROMIUM_BIN")")/chrome"
           "$CHROMIUM_BIN" --version
           TARGET="${{ inputs.target != '' && inputs.target || (github.event_name == 'push' && 'sberkassa' || 'money_storage') }}"
-          if [ "$TARGET" = "all" ]; then
-            # Open all three authenticated pages in separate tabs of one
-            # restored Chromium profile and collect them concurrently.
-            CHROMIUM_START_URL="https://storage.money/deals#tab-3"
-            # Reuse the saved authenticated session first
-            CHROMIUM_START_URLS=(
-              "https://storage.money/deals#tab-3"
-              "https://sberkassa.site/deals#tab-3"
-              "https://sberkassa.site/exchange"
-            )
-            BRIDGE_SCRIPT=""
-          elif [ "$TARGET" = "sberkassa" ]; then
+          if [ "$TARGET" = "sberkassa" ]; then
+            # Existing ERUB -> RUB deals collector. Keep its scope unchanged.
             CHROMIUM_START_URL="about:blank"
-            CHROMIUM_START_URLS=("$CHROMIUM_START_URL")
             BRIDGE_SCRIPT="scripts/sberkassa_chromium_probe.py"
           elif [ "$TARGET" = "sberkassa_exchange" ]; then
+            # Separate authenticated /exchange discovery probe. It blocks all
+            # non-GET requests and never changes page controls.
             CHROMIUM_START_URL="about:blank"
-            CHROMIUM_START_URLS=("$CHROMIUM_START_URL")
             BRIDGE_SCRIPT="scripts/sberkassa_exchange_chromium_probe.py"
           else
-            # Reuse the saved authenticated session first
-            # Default Money Storage mode is the original authenticated, read-only quote capture.
+            # Reuse the saved authenticated session first. The bridge opens the
+            # normal account/E-ID route only if the protected offers page rejects it.
             CHROMIUM_START_URL="https://storage.money/deals#tab-3"
-            CHROMIUM_START_URLS=("$CHROMIUM_START_URL")
             BRIDGE_SCRIPT="scripts/money_storage_chromium_bridge.py"
           fi
           echo "BROWSER_TARGET=$TARGET"
@@ -403,7 +367,7 @@ jobs:
             --remote-allow-origins=* \
             --user-data-dir=/tmp/eid-chromium-profile \
             --window-size=1440,900 \
-            "${CHROMIUM_START_URLS[@]}" >/tmp/chromium.log 2>&1 &
+            "$CHROMIUM_START_URL" >/tmp/chromium.log 2>&1 &
           BROWSER_PID=$!
 
           CDP_READY=""
@@ -426,26 +390,20 @@ jobs:
           fi
           echo "STANDALONE_CHROMIUM_HEALTHCHECK=OK"
 
-          # For the integrated run, all three probes attach to their own
-          # already-open tab and share one restored encrypted Chromium profile.
-          if [ "$TARGET" = "all" ]; then
-            MONEY_STORAGE_STATUS_FILE=/tmp/status-money-storage python3 scripts/money_storage_chromium_bridge.py >>/tmp/eid-browser.log 2>&1 &
-            MONEY_STORAGE_PID=$!
-            SBERKASSA_STATUS_FILE=/tmp/status-sberkassa-deals python3 scripts/sberkassa_chromium_probe.py >>/tmp/eid-browser.log 2>&1 &
-            SBERKASSA_PID=$!
-            SBERKASSA_EXCHANGE_STATUS_FILE=/tmp/status-sberkassa-exchange python3 scripts/sberkassa_exchange_chromium_probe.py >>/tmp/eid-browser.log 2>&1 &
-            SBERKASSA_EXCHANGE_PID=$!
-            BRIDGE_PIDS=("$MONEY_STORAGE_PID" "$SBERKASSA_PID" "$SBERKASSA_EXCHANGE_PID")
-          elif [ "$TARGET" = "money_storage" ] && [ "${{ inputs.inspect_currency_form }}" = "true" ]; then
+          # The selected bridge either reads Money Storage's approved offers
+          # or performs a sanitized, read-only Sberkassa page inspection.
+          if [ "$TARGET" = "money_storage" ] && [ "${{ inputs.inspect_currency_form }}" = "true" ]; then
             MONEY_STORAGE_FORM_INSPECTION=1 python3 "$BRIDGE_SCRIPT" >/tmp/eid-browser.log 2>&1 &
-            BRIDGE_PID=$!
           elif [ "$TARGET" = "sberkassa" ] && [ "${{ github.event_name }}" = "push" ]; then
+            # Push-triggered test uses the previously saved session only. If it
+            # expired, fail closed instead of waiting for a manual login.
             SBERKASSA_NONINTERACTIVE=1 python3 "$BRIDGE_SCRIPT" >/tmp/eid-browser.log 2>&1 &
-            BRIDGE_PID=$!
           else
+            # Default Money Storage mode is the original authenticated, read-only
+            # quote capture. Access-only diagnostics require an explicit input.
             python3 "$BRIDGE_SCRIPT" >/tmp/eid-browser.log 2>&1 &
-            BRIDGE_PID=$!
           fi
+          BRIDGE_PID=$!
 
 
           curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 \
@@ -460,14 +418,8 @@ jobs:
             # before the following workflow step encrypts the profile.
             kill -TERM "$BROWSER_PID" 2>/dev/null || true
             wait "$BROWSER_PID" 2>/dev/null || true
-            if [ "$TARGET" = "all" ]; then
-              for pid in "${BRIDGE_PIDS[@]}"; do kill -TERM "$pid" 2>/dev/null || true; done
-              for pid in "${BRIDGE_PIDS[@]}"; do wait "$pid" 2>/dev/null || true; done
-            else
-              kill -TERM "${BRIDGE_PID:-}" 2>/dev/null || true
-              wait "${BRIDGE_PID:-}" 2>/dev/null || true
-            fi
-            kill -TERM "$TUNNEL_PID" 2>/dev/null || true
+            kill -TERM "${BRIDGE_PID:-}" "$TUNNEL_PID" 2>/dev/null || true
+            wait "${BRIDGE_PID:-}" 2>/dev/null || true
             wait "$TUNNEL_PID" 2>/dev/null || true
             cleanup
           }
@@ -548,46 +500,24 @@ jobs:
           BROWSER_LOG_LINES=0
           echo "BROWSER_DIAGNOSTIC_STREAM=STARTED"
           for i in $(seq 1 900); do
-            if [ "$TARGET" = "all" ]; then
-              MS_STATUS="$(cat /tmp/status-money-storage 2>/dev/null || echo WAITING)"
-              SS_STATUS="$(cat /tmp/status-sberkassa-deals 2>/dev/null || echo WAITING)"
-              SE_STATUS="$(cat /tmp/status-sberkassa-exchange 2>/dev/null || echo WAITING)"
-              echo "SOURCE_STATUS money_storage=$MS_STATUS sberkassa_deals=$SS_STATUS sberkassa_exchange=$SE_STATUS"
-              if [ "$MS_STATUS" = "OFFERS_READ_OK" ] && [ "$SS_STATUS" = "SBERKASSA_CAPTURE_COMPLETE" ] && [ "$SE_STATUS" = "SBERKASSA_EXCHANGE_INSPECTION_COMPLETE" ]; then
-                echo "ALL_THREE_AUTHENTICATED_PAGES_CAPTURED=YES"
-                grep -E '^(OFFERS_READ_|AUTH_RETURN_ROUTE=|MONEY_STORAGE_SESSION=|SBERKASSA_SESSION=|SBERKASSA_CAPTURE_|SBERKASSA_EXCHANGE_|EID_HANDOFF=|NAV=|HTTP_DIAG |REQUEST |QUOTE_FIELDS |PAGE_UPDATE_MARKERS |EXCHANGE_JSON )' /tmp/eid-browser.log | tail -n 240 || true
-                exit 0
-              fi
-              case "$MS_STATUS" in OFFERS_READ_FAILED|AUTH_TIMEOUT|MONEY_STORAGE_RETURN_TIMEOUT|AUTH_REQUIRED) echo "MONEY_STORAGE_CAPTURE_FAILED=$MS_STATUS"; tail -n 160 /tmp/eid-browser.log; exit 1;; esac
-              case "$SS_STATUS" in AUTH_TIMEOUT|SBERKASSA_CAPTURE_FAILED|SBERKASSA_CAPTURE_TIMEOUT) echo "SBERKASSA_DEALS_CAPTURE_FAILED=$SS_STATUS"; tail -n 160 /tmp/eid-browser.log; exit 1;; esac
-              case "$SE_STATUS" in SBERKASSA_EXCHANGE_SESSION_EXPIRED|SBERKASSA_EXCHANGE_AUTH_TIMEOUT|SBERKASSA_EXCHANGE_SELECTION_TIMEOUT) echo "SBERKASSA_EXCHANGE_CAPTURE_FAILED=$SE_STATUS"; tail -n 160 /tmp/eid-browser.log; exit 1;; esac
-              for pid in "${BRIDGE_PIDS[@]}"; do
-                if ! kill -0 "$pid" 2>/dev/null; then
-                  echo "ONE_OF_THREE_CAPTURE_PROCESSES_EXITED"
-                  tail -n 160 /tmp/eid-browser.log
-                  exit 1
-                fi
-              done
-            else
-              STATUS="$(cat /tmp/eid-auth-status 2>/dev/null || echo WAITING_FOR_LOGIN)"
-            fi
-            if [ "$TARGET" != "all" ] && [ "$STATUS" = "FORM_INSPECTION_COMPLETE" ]; then
+            STATUS="$(cat /tmp/eid-auth-status 2>/dev/null || echo WAITING_FOR_LOGIN)"
+            if [ "$STATUS" = "FORM_INSPECTION_COMPLETE" ]; then
               echo "FORM_INSPECTION_COMPLETE: the page itself sent a request containing from=ECR&to=USDT; inspect PAGE_REQUEST for the exact endpoint and parameter location."
               grep -E "^(PAGE_DIAG deals_form=|PAGE_REQUEST |FORM_INSPECTION_READY)" /tmp/eid-browser.log | tail -n 120 || true
               exit 0
             fi
-            if [ "$TARGET" != "all" ] && { [ "$STATUS" = "MONEY_STORAGE_RETURNED" ] || [ "$STATUS" = "MONEY_STORAGE_SESSION_CANDIDATE" ]; }; then
+            if [ "$STATUS" = "MONEY_STORAGE_RETURNED" ] || [ "$STATUS" = "MONEY_STORAGE_SESSION_CANDIDATE" ]; then
               echo "Money Storage profile handoff milestone completed: $STATUS"
               grep -E '^(EID_STATE=|CLOUDFLARE_STATE=|NAV=|PAGE_DIAG deals_form=|PAGE_REQUEST |FORM_INSPECTION_READY|MONEY_STORAGE_RETURNED |MONEY_STORAGE_SESSION_CANDIDATE )' /tmp/eid-browser.log | tail -n 120 || true
               exit 0
             fi
-            if [ "$TARGET" != "all" ] && { [ "$STATUS" = "OFFERS_READ_OK" ] || [ "$STATUS" = "SBERKASSA_CAPTURE_COMPLETE" ] || [ "$STATUS" = "SBERKASSA_EXCHANGE_INSPECTION_COMPLETE" ]; }; then
+            if [ "$STATUS" = "OFFERS_READ_OK" ] || [ "$STATUS" = "SBERKASSA_CAPTURE_COMPLETE" ] || [ "$STATUS" = "SBERKASSA_EXCHANGE_INSPECTION_COMPLETE" ]; then
               echo "Authenticated read-only browser inspection completed for target=$TARGET."
               echo "BROWSER_DIAGNOSTICS_FINAL:"
               grep -E '^(SESSION_REUSE_CHECK=|EID_HANDOFF=|EID_STATE=|CLOUDFLARE_STATE=|SBERKASSA_SESSION=|SBERKASSA_SESSION_AUTHENTICATED=|SESSION_REUSE_OR_EID_TIMEOUT=|SBERKASSA_CAPTURE_|SBERKASSA_EXCHANGE_|NAV=|HTTP_DIAG |REQUEST |QUOTE_FIELDS |PAGE_UPDATE_MARKERS |EXCHANGE_JSON )' /tmp/eid-browser.log | tail -n 160 || true
               exit 0
             fi
-            if [ "$TARGET" != "all" ] && { [ "$STATUS" = "OFFERS_READ_FAILED" ] || [ "$STATUS" = "AUTH_TIMEOUT" ] || [ "$STATUS" = "MONEY_STORAGE_RETURN_TIMEOUT" ] || [ "$STATUS" = "SBERKASSA_CAPTURE_FAILED" ] || [ "$STATUS" = "SBERKASSA_CAPTURE_TIMEOUT" ] || [ "$STATUS" = "SBERKASSA_EXCHANGE_AUTH_TIMEOUT" ] || [ "$STATUS" = "SBERKASSA_EXCHANGE_SELECTION_TIMEOUT" ]; }; then
+            if [ "$STATUS" = "OFFERS_READ_FAILED" ] || [ "$STATUS" = "AUTH_TIMEOUT" ] || [ "$STATUS" = "MONEY_STORAGE_RETURN_TIMEOUT" ] || [ "$STATUS" = "SBERKASSA_CAPTURE_FAILED" ] || [ "$STATUS" = "SBERKASSA_CAPTURE_TIMEOUT" ] || [ "$STATUS" = "SBERKASSA_EXCHANGE_AUTH_TIMEOUT" ] || [ "$STATUS" = "SBERKASSA_EXCHANGE_SELECTION_TIMEOUT" ]; then
               echo "BROWSER_DIAGNOSTICS:"
               grep -E 'OFFERS_READ_|AUTH_|SBERKASSA_|NAV=|REQUEST |QUOTE_FIELDS |PAGE_UPDATE_MARKERS |HTTP_DIAG ' /tmp/eid-browser.log | tail -n 120 || true
               exit 1
@@ -602,7 +532,7 @@ jobs:
               tail -n 100 /tmp/chromium.log || true
               exit 1
             fi
-            if [ "$TARGET" != "all" ] && ! kill -0 "$BRIDGE_PID" 2>/dev/null; then
+            if ! kill -0 "$BRIDGE_PID" 2>/dev/null; then
               echo "CHROMIUM_SESSION_BRIDGE_EXITED"
               tail -n 100 /tmp/eid-browser.log || true
               exit 1
@@ -721,7 +651,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/chromium-profile-money_storage.gpg
-          key: ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-${{ github.run_id }}
+          key: ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-money_storage-${{ github.run_id }}
 
       - name: Require and decrypt the authenticated profile
         shell: bash
