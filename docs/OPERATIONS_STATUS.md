@@ -15,6 +15,14 @@ This file consolidates the agreed project rules and the verified implementation 
 - Full route calculation is unavailable unless all five quotes are current, valid, correctly directed, and all required fee inputs are known.
 - BlackBit is indicative only; its displayed ECR/USDT rate is not an execution guarantee.
 
+## Browser session reliability
+
+- The initial Money Storage reliability check of three independent successful reads of 20 offers each has already been completed.
+- For later runs, one successful read of 20 offers is sufficient. Do not repeat the three-read check.
+- Prefer the latest encrypted Chromium profile cache. The original encrypted bootstrap artifact is used only if no saved cache exists.
+- When the saved session is rejected, keep the cloud browser open for normal manual authentication. After the user confirms, restart the collectors against the same Chromium session.
+- Re-encrypt and save the updated profile even when collection fails, as long as the profile was successfully decrypted. Never overwrite a usable encrypted profile after a decryption failure.
+
 ## Route and calculation
 
 1. Money Storage: USDT -> ECR.
@@ -37,7 +45,7 @@ All arithmetic is denominated in USDT. Do not label USDT as exact USD without a 
 - The observed page request is `GET /public_deals/fetch?offset=0&limit=20&from=ECR&to=USDT`.
 - Raw row direction `src_currency=ECR,dst_currency=USDT` maps to displayed USDT -> ECR.
 - Preserve source order; average the first 20 matching offers, or all if fewer.
-- Do not deduct the displayed commission.
+- Do not collect, store, or deduct deal commission.
 - Freshness is confirmed when the newest returned offer `create_time` is no more than 900 seconds old relative to cloud runner UTC collection time. Exactly 900 seconds is accepted. Future, missing, invalid, or older timestamps fail closed.
 - Offer age does not filter the first-20 average.
 - Reuse only the page's own same-origin request/response. Do not send a second request after the page request; do not retry 401/403/429.
@@ -51,6 +59,7 @@ All arithmetic is denominated in USDT. Do not label USDT as exact USD without a 
 ### Winance: USDT -> ERUB
 
 - Use ERUB/USDT pair ID `18` only.
+- Collect and store only the displayed pair rate; do not collect or store available volumes, order depth, or liquidity.
 - Reject conflicting pair identifiers and invalid/non-positive rates.
 - The adapter permits an explicit polling interval from 900 to 3600 seconds. The overall hourly schedule is agreed; production workflow must set the intended cadence explicitly to 3600 seconds.
 
