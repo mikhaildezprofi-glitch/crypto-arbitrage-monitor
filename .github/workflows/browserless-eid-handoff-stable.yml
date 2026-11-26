@@ -48,7 +48,7 @@ jobs:
   cloud-browser:
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 55
     env:
       CHROMIUM_PROFILE_PASSPHRASE: ${{ secrets.CHROMIUM_PROFILE_PASSPHRASE }}
       TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
@@ -111,6 +111,7 @@ jobs:
           python3 -m playwright install chromium
 
       - name: Decrypt restored Chromium profile
+        id: decrypt-profile
         shell: bash
         run: |
           set -euo pipefail
@@ -137,7 +138,7 @@ jobs:
       # background processes when a step ends, which caused the earlier 1033.
       - name: Keep browser and Tailscale Funnel alive during E-ID handoff
         shell: bash
-        timeout-minutes: 35
+        timeout-minutes: 48
         env:
           TARGET: ${{ inputs.target != '' && inputs.target || 'all' }}
           INSPECT_CURRENCY_FORM: ${{ inputs.inspect_currency_form }}
@@ -146,7 +147,7 @@ jobs:
 
       - name: Encrypt Chromium profile for private cache
         id: encrypt-profile
-        if: always() && hashFiles('money-storage-profile-ready.txt') != ''
+        if: always() && steps.decrypt-profile.outcome == 'success'
         shell: bash
         run: |
           set -euo pipefail
@@ -208,6 +209,15 @@ jobs:
           path: sberkassa-exchange-dom-diagnostic.json
           if-no-files-found: error
           retention-days: 1
+
+      - name: Publish shared browser session diagnostics
+        if: always() && hashFiles('browser-session-diagnostics.json') != ''
+        uses: actions/upload-artifact@v5
+        with:
+          name: browser-session-diagnostics
+          path: browser-session-diagnostics.json
+          if-no-files-found: error
+          retention-days: 3
 
   # After the owner completes the one-time interactive E-ID handoff, verify the
   # encrypted profile in three independent Chromium processes. Each process
