@@ -336,7 +336,7 @@ if [ -z "$CDP_READY" ]; then
 fi
 echo "STANDALONE_CHROMIUM_HEALTHCHECK=OK"
 
-if [ "$TARGET" = "all" ]; then
+if [ "$TARGET" = "all" ] || [ "$TARGET" = "auth_only" ]; then
   python3 - <<'PY'
 import json, time, urllib.request
 expected = {("storage.money", "/deals"), ("sberkassa.site", "/deals"), ("sberkassa.site", "/exchange")}
@@ -654,7 +654,7 @@ for i in $(seq 1 600); do
   else
     STATUS="$(cat /tmp/eid-auth-status 2>/dev/null || echo WAITING_FOR_LOGIN)"
   fi
-  if [ "$TARGET" != "all" ] && [ "$STATUS" = "FORM_INSPECTION_COMPLETE" ]; then
+  if [ "$TARGET" != "all" ] && [ "$TARGET" != "auth_only" ] && [ "$TARGET" != "auth_only" ] && [ "$STATUS" = "FORM_INSPECTION_COMPLETE" ]; then
     echo "FORM_INSPECTION_COMPLETE: the page itself sent a request containing from=ECR&to=USDT; inspect PAGE_REQUEST for the exact endpoint and parameter location."
     grep -E "^(PAGE_DIAG deals_form=|PAGE_REQUEST |FORM_INSPECTION_READY)" /tmp/eid-browser.log | tail -n 120 || true
     exit 0
