@@ -46,6 +46,7 @@ permissions:
 
 jobs:
   cloud-browser:
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
