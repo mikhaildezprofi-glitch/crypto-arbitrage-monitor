@@ -6,7 +6,7 @@ from pathlib import Path
 from decimal import Decimal
 
 from arbitrage_monitor.providers.money_storage import MoneyStorageSnapshotQuoteProvider
-from arbitrage_monitor.providers.sberkassa import SberkassaSnapshotQuoteProvider
+from arbitrage_monitor.providers.sberkassa import (\n    SberkassaSnapshotQuoteProvider,\n    SberkassaExchangeSnapshotQuoteProvider,\n)
 
 
 NOW = datetime.now(timezone.utc)
@@ -126,6 +126,104 @@ class SnapshotProviderTests(unittest.TestCase):
             path = self.write_json(directory, "sber.json", payload)
             with self.assertRaisesRegex(RuntimeError, "no_offer_created_within_15_minutes"):
                 SberkassaSnapshotQuoteProvider(path).fetch_quote()
+
+
+    def sber_exchange_snapshot(self, **overrides):
+        payload = {
+            "schema_version": 1,
+            "source": "sberkassa.site",
+            "page": "/exchange",
+            "read_only": True,
+            "http_methods_allowed": ["GET"],
+            "captured_at_utc": NOW.isoformat(),
+            "page_loaded_at_utc": NOW.isoformat(),
+            "observed_at_utc": NOW.isoformat(),
+            "freshness_basis": "successful_exchange_page_load_time",
+            "rate_capture_mode": "single_displayed_rate",
+            "ui_selection": {
+                "selection_confirmed": True,
+                "selected_pair": {"from": "RUB", "to": "USDT"},
+                "selected_labels": {"from": "Российский рубль", "to": "Tether USDT"},
+                "displayed_rate_text": "1 RUB = 0.011749 USDT",
+                "sell_amount_entered": False,
+                "exchange_submit_clicked": False,
+            },
+            "blocked_non_get_request_count": 0,
+        }
+        payload.update(overrides)
+        return payload
+
+    def test_sberkassa_exchange_provider_reads_displayed_rub_usdt_rate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write_json(directory, "exchange.json", self.sber_exchange_snapshot())
+            quote = SberkassaExchangeSnapshotQuoteProvider(path).fetch_quote()
+        self.assertEqual(quote.pair, "RUB/USDT")
+        self.assertEqual(quote.rate, Decimal("0.011749"))
+        self.assertEqual(quote.observed_at, NOW)
+
+    def test_sberkassa_exchange_provider_uses_page_load_as_freshness_anchor(self):
+        payload = self.sber_exchange_snapshot(
+            page_loaded_at_utc=(NOW - timedelta(minutes=16)).isoformat(),
+            observed_at_utc=(NOW - timedelta(minutes=16)).isoformat(),
+            captured_at_utc=NOW.isoformat(),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write_json(directory, "exchange.json", payload)
+            with self.assertRaisesRegex(RuntimeError, "page load is future-dated or stale"):
+                SberkassaExchangeSnapshotQuoteProvider(path).fetch_quote()
+
+    def test_sberkassa_exchange_provider_rejects_observation_time_mismatch(self):
+        payload = self.sber_exchange_snapshot(observed_at_utc=(NOW - timedelta(seconds=2)).isoformat())
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write_json(directory, "exchange.json", payload)
+            with self.assertRaisesRegex(RuntimeError, "does not match the page load"):
+                SberkassaExchangeSnapshotQuoteProvider(path).fetch_quote()
+
+    def test_sberkassa_exchange_provider_rejects_wrong_page_and_pair(self):
+        cases = (
+            ({"page": "/deals#tab-3"}, "source, page"),
+            ({"ui_selection": {"selection_confirmed": True, "selected_pair": {"from": "USDT", "to": "RUB"}}}, "not RUB"),
+        )
+        for changes, message in cases:
+            with self.subTest(changes=changes), tempfile.TemporaryDirectory() as directory:
+                path = self.write_json(directory, "exchange.json", self.sber_exchange_snapshot(**changes))
+                with self.assertRaisesRegex(RuntimeError, message):
+                    SberkassaExchangeSnapshotQuoteProvider(path).fetch_quote()
+
+    def test_sberkassa_exchange_provider_rejects_unconfirmed_selection(self):
+        selection = self.sber_exchange_snapshot()["ui_selection"]
+        selection["selection_confirmed"] = False
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write_json(directory, "exchange.json", self.sber_exchange_snapshot(ui_selection=selection))
+            with self.assertRaisesRegex(RuntimeError, "not confirmed"):
+                SberkassaExchangeSnapshotQuoteProvider(path).fetch_quote()
+
+    def test_sberkassa_exchange_provider_rejects_invalid_rate_text(self):
+        selection = self.sber_exchange_snapshot()["ui_selection"]
+        selection["displayed_rate_text"] = "1 USDT = 85 RUB"
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write_json(directory, "exchange.json", self.sber_exchange_snapshot(ui_selection=selection))
+            with self.assertRaisesRegex(RuntimeError, "not a RUB"):
+                SberkassaExchangeSnapshotQuoteProvider(path).fetch_quote()
+
+    def test_sberkassa_exchange_provider_rejects_non_get_scope(self):
+        cases = (
+            ({"http_methods_allowed": ["GET", "POST"]}, "GET-only"),
+            ({"blocked_non_get_request_count": 1}, "non-GET"),
+        )
+        for changes, message in cases:
+            with self.subTest(changes=changes), tempfile.TemporaryDirectory() as directory:
+                path = self.write_json(directory, "exchange.json", self.sber_exchange_snapshot(**changes))
+                with self.assertRaisesRegex(RuntimeError, message):
+                    SberkassaExchangeSnapshotQuoteProvider(path).fetch_quote()
+
+    def test_sberkassa_exchange_provider_rejects_amount_or_submit(self):
+        selection = self.sber_exchange_snapshot()["ui_selection"]
+        selection["exchange_submit_clicked"] = True
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write_json(directory, "exchange.json", self.sber_exchange_snapshot(ui_selection=selection))
+            with self.assertRaisesRegex(RuntimeError, "exceeded"):
+                SberkassaExchangeSnapshotQuoteProvider(path).fetch_quote()
 
 
 if __name__ == "__main__":
