@@ -11,6 +11,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
+      - name: Validate extracted shared-browser shell script
+        run: bash -n scripts/keep_browser_and_tunnel_alive.sh
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24'
