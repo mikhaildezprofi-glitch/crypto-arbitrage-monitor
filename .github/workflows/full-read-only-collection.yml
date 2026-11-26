@@ -1,4 +1,4 @@
-name: Full read-only five-source collection (parallel provider pages)
+name: Full read-only five-source collection (parallel browser jobs)
 
 on:
   workflow_dispatch:
