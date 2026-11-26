@@ -1,0 +1,14 @@
+name: Diagnose reusable first-job workflow graph (no browser)
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    uses: ./.github/workflows/reusable-browser-first-job-smoke.yml
+    with:
+      target: graph_check
+    secrets: inherit
