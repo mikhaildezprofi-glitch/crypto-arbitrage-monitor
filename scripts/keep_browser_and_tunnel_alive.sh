@@ -1,6 +1,17 @@
 set -euo pipefail
 umask 077
 
+CLOUDFLARE_TUNNEL_TOKEN="${CLOUDFLARE_TUNNEL_TOKEN:-}"
+CLOUDFLARE_TUNNEL_HOSTNAME="${CLOUDFLARE_TUNNEL_HOSTNAME:-}"
+if [ -n "$CLOUDFLARE_TUNNEL_TOKEN" ] && [ -z "$CLOUDFLARE_TUNNEL_HOSTNAME" ]; then
+  echo "CLOUDFLARE_TUNNEL_HOSTNAME_REQUIRED_FOR_NAMED_TUNNEL"
+  exit 1
+fi
+if [ -n "$CLOUDFLARE_TUNNEL_HOSTNAME" ] && [[ ! "$CLOUDFLARE_TUNNEL_HOSTNAME" =~ ^[A-Za-z0-9.-]+$ ]]; then
+  echo "CLOUDFLARE_TUNNEL_HOSTNAME_INVALID"
+  exit 1
+fi
+
 ACCESS_TOKEN="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 VNC_PASSWORD="$(python3 -c 'import secrets,string; print("".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(8)))')"
 printf '%s\n' "$VNC_PASSWORD" > /tmp/eid-vnc-password
@@ -367,37 +378,45 @@ cleanup_all() {
 trap cleanup_all EXIT
 
 TUNNEL_URL=""
-for tunnel_attempt in 1 2 3; do
-  : > /tmp/cloudflared.log
-  cloudflared tunnel --no-autoupdate --url http://127.0.0.1:8080 >/tmp/cloudflared.log 2>&1 &
+if [ -n "$CLOUDFLARE_TUNNEL_TOKEN" ]; then
+  TUNNEL_URL="https://$CLOUDFLARE_TUNNEL_HOSTNAME"
+  cloudflared tunnel --no-autoupdate run --token "$CLOUDFLARE_TUNNEL_TOKEN" >/tmp/cloudflared.log 2>&1 &
   TUNNEL_PID=$!
-  for i in $(seq 1 60); do
-    TUNNEL_URL="$(grep -Eo 'https://[a-zA-Z0-9.-]+\.trycloudflare\.com' /tmp/cloudflared.log | head -n 1 || true)"
-    if [ -n "$TUNNEL_URL" ]; then break; fi
-    if ! kill -0 "$TUNNEL_PID" 2>/dev/null; then break; fi
-    sleep 2
-  done
-  if [ -n "$TUNNEL_URL" ]; then
-    echo "CLOUDFLARE_QUICK_TUNNEL_CREATED attempt=$tunnel_attempt"
-    break
-  fi
-  wait "$TUNNEL_PID" 2>/dev/null || true
-  TUNNEL_PID=""
-  if grep -Eq 'status 429|HTTP 429| 429:' /tmp/cloudflared.log; then
-    if [ "$tunnel_attempt" -lt 3 ]; then
-      BACKOFF_SECONDS=$((tunnel_attempt * 30))
-      echo "CLOUDFLARE_QUICK_TUNNEL_RATE_LIMITED retry=$((tunnel_attempt + 1))/3 backoff_seconds=$BACKOFF_SECONDS"
-      sleep "$BACKOFF_SECONDS"
-      continue
+  echo "CLOUDFLARE_NAMED_TUNNEL_START=YES"
+else
+  echo "CLOUDFLARE_NAMED_TUNNEL_NOT_CONFIGURED; using temporary Quick Tunnel fallback"
+  for tunnel_attempt in 1 2 3; do
+    : > /tmp/cloudflared.log
+    cloudflared tunnel --no-autoupdate --url http://127.0.0.1:8080 >/tmp/cloudflared.log 2>&1 &
+    TUNNEL_PID=$!
+    for i in $(seq 1 60); do
+      TUNNEL_URL="$(grep -Eo 'https://[a-zA-Z0-9.-]+\\.trycloudflare\\.com' /tmp/cloudflared.log | head -n 1 || true)"
+      if [ -n "$TUNNEL_URL" ]; then break; fi
+      if ! kill -0 "$TUNNEL_PID" 2>/dev/null; then break; fi
+      sleep 2
+    done
+    if [ -n "$TUNNEL_URL" ]; then
+      echo "CLOUDFLARE_QUICK_TUNNEL_CREATED attempt=$tunnel_attempt"
+      break
     fi
-    echo "CLOUDFLARE_QUICK_TUNNEL_RATE_LIMIT_EXHAUSTED"
+    wait "$TUNNEL_PID" 2>/dev/null || true
+    TUNNEL_PID=""
+    if grep -Eq 'status 429|HTTP 429| 429:' /tmp/cloudflared.log; then
+      if [ "$tunnel_attempt" -lt 3 ]; then
+        BACKOFF_SECONDS=$((tunnel_attempt * 30))
+        echo "CLOUDFLARE_QUICK_TUNNEL_RATE_LIMITED retry=$((tunnel_attempt + 1))/3 backoff_seconds=$BACKOFF_SECONDS"
+        sleep "$BACKOFF_SECONDS"
+        continue
+      fi
+      echo "CLOUDFLARE_QUICK_TUNNEL_RATE_LIMIT_EXHAUSTED"
+      tail -n 100 /tmp/cloudflared.log
+      exit 1
+    fi
+    echo "CLOUDFLARED_EXITED_BEFORE_TUNNEL_URL attempt=$tunnel_attempt"
     tail -n 100 /tmp/cloudflared.log
     exit 1
-  fi
-  echo "CLOUDFLARED_EXITED_BEFORE_TUNNEL_URL attempt=$tunnel_attempt"
-  tail -n 100 /tmp/cloudflared.log
-  exit 1
-done
+  done
+fi
 if [ -z "$TUNNEL_URL" ]; then
   echo "TUNNEL_URL_NOT_CREATED"
   tail -n 100 /tmp/cloudflared.log
