@@ -352,6 +352,10 @@ jobs:
             fi
           done
 
+          CHROMIUM_START_ARGS=("$CHROMIUM_START_URL")
+          if [ "$TARGET" = "all" ]; then
+            CHROMIUM_START_ARGS+=("${EXTRA_START_URLS[@]}")
+          fi
           DISPLAY=:99 "$CHROMIUM_BIN" \
             --no-sandbox \
             --disable-dev-shm-usage \
@@ -363,7 +367,7 @@ jobs:
             --remote-allow-origins=* \
             --user-data-dir=/tmp/eid-chromium-profile \
             --window-size=1440,900 \
-            "$CHROMIUM_START_URL" "${EXTRA_START_URLS[@]:-}" >/tmp/chromium.log 2>&1 &
+            "${CHROMIUM_START_ARGS[@]}" >/tmp/chromium.log 2>&1 &
           BROWSER_PID=$!
 
           CDP_READY=""
