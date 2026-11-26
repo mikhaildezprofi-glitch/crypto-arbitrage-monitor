@@ -37,7 +37,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: free-eid-cloud-browser-stable-shared-profile
+  group: free-eid-cloud-browser-${{ inputs.target || 'manual' }}
   # Never kill a live authenticated browser session because another run starts.
   cancel-in-progress: false
 
@@ -65,8 +65,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/chromium-profile-money_storage.gpg
-          key: ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-${{ github.run_id }}
+          key: ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-${{ inputs.target || 'manual' }}-${{ github.run_id }}
           restore-keys: |
+            ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-${{ inputs.target || 'manual' }}-
             ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-
 
       - name: Install browser and tunnel dependencies
@@ -659,7 +660,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/chromium-profile-money_storage.gpg
-          key: ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-${{ github.run_id }}
+          key: ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-${{ inputs.target || 'manual' }}-${{ github.run_id }}
 
       - name: Publish normalized current offers
         if: always() && hashFiles('money-storage-current-offers.json') != ''
