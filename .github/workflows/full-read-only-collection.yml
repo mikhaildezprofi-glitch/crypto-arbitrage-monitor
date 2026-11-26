@@ -15,33 +15,15 @@ permissions:
   actions: read
 
 jobs:
-  money-storage:
+  browser:
     uses: ./.github/workflows/browserless-eid-handoff-stable.yml
     with:
-      target: money_storage
-      inspect_currency_form: false
-    secrets: inherit
-
-  sberkassa-sell:
-    needs: money-storage
-    if: always()
-    uses: ./.github/workflows/browserless-eid-handoff-stable.yml
-    with:
-      target: sberkassa
-      inspect_currency_form: false
-    secrets: inherit
-
-  sberkassa-exchange:
-    needs: sberkassa-sell
-    if: always()
-    uses: ./.github/workflows/browserless-eid-handoff-stable.yml
-    with:
-      target: sberkassa_exchange
+      target: all
       inspect_currency_form: false
     secrets: inherit
 
   collect:
-    needs: [money-storage, sberkassa-sell, sberkassa-exchange]
+    needs: browser
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 10
