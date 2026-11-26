@@ -66,13 +66,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 https://tailscale.com/install.sh | sh
+          timeout 180 bash -o pipefail -c 'curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 https://tailscale.com/install.sh | sh'
           sudo systemctl enable --now tailscaled
-          sudo tailscale up \
+          if ! timeout 60 sudo tailscale up \
             --authkey="$TAILSCALE_AUTHKEY" \
             --hostname="gha-funnel-smoke-${GITHUB_RUN_ID}" \
             --advertise-tags=tag:ci \
-            --accept-dns=false
+            --accept-dns=false; then
+            echo "TAILSCALE_JOIN_FAILED_OR_TIMED_OUT"
+            sudo systemctl status tailscaled --no-pager || true
+            sudo journalctl -u tailscaled -n 80 --no-pager || true
+            exit 1
+          fi
 
       - name: Start a minimal non-sensitive health endpoint
         shell: bash
@@ -124,12 +129,12 @@ jobs:
           echo "TAILSCALE_FUNNEL_HOSTNAME=$HOST"
           VERIFIED=""
           RESOLVED_IP=""
-          for i in $(seq 1 90); do
+          for i in $(seq 1 30); do
             # Use independent public DNS-over-HTTPS instead of the runner's
             # potentially negative-cached resolver for newly-created ts.net names.
-            RESOLVED_IP="$(python3 scripts/resolve_tailscale_funnel_ipv4.py "$HOST" 2>/dev/null || true)"
+            RESOLVED_IP="$(python3 scripts/resolve_tailscale_funnel_ipv4.py "$HOST" || true)"
             if [ -n "$RESOLVED_IP" ]; then
-              BODY="$(curl --resolve "$HOST:443:$RESOLVED_IP" -fsS --connect-timeout 8 --max-time 15 "https://$HOST/health" 2>/dev/null || true)"
+              BODY="$(curl --resolve "$HOST:443:$RESOLVED_IP" -fsS --connect-timeout 5 --max-time 8 "https://$HOST/health" || true)"
             else
               BODY=""
             fi
@@ -138,7 +143,7 @@ jobs:
               echo "FUNNEL_PUBLIC_DNS_RESOLUTION=OK"
               break
             fi
-            echo "FUNNEL_PUBLIC_HEALTH_WAIT attempt=$i/90"
+            echo "FUNNEL_PUBLIC_HEALTH_WAIT attempt=$i/30"
             sleep 5
           done
           if [ -z "$VERIFIED" ]; then
