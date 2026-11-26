@@ -113,10 +113,19 @@ jobs:
           fi
           echo "TAILSCALE_FUNNEL_HOSTNAME=$HOST"
           VERIFIED=""
+          RESOLVED_IP=""
           for i in $(seq 1 90); do
-            BODY="$(curl -fsS --connect-timeout 8 --max-time 15 "https://$HOST/health" 2>/dev/null || true)"
+            # Use independent public DNS-over-HTTPS instead of the runner's
+            # potentially negative-cached resolver for newly-created ts.net names.
+            RESOLVED_IP="$(python3 scripts/resolve_tailscale_funnel_ipv4.py "$HOST" 2>/dev/null || true)"
+            if [ -n "$RESOLVED_IP" ]; then
+              BODY="$(curl --resolve "$HOST:443:$RESOLVED_IP" -fsS --connect-timeout 8 --max-time 15 "https://$HOST/health" 2>/dev/null || true)"
+            else
+              BODY=""
+            fi
             if [ "$BODY" = "tailscale-funnel-ok" ]; then
               VERIFIED=yes
+              echo "FUNNEL_PUBLIC_DNS_RESOLUTION=OK"
               break
             fi
             echo "FUNNEL_PUBLIC_HEALTH_WAIT attempt=$i/90"
