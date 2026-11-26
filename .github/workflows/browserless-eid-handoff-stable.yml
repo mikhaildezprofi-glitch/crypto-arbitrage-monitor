@@ -38,9 +38,6 @@ permissions:
 
 jobs:
   cloud-browser:
-    concurrency:
-      group: free-eid-cloud-browser-${{ inputs.target || 'manual' }}
-      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
