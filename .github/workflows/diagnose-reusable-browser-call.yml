@@ -11,5 +11,4 @@ jobs:
     uses: ./.github/workflows/browserless-eid-handoff-stable.yml
     with:
       target: graph_check
-      inspect_currency_form: false
     secrets: inherit
