@@ -1,0 +1,15 @@
+name: Diagnose reusable browser workflow call (no browser)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reusable-call-graph-check:
+    uses: ./.github/workflows/browserless-eid-handoff-stable.yml
+    with:
+      target: graph_check
+      inspect_currency_form: false
+    secrets: inherit
