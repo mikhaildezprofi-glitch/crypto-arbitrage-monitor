@@ -293,7 +293,7 @@ class SberkassaExchangeSnapshotQuoteProvider:
         if not isinstance(value, str):
             raise RuntimeError("Sberkassa exchange displayed rate text is missing.")
         match = re.fullmatch(
-            r"\\s*1\\s*RUB\\s*=\\s*([0-9]+(?:[.,][0-9]+)?)\\s*USDT\\s*",
+            r"\s*1\s*RUB\s*=\s*([0-9]+(?:[.,][0-9]+)?)\s*USDT\s*",
             value,
             flags=re.IGNORECASE,
         )
