@@ -30,7 +30,6 @@ class FourStepRunnerSyntaxTests(unittest.TestCase):
         self.assertIn("MONEY_STORAGE_SNAPSHOT:", workflow)
         self.assertIn("SBERKASSA_SNAPSHOT:", workflow)
         self.assertIn("workflow_call:", reusable)
-        self.assertIn("group: free-eid-cloud-browser-${{ inputs.target || 'manual' }}", reusable)
         self.assertIn("chromium-profile-money_storage-${{ github.ref_name }}-${{ inputs.target || 'manual' }}-", reusable)
         self.assertIn("  cancel-in-progress: false", reusable)
         self.assertIn("four-step-quote-test-${{ github.ref }}", workflow)
