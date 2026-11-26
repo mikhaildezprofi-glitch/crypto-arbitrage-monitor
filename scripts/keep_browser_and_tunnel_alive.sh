@@ -390,7 +390,7 @@ else
     cloudflared tunnel --no-autoupdate --url http://127.0.0.1:8080 >/tmp/cloudflared.log 2>&1 &
     TUNNEL_PID=$!
     for i in $(seq 1 60); do
-      TUNNEL_URL="$(grep -Eo 'https://[a-zA-Z0-9.-]+\.trycloudflare\\.com' /tmp/cloudflared.log | head -n 1 || true)"
+      TUNNEL_URL="$(grep -Eo 'https://[a-zA-Z0-9.-]+\.trycloudflare\.com' /tmp/cloudflared.log | head -n 1 || true)"
       if [ -n "$TUNNEL_URL" ]; then break; fi
       if ! kill -0 "$TUNNEL_PID" 2>/dev/null; then break; fi
       sleep 2
