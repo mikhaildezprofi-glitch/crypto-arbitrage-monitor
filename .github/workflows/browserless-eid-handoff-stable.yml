@@ -23,6 +23,11 @@ on:
         required: false
         type: boolean
         default: false
+      verify_initial_session:
+        description: "Run the one-time three-read Money Storage session validation only when explicitly requested"
+        required: false
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       target:
@@ -31,6 +36,11 @@ on:
         type: string
       inspect_currency_form:
         description: "Keep the browser open for manual Money Storage currency-form inspection"
+        required: false
+        type: boolean
+        default: false
+      verify_initial_session:
+        description: "Run the one-time three-read Money Storage session validation only when explicitly requested"
         required: false
         type: boolean
         default: false
@@ -67,6 +77,7 @@ jobs:
           fi
 
       - name: Restore encrypted Chromium profile cache
+        id: restore-profile
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/chromium-profile-money_storage.gpg
@@ -76,6 +87,7 @@ jobs:
             ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-
 
       - name: Import previously authenticated encrypted Chromium profile
+        if: steps.restore-profile.outputs.cache-matched-key == ''
         uses: actions/download-artifact@v5
         with:
           name: encrypted-chromium-profile-cache-run-45688839011
@@ -85,6 +97,7 @@ jobs:
           path: ${{ runner.temp }}/imported-chromium-profile
 
       - name: Install imported profile for decryption
+        if: steps.restore-profile.outputs.cache-matched-key == ''
         shell: bash
         run: |
           set -euo pipefail
@@ -224,7 +237,7 @@ jobs:
   # must read the real protected offers response and pass quote freshness checks.
   # This job never opens a public remote desktop or automates CAPTCHA/E-ID/MFA.
   verify-restored-money-storage-session:
-    if: inputs.target == 'money_storage'
+    if: inputs.target == 'money_storage' && inputs.verify_initial_session == true
     needs: cloud-browser
     runs-on: ubuntu-latest
     timeout-minutes: 25
