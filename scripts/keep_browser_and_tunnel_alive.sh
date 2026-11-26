@@ -8,6 +8,7 @@ if [ -z "$TAILSCALE_AUTHKEY" ]; then
 fi
 
 ACCESS_TOKEN="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+rm -f /tmp/manual-auth-ready
 VNC_PASSWORD="$(python3 -c 'import secrets,string; print("".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(8)))')"
 printf '%s\n' "$VNC_PASSWORD" > /tmp/eid-vnc-password
 chmod 600 /tmp/eid-vnc-password
@@ -153,6 +154,8 @@ sudo rm -f /etc/nginx/sites-enabled/default
 sudo ln -s /etc/nginx/sites-available/eid-browser /etc/nginx/sites-enabled/eid-browser
 sudo nginx -t
 sudo nginx
+curl -fsS http://127.0.0.1:8081/health >/dev/null
+echo "MANUAL_AUTH_SIGNAL_ENDPOINT=READY"
 
 Xvfb :99 -screen 0 1440x900x24 -ac +extension RANDR >/tmp/xvfb.log 2>&1 &
 XVFB_PID=$!
@@ -551,7 +554,6 @@ for i in $(seq 1 900); do
       wait "${MONEY_PID:-}" 2>/dev/null || true
       wait "${SBERKASSA_SELL_PID:-}" 2>/dev/null || true
       wait "${SBERKASSA_EXCHANGE_PID:-}" 2>/dev/null || true
-      rm -f /tmp/manual-auth-ready
       MANUAL_AUTH_WAITED=yes
       AUTH_SIGNAL_RECEIVED=no
       for wait_index in $(seq 1 450); do
