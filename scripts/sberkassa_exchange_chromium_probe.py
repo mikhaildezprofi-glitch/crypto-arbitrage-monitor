@@ -90,6 +90,7 @@ class Probe:
         self.responses: list[dict] = []
         self.blocked_methods: list[str] = []
         self.current_path = ""
+        self.page_loaded_at_utc = None
 
     def close(self) -> None:
         self.ws.close()
@@ -101,7 +102,12 @@ class Probe:
             frame = params.get("frame", {})
             if not frame.get("parentId"):
                 self.current_path = urlparse(frame.get("url", "")).path
+                self.page_loaded_at_utc = None
                 print("NAV=" + self.current_path, flush=True)
+        elif method == "Page.loadEventFired":
+            if self.current_path.rstrip("/") == "/exchange":
+                self.page_loaded_at_utc = datetime.now(timezone.utc).isoformat()
+                print("SBERKASSA_EXCHANGE_PAGE_LOADED_AT_UTC=" + self.page_loaded_at_utc, flush=True)
         elif method == "Fetch.requestPaused":
             request = params.get("request", {})
             parsed = urlparse(request.get("url", ""))
@@ -606,8 +612,9 @@ def main() -> int:
                 }
                 rate_text = str(state.get("displayed_rate_text", "")).strip()
                 if (urlparse(state.get("url", "")).path.rstrip("/") == "/exchange"
-                        and pair == {"from": "RUB", "to": "USDT"} and rate_text):
-                    observed_at = datetime.now(timezone.utc).isoformat()
+                        and pair == {"from": "RUB", "to": "USDT"} and rate_text
+                        and probe.page_loaded_at_utc):
+                    observed_at = probe.page_loaded_at_utc
                     selection.update({
                         "selected_pair": pair,
                         "selected_labels": labels,
@@ -637,6 +644,9 @@ def main() -> int:
             "read_only": True,
             "http_methods_allowed": ["GET"],
             "captured_at_utc": datetime.now(timezone.utc).isoformat(),
+            "page_loaded_at_utc": probe.page_loaded_at_utc,
+            "observed_at_utc": selection.get("observed_at_utc"),
+            "freshness_basis": "successful_exchange_page_load_time",
             "ui_selection": selection,
             "rate_capture_mode": "single_displayed_rate",
             "latest_dom_selection": ({
@@ -653,8 +663,8 @@ def main() -> int:
                 "The final selected pair and displayed rate are read from the latest captured DOM snapshot, independently of click-attempt status",
                 "All non-GET requests to sberkassa.site were blocked",
                 "Only allowlisted numeric quote/time/currency fields and visible form state are retained",
-                "HTTP cache headers and browser timing are diagnostics only, not proof of quote freshness",
-                "No rate is considered validated until RUB->USDT direction and a successful refresh signal are independently established",
+                "RUB -> USDT quote observation time is the UTC time when Chromium fired Page.loadEventFired for /exchange",
+                "No internal quote-update timestamp or successful quote-refresh signal is required; page-load time is the selected freshness anchor",
                 "No raw response bodies, cookies, authorization headers, tokens, or personal form data are published"
             ]
         }
@@ -666,7 +676,8 @@ def main() -> int:
             summary.write("- Inspected /exchange using the restored authenticated Chromium profile or manual E-ID handoff.\n")
             summary.write("- The probe selected only the RUB and USDT currency dropdowns, did not enter amounts or submit an exchange, and blocked all non-GET requests to Sberkassa.\n")
             summary.write("- Captured sanitized visible form state and allowlisted quote/time fields only.\n")
-            summary.write("- The displayed RUB -> USDT rate is recorded as a UI observation; quote freshness is not asserted by this discovery run.\n")
+            summary.write(f"- Page load time (UTC): {probe.page_loaded_at_utc or 'not captured'}; this is the quote observation/freshness anchor.\n")
+            summary.write("- No internal quote-update timestamp or separate quote-refresh event is required.\n")
         STATUS_FILE.write_text("SBERKASSA_EXCHANGE_INSPECTION_COMPLETE", encoding="utf-8")
         print("SBERKASSA_EXCHANGE_INSPECTION_COMPLETE=YES", flush=True)
         return 0
