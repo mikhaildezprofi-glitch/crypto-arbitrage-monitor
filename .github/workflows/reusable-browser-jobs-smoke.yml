@@ -41,6 +41,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  reusable-call-graph-check:
+    if: inputs.target == 'graph_check'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Confirm reusable workflow graph resolution
+        run: echo "GRAPH_CHECK_JOB_RAN=YES"
+
   cloud-browser:
     if: inputs.target != 'graph_check'
     runs-on: ubuntu-latest
