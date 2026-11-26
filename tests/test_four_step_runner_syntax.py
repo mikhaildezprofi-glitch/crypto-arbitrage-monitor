@@ -39,10 +39,9 @@ class FourStepRunnerSyntaxTests(unittest.TestCase):
     def test_full_collection_starts_all_three_provider_jobs_in_parallel(self):
         root = Path(__file__).resolve().parents[1]
         workflow = (root / ".github" / "workflows" / "full-read-only-collection.yml").read_text(encoding="utf-8")
-        self.assertIn("target: money_storage", workflow)
-        self.assertIn("target: sberkassa", workflow)
-        self.assertIn("target: sberkassa_exchange", workflow)
-        self.assertIn("needs: [money-storage, sberkassa-sell, sberkassa-exchange]", workflow)
+        self.assertIn("target: [money_storage, sberkassa, sberkassa_exchange]", workflow)
+        self.assertIn("target: ${{ matrix.target }}", workflow)
+        self.assertIn("needs: browser", workflow)
         self.assertIn("parallel provider pages", workflow)
 
 
