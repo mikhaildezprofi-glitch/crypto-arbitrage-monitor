@@ -345,7 +345,7 @@ if [ "$TARGET" = "all" ] || [ "$TARGET" = "auth_only" ]; then
   python3 - <<'PY'
 import json, os, time, urllib.request
 expected = (
-    {("storage.money", "/"), ("sberkassa.site", "/")}
+    {"storage.money", "sberkassa.site"}
     if os.environ.get("TARGET") == "auth_only"
     else {("storage.money", "/deals"), ("sberkassa.site", "/deals"), ("sberkassa.site", "/exchange")}
 )
@@ -361,7 +361,7 @@ while time.monotonic() < deadline:
             from urllib.parse import urlparse
             parsed = urlparse(item.get("url", ""))
             if parsed.hostname in {"storage.money", "sberkassa.site"}:
-                found.add((parsed.hostname, parsed.path.rstrip("/") or "/"))
+                found.add(parsed.hostname if os.environ.get("TARGET") == "auth_only" else (parsed.hostname, parsed.path.rstrip("/") or "/"))
         if expected.issubset(found):
             print("SHARED_CHROMIUM_THREE_TARGET_TABS=VERIFIED")
             for host, path in sorted(expected):
