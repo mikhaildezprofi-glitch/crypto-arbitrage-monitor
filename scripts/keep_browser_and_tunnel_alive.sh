@@ -46,6 +46,7 @@ sudo sed -i "s/ACCESS_TOKEN_PLACEHOLDER/$ACCESS_TOKEN/g" /etc/nginx/sites-availa
 python3 -u - <<'PY' >/tmp/manual-auth-signal.log 2>&1 &
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+import urllib.request
 class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path != "/session-ready":
