@@ -18,6 +18,10 @@ on:
       - .github/workflows/browserless-eid-handoff-stable.yml
       - scripts/sberkassa_exchange_chromium_probe.py
       - tests/test_sberkassa_exchange_probe.py
+  # Run the complete three-source collection every 15 minutes.
+  # GitHub activates scheduled workflows only from the repository default branch.
+  schedule:
+    - cron: '*/15 * * * *'
   workflow_dispatch:
     inputs:
       target:
@@ -39,6 +43,6 @@ jobs:
     with:
       # Pull-request CI stays exchange-only; a manual dispatch defaults to
       # the full three-tab shared-browser collection.
-      target: ${{ github.event_name == 'workflow_dispatch' && inputs.target || 'sberkassa_exchange' }}
+      target: ${{ github.event_name == 'workflow_dispatch' && inputs.target || (github.event_name == 'schedule' && 'all' || 'sberkassa_exchange') }}
       inspect_currency_form: false
     secrets: inherit
