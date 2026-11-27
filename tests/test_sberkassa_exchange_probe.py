@@ -119,6 +119,7 @@ class SberkassaExchangeProbeTests(unittest.TestCase):
         self.assertIn('TARGET" = "browser_tabs_only"', shared)
         self.assertIn("BROWSER_TABS_ONLY_READY=YES", shared)
         self.assertIn("BROWSER_TABS_ONLY_WAITING_FOR_MANUAL_VISUAL_CONFIRMATION", shared)
+        self.assertIn('STATUS=""', shared)
         self.assertIn("SHARED_CHROMIUM_THREE_TARGET_TABS=VERIFIED", shared)
         self.assertIn("SHARED_CHROMIUM_DISTINCT_TARGET_IDS=3", shared)
         self.assertIn("CHROMIUM_SINGLE_PROCESS=YES PID=$BROWSER_PID", shared)
