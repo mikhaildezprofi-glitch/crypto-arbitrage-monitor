@@ -495,6 +495,9 @@ echo "Complete E-ID only in this remote browser. Treat the URL as a temporary se
 # The browser process writes to a private file; without this relay its
 # navigation and Cloudflare/E-ID diagnostics remain invisible.
 BROWSER_LOG_LINES=0
+# Some modes report through dedicated status files and never assign STATUS.
+# Initialize it so the shared legacy status checks remain safe under set -u.
+STATUS=""
 echo "BROWSER_DIAGNOSTIC_STREAM=STARTED"
 for i in $(seq 1 900); do
   if [ "$TARGET" = "all" ]; then
