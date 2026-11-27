@@ -47,6 +47,15 @@ class ThreeTabDiagnosticsTests(unittest.TestCase):
         self.assertIn("REFERENCE_PROFILE_REQUIRED=YES", reusable)
         self.assertIn("inputs.target != 'all'", reusable)
 
+    def test_one_failed_tab_does_not_stop_other_collectors(self):
+        root = Path(__file__).resolve().parents[1]
+        browser = (root / "scripts" / "keep_browser_and_tunnel_alive.sh").read_text(encoding="utf-8")
+        self.assertIn('if [ "$MS_DONE" = "1" ] && [ "$SS_DONE" = "1" ] && [ "$SX_DONE" = "1" ]; then', browser)
+        self.assertIn("THREE_TAB_COLLECTION_PARTIAL_OR_FAILED=YES", browser)
+        self.assertIn("FINAL_TAB_STATUS money_storage=$MS_STATUS", browser)
+        self.assertNotIn('case "$MS_STATUS" in OFFERS_READ_FAILED|AUTH_REQUIRED|AUTH_TIMEOUT) echo "MONEY_STORAGE_TAB_FAILED=', browser)
+        self.assertNotIn('case "$SS_STATUS" in SBERKASSA_CAPTURE_FAILED|SBERKASSA_CAPTURE_TIMEOUT|AUTH_REQUIRED|AUTH_TIMEOUT) echo "SBERKASSA_SELL_TAB_FAILED=', browser)
+
     def test_money_storage_pair_is_selected_through_tom_select_and_verified(self):
         root = Path(__file__).resolve().parents[1]
         bridge = (root / "scripts" / "money_storage_chromium_bridge.py").read_text(encoding="utf-8")
