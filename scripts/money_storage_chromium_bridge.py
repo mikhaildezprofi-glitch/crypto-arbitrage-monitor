@@ -332,6 +332,59 @@ def deals_form_diagnostics(cdp: CDP) -> dict:
     return result
 
 
+def ensure_approved_offers_pair(cdp: CDP) -> dict:
+    """Use the page's Tom Select UI widget to select the approved USDT → ECR pair."""
+    result = cdp.evaluate(
+        """(() => {
+          const from = document.querySelector("#select_from");
+          const to = document.querySelector("#select_to");
+          if (!from || !to) return {ok: false, reason: "currency_select_missing"};
+          const fromWidget = from.tomselect;
+          const toWidget = to.tomselect;
+          if (!fromWidget || !toWidget) return {ok: false, reason: "tom_select_widget_missing"};
+          const normalize = value => String(value || "").trim().toUpperCase();
+          const target = Object.entries(fromWidget.options || {}).find(([value, option]) =>
+            normalize(value) === "USDT" || normalize(option?.text) === "USDT"
+          );
+          if (!target) return {ok: false, reason: "USDT_option_missing"};
+          const targetValue = target[0];
+          const currentFrom = normalize(fromWidget.getValue());
+          const currentTo = normalize(toWidget.getValue());
+          if (currentTo !== "ECR") {
+            return {ok: false, reason: "unexpected_receive_currency", from: currentFrom, to: currentTo};
+          }
+          if (currentFrom !== "USDT") {
+            // Tom Select's public UI API dispatches the normal change event so
+            // the provider page itself refreshes its offers list.
+            fromWidget.setValue(targetValue);
+          }
+          const selectedFrom = normalize(fromWidget.getValue());
+          const selectedTo = normalize(toWidget.getValue());
+          return {
+            ok: selectedFrom === "USDT" && selectedTo === "ECR",
+            changed: currentFrom !== selectedFrom,
+            from: selectedFrom,
+            to: selectedTo
+          };
+        })()"""
+    )
+    if not isinstance(result, dict):
+        result = {"ok": False, "reason": "invalid_page_result"}
+    print(
+        "MONEY_STORAGE_PAIR_SELECTION=%s from=%s to=%s reason=%s"
+        % (
+            "CONFIRMED" if result.get("ok") else "FAILED",
+            str(result.get("from", "unknown"))[:16],
+            str(result.get("to", "unknown"))[:16],
+            str(result.get("reason", "none"))[:48],
+        ),
+        flush=True,
+    )
+    if not result.get("ok"):
+        raise RuntimeError("Money Storage UI could not confirm the approved USDT → ECR pair.")
+    return result
+
+
 def click_official_eid_action(cdp: CDP) -> dict:
     """Open only a visible Money Storage link that explicitly targets e-id.cards."""
     result = cdp.evaluate(
@@ -760,9 +813,20 @@ def main() -> int:
                 continue
 
             if storage_page == "deals":
-                if NONINTERACTIVE and not money_storage_form_diag_printed:
-                    deals_form_diagnostics(cdp)
-                    money_storage_form_diag_printed = True
+                if NONINTERACTIVE:
+                    if not money_storage_form_diag_printed:
+                        deals_form_diagnostics(cdp)
+                        money_storage_form_diag_printed = True
+                    try:
+                        ensure_approved_offers_pair(cdp)
+                    except Exception as exc:
+                        STATUS_FILE.write_text("OFFERS_READ_FAILED", encoding="utf-8")
+                        print(
+                            "OFFERS_READ_FAILED=%s reason=%s"
+                            % (type(exc).__name__, str(exc)[:180]),
+                            flush=True,
+                        )
+                        return 1
                 try:
                     snapshot = None
                     for attempt in range(1, 4):
