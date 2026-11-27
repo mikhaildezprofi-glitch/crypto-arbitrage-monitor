@@ -184,6 +184,10 @@ mobileInput.addEventListener('blur', () => {
 </script></body></html>
 HTML
           sudo sed -i "s/ACCESS_TOKEN_PLACEHOLDER/$ACCESS_TOKEN/g; s/VNC_PASSWORD_PLACEHOLDER/$VNC_PASSWORD/g" /usr/share/novnc/token-vnc.html
+# Keep the embedded access token and VNC password private while allowing the
+# unprivileged websockify process to read the generated page.
+sudo chown "$(id -u):$(id -g)" /usr/share/novnc/token-vnc.html
+chmod 600 /usr/share/novnc/token-vnc.html
 sudo rm -f /etc/nginx/sites-enabled/default
 sudo ln -sfn /etc/nginx/sites-available/eid-browser /etc/nginx/sites-enabled/eid-browser
 sudo nginx -t
@@ -249,11 +253,25 @@ echo "X11VNC_LISTENER_HEALTHCHECK=OK"
 
 websockify --web=/usr/share/novnc 6080 127.0.0.1:5900 >/tmp/websockify.log 2>&1 &
 WEBSOCKIFY_PID=$!
+WEBSOCKIFY_READY=""
 for i in $(seq 1 30); do
-  if curl -fsS http://127.0.0.1:6080/vnc.html -o /dev/null; then break; fi
+  if curl -fsS http://127.0.0.1:6080/vnc.html -o /dev/null; then
+    WEBSOCKIFY_READY=yes
+    break
+  fi
+  if ! kill -0 "$WEBSOCKIFY_PID" 2>/dev/null; then
+    echo "WEBSOCKIFY_PROCESS_EXITED"
+    tail -n 80 /tmp/websockify.log || true
+    exit 1
+  fi
   sleep 1
 done
-curl -fsS http://127.0.0.1:6080/vnc.html -o /dev/null
+if [ -z "$WEBSOCKIFY_READY" ]; then
+  echo "WEBSOCKIFY_HTTP_HEALTHCHECK_FAILED"
+  tail -n 80 /tmp/websockify.log || true
+  exit 1
+fi
+echo "WEBSOCKIFY_HTTP_HEALTHCHECK=OK"
 
 LOCAL_PAGE_CODE="$(curl -sS --connect-timeout 3 --max-time 8 -o /dev/null -w '%{http_code}' "http://127.0.0.1:8080/$ACCESS_TOKEN/token-vnc.html" || true)"
 if [ "$LOCAL_PAGE_CODE" != "200" ]; then
