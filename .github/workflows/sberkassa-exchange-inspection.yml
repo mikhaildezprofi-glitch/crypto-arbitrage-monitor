@@ -19,6 +19,15 @@ on:
       - scripts/sberkassa_exchange_chromium_probe.py
       - tests/test_sberkassa_exchange_probe.py
   workflow_dispatch:
+    inputs:
+      target:
+        description: "Run only the exchange probe or all three authenticated tabs in one shared Chromium profile"
+        required: true
+        type: choice
+        default: all
+        options:
+          - all
+          - sberkassa_exchange
 
 permissions:
   contents: read
@@ -28,6 +37,8 @@ jobs:
   inspect-exchange-page:
     uses: ./.github/workflows/browserless-eid-handoff-stable.yml
     with:
-      target: sberkassa_exchange
+      # Pull-request CI stays exchange-only; a manual dispatch defaults to
+      # the full three-tab shared-browser collection.
+      target: ${{ github.event_name == 'workflow_dispatch' && inputs.target || 'sberkassa_exchange' }}
       inspect_currency_form: false
     secrets: inherit
