@@ -1,4 +1,5 @@
 name: tests
+# Codespaces private browser lifecycle checks are part of the branch CI.
 
 on:
   workflow_dispatch:
