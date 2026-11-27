@@ -83,15 +83,15 @@ class SberkassaExchangeProbeTests(unittest.TestCase):
         self.assertIn('BRIDGE_SCRIPT="scripts/sberkassa_chromium_probe.py"', workflow)
 
 
-    def test_manual_scheduled_and_push_runs_collect_all_three_shared_browser_tabs(self):
+    def test_manual_scheduled_and_push_runs_use_shared_browser_tabs(self):
         root = Path(__file__).resolve().parents[1]
         caller = (root / ".github" / "workflows" / "sberkassa-exchange-inspection.yml").read_text(encoding="utf-8")
         shared = (root / "scripts" / "keep_browser_and_tunnel_alive.sh").read_text(encoding="utf-8")
         self.assertIn("default: all", caller)
         self.assertIn("- all", caller)
         self.assertIn("github.event_name == 'workflow_dispatch' && inputs.target", caller)
-        self.assertIn("github.event_name == 'schedule' || github.event_name == 'push'", caller)
-        self.assertIn("&& 'all' || 'sberkassa_exchange'", caller)
+        self.assertIn("github.event_name == 'schedule' && 'all'", caller)
+        self.assertIn("github.event_name == 'push' && 'browser_tabs_only'", caller)
         self.assertIn("cron: '*/15 * * * *'", caller)
         self.assertIn("browser_tabs_only", caller)
         self.assertIn('TARGET" = "browser_tabs_only"', shared)
