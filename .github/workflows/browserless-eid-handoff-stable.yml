@@ -110,6 +110,7 @@ jobs:
             tar -xzf "${RUNNER_TEMP}/chromium-profile-money_storage.tar.gz" -C /tmp/eid-chromium-profile
             rm -f "${RUNNER_TEMP}/chromium-profile-money_storage.tar.gz"
             echo "CHROMIUM_PROFILE_CACHE=RESTORED_AND_DECRYPTED"
+            echo "CHROMIUM_PROFILE_RESTORED=1" >> "$GITHUB_ENV"
           else
             echo "CHROMIUM_PROFILE_CACHE=EMPTY_FIRST_AUTHENTICATION_REQUIRED"
           fi
@@ -354,3 +355,86 @@ jobs:
           if-no-files-found: warn
           retention-days: 3
 
+  # A separate runner proves that the encrypted profile survives the end of the
+  # interactive job and restores all three authenticated tabs in a new process.
+  verify-restored-three-tab-session:
+    if: inputs.target == 'auth_only'
+    needs: cloud-browser
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: read
+    env:
+      CHROMIUM_PROFILE_PASSPHRASE: ${{ secrets.CHROMIUM_PROFILE_PASSPHRASE }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
+
+      - name: Restore the encrypted profile saved by the interactive browser job
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/chromium-profile-money_storage.gpg
+          key: ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-auth_only-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Decrypt and validate the saved browser profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARCHIVE="${RUNNER_TEMP}/chromium-profile-money_storage.gpg"
+          test -s "$ARCHIVE" || { echo "RESTORE_VERIFY_CACHE_MISSING"; exit 1; }
+          mkdir -p /tmp/eid-chromium-profile
+          exec 3<<<"$CHROMIUM_PROFILE_PASSPHRASE"
+          gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \
+            --output "${RUNNER_TEMP}/chromium-profile.tar.gz" --decrypt "$ARCHIVE"
+          exec 3<&-
+          if tar -tzf "${RUNNER_TEMP}/chromium-profile.tar.gz" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
+            echo "RESTORE_VERIFY_UNSAFE_ARCHIVE"
+            exit 1
+          fi
+          tar -xzf "${RUNNER_TEMP}/chromium-profile.tar.gz" -C /tmp/eid-chromium-profile
+          rm -f "${RUNNER_TEMP}/chromium-profile.tar.gz"
+          rm -f /tmp/eid-chromium-profile/SingletonLock /tmp/eid-chromium-profile/SingletonCookie /tmp/eid-chromium-profile/SingletonSocket
+          echo "RESTORE_VERIFY_PROFILE=DECRYPTED"
+
+      - name: Install Chromium and virtual display
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get -o Acquire::Retries=8 -o Acquire::https::Timeout=45 update
+          sudo apt-get -y --no-install-recommends -o Acquire::Retries=8 install xvfb x11-utils gnupg
+          python3 -m pip install --retries 5 --timeout 45 --break-system-packages playwright websocket-client
+          python3 -m playwright install --with-deps chromium
+          Xvfb :99 -screen 0 1440x900x24 -ac +extension RANDR >/tmp/restore-verify-xvfb.log 2>&1 &
+          echo $! > /tmp/restore-verify-xvfb.pid
+          for i in $(seq 1 30); do
+            if xdpyinfo -display :99 >/dev/null 2>&1; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/restore-verify-xvfb.log || true
+          exit 1
+
+      - name: Verify restored authentication in a fresh Chromium process
+        shell: bash
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          CHROMIUM_BIN="$(find "$HOME/.cache/ms-playwright" -type f -name chrome -perm -111 | head -n 1)"
+          test -n "$CHROMIUM_BIN"
+          DISPLAY=:99 "$CHROMIUM_BIN" \
+            --no-sandbox --disable-dev-shm-usage --no-first-run --no-default-browser-check \
+            --password-store=basic --restore-last-session \
+            --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 \
+            --remote-allow-origins=* --user-data-dir=/tmp/eid-chromium-profile \
+            --window-size=1440,900 >/tmp/restore-verify-chromium.log 2>&1 &
+          BROWSER_PID=$!
+          trap 'kill -TERM "$BROWSER_PID" 2>/dev/null || true; wait "$BROWSER_PID" 2>/dev/null || true' EXIT
+          for i in $(seq 1 45); do
+            if curl -fsS http://127.0.0.1:9222/json/version >/dev/null; then break; fi
+            sleep 1
+          done
+          SHARED_AUTH_TIMEOUT_SECONDS=90 SHARED_AUTH_STATUS_FILE=/tmp/restore-verify-status \
+            python3 scripts/shared_browser_auth_probe.py
+          test "$(cat /tmp/restore-verify-status)" = "ALL_THREE_TABS_AUTHENTICATED"
+          echo "RESTORED_THREE_TAB_SESSION=VERIFIED"
+          echo "RESTORED_SESSION_REQUIRES_NO_NEW_EID=YES"
