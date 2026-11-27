@@ -185,7 +185,7 @@ mobileInput.addEventListener('blur', () => {
 HTML
           sudo sed -i "s/ACCESS_TOKEN_PLACEHOLDER/$ACCESS_TOKEN/g; s/VNC_PASSWORD_PLACEHOLDER/$VNC_PASSWORD/g" /usr/share/novnc/token-vnc.html
 sudo rm -f /etc/nginx/sites-enabled/default
-sudo ln -s /etc/nginx/sites-available/eid-browser /etc/nginx/sites-enabled/eid-browser
+sudo ln -sfn /etc/nginx/sites-available/eid-browser /etc/nginx/sites-enabled/eid-browser
 sudo nginx -t
 sudo nginx
 curl -fsS http://127.0.0.1:8081/health >/dev/null
