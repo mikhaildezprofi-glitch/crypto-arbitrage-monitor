@@ -346,6 +346,9 @@ if [ "$TARGET" = "all" ]; then
   echo "CHROMIUM_SINGLE_PROCESS=YES PID=$BROWSER_PID"
   echo "CHROMIUM_SHARED_PROFILE=YES"
   echo "CHROMIUM_EXPECTED_TABS=3"
+elif [ "$TARGET" = "browser_tabs_only" ]; then
+  echo "BROWSER_TABS_ONLY=YES; quote collectors are disabled"
+  BRIDGE_PID=""
 elif [ "$TARGET" = "money_storage" ] && [ "$INSPECT_CURRENCY_FORM" = "true" ]; then
   MONEY_STORAGE_FORM_INSPECTION=1 python3 "$BRIDGE_SCRIPT" >/tmp/eid-browser.log 2>&1 &
 elif [ "$TARGET" = "sberkassa" ] && [ "$COLLECTION_EVENT_NAME" = "push" ]; then
@@ -505,6 +508,16 @@ for i in $(seq 1 900); do
     if ! kill -0 "$MONEY_PID" 2>/dev/null && [ "$MS_STATUS" != "OFFERS_READ_OK" ]; then cat /tmp/money-storage-browser.log; exit 1; fi
     if ! kill -0 "$SBERKASSA_SELL_PID" 2>/dev/null && [ "$SS_STATUS" != "SBERKASSA_CAPTURE_COMPLETE" ]; then cat /tmp/sberkassa-sell-browser.log; exit 1; fi
     if ! kill -0 "$SBERKASSA_EXCHANGE_PID" 2>/dev/null && [ "$SX_STATUS" != "SBERKASSA_EXCHANGE_INSPECTION_COMPLETE" ]; then cat /tmp/sberkassa-exchange-browser.log; exit 1; fi
+  elif [ "$TARGET" = "browser_tabs_only" ]; then
+    if ! kill -0 "$BROWSER_PID" 2>/dev/null; then
+      echo "BROWSER_TABS_ONLY_CHROMIUM_EXITED"
+      tail -n 80 /tmp/chromium.log || true
+      exit 1
+    fi
+    if [ "$i" = "1" ]; then
+      echo "BROWSER_TABS_ONLY_READY=YES"
+      echo "BROWSER_TABS_ONLY_WAITING_FOR_MANUAL_VISUAL_CONFIRMATION"
+    fi
   else
     STATUS="$(cat /tmp/eid-auth-status 2>/dev/null || echo WAITING_FOR_LOGIN)"
   fi
