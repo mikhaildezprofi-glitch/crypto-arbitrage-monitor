@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feat/integrated-arbitrage-automation-20261123
+      - fix/sberkassa-selectboxit-pointer-20261127
     paths:
       - .github/workflows/sberkassa-exchange-inspection.yml
       - scripts/sberkassa_exchange_chromium_probe.py
