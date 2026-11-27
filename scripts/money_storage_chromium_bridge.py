@@ -478,6 +478,7 @@ def main() -> int:
         eid_login_link_probe_count = 0
         last_eid_login_link_probe = 0.0
         post_eid_navigation_attempted = False
+        money_storage_form_diag_printed = False
         last_diag = 0.0
 
         while time.monotonic() < deadline:
@@ -759,6 +760,9 @@ def main() -> int:
                 continue
 
             if storage_page == "deals":
+                if NONINTERACTIVE and not money_storage_form_diag_printed:
+                    deals_form_diagnostics(cdp)
+                    money_storage_form_diag_printed = True
                 try:
                     snapshot = None
                     for attempt in range(1, 4):
