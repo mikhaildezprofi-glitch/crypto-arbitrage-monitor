@@ -25,6 +25,11 @@ on:
         description: "Which authenticated quote source to inspect"
         required: true
         type: string
+      source_ref:
+        description: "Git ref containing the browser scripts to execute"
+        required: false
+        type: string
+        default: ""
       inspect_currency_form:
         description: "Keep the browser open for manual Money Storage currency-form inspection"
         required: false
@@ -49,6 +54,8 @@ jobs:
       CLOUDFLARE_TUNNEL_HOSTNAME: ${{ vars.CLOUDFLARE_TUNNEL_HOSTNAME }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
 
       - name: Verify runner UTC clock against independent HTTPS time references
         run: python3 scripts/check_runner_clock.py
