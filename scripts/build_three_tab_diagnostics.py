@@ -34,7 +34,7 @@ SOURCES = {
         "log_pattern": re.compile(
             r"^(?:NAV=|HTTP_DIAG |REQUEST |PAGE_UPDATE_MARKERS |"
             r"SBERKASSA_(?:SESSION|DEALS|ERUB_RUB|OFFERS|CAPTURE|ARTIFACT)|"
-            r"EID_HANDOFF=)"
+            r"AUTH_REQUIRED|AUTH_TIMEOUT|EID_HANDOFF=)"
         ),
     },
     "sberkassa_exchange": {
