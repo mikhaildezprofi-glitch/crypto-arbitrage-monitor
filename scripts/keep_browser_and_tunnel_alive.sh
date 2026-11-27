@@ -256,7 +256,7 @@ for lock_name in SingletonLock SingletonCookie SingletonSocket; do
 done
 
 CHROMIUM_START_ARGS=("$CHROMIUM_START_URL")
-if [ "$TARGET" = "all" ]; then
+if [ "$TARGET" = "all" ] || [ "$TARGET" = "browser_tabs_only" ]; then
   CHROMIUM_START_ARGS+=("${EXTRA_START_URLS[@]}")
 fi
 DISPLAY=:99 "$CHROMIUM_BIN" \
