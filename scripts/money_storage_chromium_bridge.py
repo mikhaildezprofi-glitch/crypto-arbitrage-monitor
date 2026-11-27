@@ -252,12 +252,18 @@ def connect_to_chromium() -> CDP:
         try:
             targets = page_targets()
             if targets:
-                # Prefer the visible Money Storage tab if it is already present.
+                # Never fall back to another site's tab: that can hijack one of
+                # the other shared-browser pages when probes start together.
                 target = next(
-                    (item for item in targets if "storage.money" in item.get("url", "")),
-                    targets[0],
+                    (item for item in targets
+                     if urlparse(item.get("url", "")).hostname == "storage.money"
+                     and urlparse(item.get("url", "")).path.rstrip("/") == "/deals"),
+                    None,
                 )
-                return CDP(target["webSocketDebuggerUrl"])
+                if target:
+                    print("CHROMIUM_TAB_BINDING=storage.money/deals TARGET_ID=" +
+                          str(target.get("id", "unknown")), flush=True)
+                    return CDP(target["webSocketDebuggerUrl"])
         except Exception as exc:
             last_error = type(exc).__name__
         time.sleep(1)
