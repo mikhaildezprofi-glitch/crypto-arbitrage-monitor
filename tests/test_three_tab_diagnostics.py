@@ -47,6 +47,17 @@ class ThreeTabDiagnosticsTests(unittest.TestCase):
         self.assertIn("REFERENCE_PROFILE_REQUIRED=YES", reusable)
         self.assertIn("inputs.target != 'all'", reusable)
 
+    def test_money_storage_pair_is_selected_through_tom_select_and_verified(self):
+        root = Path(__file__).resolve().parents[1]
+        bridge = (root / "scripts" / "money_storage_chromium_bridge.py").read_text(encoding="utf-8")
+        self.assertIn('document.querySelector("#select_from")', bridge)
+        self.assertIn('document.querySelector("#select_to")', bridge)
+        self.assertIn("fromWidget.setValue(targetValue)", bridge)
+        self.assertIn('selectedFrom === "USDT" && selectedTo === "ECR"', bridge)
+        self.assertIn("ensure_approved_offers_pair(cdp)", bridge)
+        self.assertIn("MONEY_STORAGE_PAIR_SELECTION=CONFIRMED", bridge)
+        self.assertNotIn('fetch("https://storage.money/public_deals/fetch', bridge)
+
     def test_success_report_contains_only_allowlisted_redacted_log_lines(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
