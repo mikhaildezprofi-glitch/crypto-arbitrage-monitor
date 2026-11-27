@@ -94,9 +94,19 @@ class SberkassaExchangeProbeTests(unittest.TestCase):
         self.assertIn("&& 'all' || 'sberkassa_exchange'", caller)
         self.assertIn("cron: '*/15 * * * *'", caller)
         self.assertIn("SHARED_CHROMIUM_THREE_TARGET_TABS=VERIFIED", shared)
-        self.assertIn("CHROMIUM_SINGLE_PROCESS=YES", shared)
+        self.assertIn("SHARED_CHROMIUM_DISTINCT_TARGET_IDS=3", shared)
+        self.assertIn("CHROMIUM_SINGLE_PROCESS=YES PID=$BROWSER_PID", shared)
         self.assertIn("CHROMIUM_SHARED_PROFILE=YES", shared)
         self.assertIn("ALL_THREE_SHARED_BROWSER_TABS_COMPLETE=YES", shared)
+        money = (root / "scripts" / "money_storage_chromium_bridge.py").read_text(encoding="utf-8")
+        deals = (root / "scripts" / "sberkassa_chromium_probe.py").read_text(encoding="utf-8")
+        exchange = (root / "scripts" / "sberkassa_exchange_chromium_probe.py").read_text(encoding="utf-8")
+        self.assertIn('urlparse(item.get("url", "")).hostname == "storage.money"', money)
+        self.assertIn('urlparse(item.get("url", "")).hostname == "sberkassa.site"', deals)
+        self.assertIn('urlparse(x.get("url", "")).path.rstrip("/") == "/exchange"', exchange)
+        self.assertNotIn("targets[0]", money)
+        self.assertNotIn("targets[0]", deals)
+        self.assertNotIn("targets[0]", exchange)
 
 
 if __name__ == "__main__":
