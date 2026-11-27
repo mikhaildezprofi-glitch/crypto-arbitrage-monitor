@@ -677,8 +677,12 @@ for i in $(seq 1 600); do
       AUTH_SIGNAL_RECEIVED=no
       for wait_index in $(seq 1 300); do
         if [ -f /tmp/manual-auth-ready ]; then AUTH_SIGNAL_RECEIVED=yes; break; fi
-        if ! kill -0 "$BROWSER_PID" 2>/dev/null || ! sudo tailscale status >/dev/null 2>&1; then
-          echo "MANUAL_AUTH_HANDOFF_INTERRUPTED browser_or_tunnel_unavailable"
+        if ! kill -0 "$BROWSER_PID" 2>/dev/null; then
+          echo "MANUAL_AUTH_HANDOFF_INTERRUPTED browser_unavailable"
+          break
+        fi
+        if [ "$CODESPACES_MODE" != "1" ] && ! sudo tailscale status >/dev/null 2>&1; then
+          echo "MANUAL_AUTH_HANDOFF_INTERRUPTED tunnel_unavailable"
           break
         fi
         if [ $((wait_index % 15)) -eq 0 ]; then
@@ -729,7 +733,7 @@ for i in $(seq 1 600); do
     grep -E 'OFFERS_READ_|AUTH_|SBERKASSA_|NAV=|REQUEST |QUOTE_FIELDS |PAGE_UPDATE_MARKERS |HTTP_DIAG ' /tmp/eid-browser.log | tail -n 120 || true
     exit 1
   fi
-  if ! sudo tailscale status >/dev/null 2>&1; then
+  if [ "$CODESPACES_MODE" != "1" ] && ! sudo tailscale status >/dev/null 2>&1; then
     echo "TAILSCALE_DAEMON_UNAVAILABLE"
     tail -n 100 /tmp/tailscale-funnel.log
     exit 1
