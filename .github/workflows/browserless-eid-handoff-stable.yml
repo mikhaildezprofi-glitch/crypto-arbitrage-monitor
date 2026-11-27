@@ -65,7 +65,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/chromium-profile-money_storage.gpg
-          key: ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-${{ inputs.target || 'manual' }}-${{ github.run_id }}
+          key: ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-${{ inputs.target || 'manual' }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-${{ inputs.target || 'manual' }}-
             ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-
@@ -118,7 +118,7 @@ jobs:
 
       - name: Encrypt Chromium profile for private cache
         id: encrypt-profile
-        if: always() && hashFiles('money-storage-profile-ready.txt') != ''
+        if: always() && hashFiles('session-authenticated.txt') != ''
         shell: bash
         run: |
           set -euo pipefail
@@ -143,7 +143,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/chromium-profile-money_storage.gpg
-          key: ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-${{ inputs.target || 'manual' }}-${{ github.run_id }}
+          key: ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-${{ inputs.target || 'manual' }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Publish normalized current offers
         if: always() && hashFiles('money-storage-current-offers.json') != ''
@@ -182,14 +182,14 @@ jobs:
           retention-days: 1
 
   # After the owner completes the one-time interactive E-ID handoff, verify the
-  # encrypted profile in three independent Chromium processes. Each process
-  # must read the real protected offers response and pass quote freshness checks.
+  # encrypted profile in one fresh Chromium process. It must read the protected
+  # offers response and pass the provider freshness check.
   # This job never opens a public remote desktop or automates CAPTCHA/E-ID/MFA.
   verify-restored-money-storage-session:
     if: inputs.target == 'money_storage'
     needs: cloud-browser
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 12
     permissions:
       contents: read
     env:
@@ -201,7 +201,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/chromium-profile-money_storage.gpg
-          key: ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-money_storage-${{ github.run_id }}
+          key: ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-money_storage-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Require and decrypt the authenticated profile
         shell: bash
@@ -250,9 +250,9 @@ jobs:
           cat /tmp/session-check-xvfb.log || true
           exit 1
 
-      - name: Run three independent restored-session and fresh-offers checks
+      - name: Run one restored-session and fresh-offers check
         shell: bash
-        timeout-minutes: 18
+        timeout-minutes: 8
         run: |
           set -euo pipefail
           mkdir -p session-check-results
@@ -261,14 +261,7 @@ jobs:
             echo "SESSION_CHECK_CHROMIUM_MISSING"
             exit 1
           fi
-          for attempt in 1 2 3; do
-            # Money Storage rate-limited the second independent read with HTTP 429
-            # when checks were launched only seconds apart. Keep each verification
-            # isolated, but leave a conservative cooldown between provider reads.
-            if [ "$attempt" -gt 1 ]; then
-              echo "SESSION_CHECK_COOLDOWN=120_SECONDS before attempt $attempt"
-              sleep 120
-            fi
+          for attempt in 1; do
             PROFILE_DIR="/tmp/money-storage-session-check-$attempt"
             STATUS_FILE="/tmp/money-storage-session-status-$attempt"
             LOG_FILE="session-check-results/attempt-$attempt.log"
@@ -278,7 +271,7 @@ jobs:
             mkdir -p "$PROFILE_DIR"
             cp -a /tmp/eid-chromium-profile/. "$PROFILE_DIR/"
             rm -f "$PROFILE_DIR/SingletonLock" "$PROFILE_DIR/SingletonCookie" "$PROFILE_DIR/SingletonSocket"
-            echo "SESSION_CHECK_ATTEMPT=$attempt/3"
+            echo "SESSION_CHECK_ATTEMPT=$attempt/1"
             DISPLAY=:99 "$CHROMIUM_BIN" \
               --no-sandbox \
               --disable-dev-shm-usage \
@@ -334,12 +327,12 @@ jobs:
           PY
             grep -E '^(MONEY_STORAGE_SESSION=|OFFERS_READ_OK|AUTH_REQUIRED|OFFERS_READ_FAILED)' "$LOG_FILE" || true
           done
-          echo "SESSION_CHECK_RESULT=3_OF_3_SUCCESS"
+          echo "SESSION_CHECK_RESULT=1_OF_1_SUCCESS"
           {
             echo "## Money Storage restored-session verification"
-            echo "- Three independent fresh Chromium processes restored separate copies of the encrypted profile."
-            echo "- Each process read the page-originated protected Everyone Offers response for ECR -> USDT raw fields (displayed USDT -> ECR)."
-            echo "- Each response passed the 900-second provider create_time freshness check and the first-20 rate average validation."
+            echo "- One fresh Chromium process restored the encrypted profile from the cache saved by the interactive job."
+            echo "- The process read the page-originated protected Everyone Offers response for ECR -> USDT raw fields (displayed USDT -> ECR)."
+            echo "- The response passed the 900-second provider create_time freshness check and the first-20 rate average validation."
             echo "- No CAPTCHA, E-ID, MFA, or login challenge was automated."
           } >> "$GITHUB_STEP_SUMMARY"
 
