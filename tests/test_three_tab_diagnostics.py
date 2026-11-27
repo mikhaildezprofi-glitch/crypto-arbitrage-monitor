@@ -43,7 +43,7 @@ class ThreeTabDiagnosticsTests(unittest.TestCase):
         diagnostics_source = (root / "scripts" / "build_three_tab_diagnostics.py").read_text(encoding="utf-8")
         self.assertIn("PAGE_DIAG deals_form=", diagnostics_source)
         self.assertIn('os.environ.get("SBERKASSA_NONINTERACTIVE") == "1"', (root / "scripts" / "sberkassa_chromium_probe.py").read_text(encoding="utf-8"))
-        self.assertIn('case "$SS_STATUS" in SBERKASSA_CAPTURE_FAILED|SBERKASSA_CAPTURE_TIMEOUT|AUTH_REQUIRED|AUTH_TIMEOUT)', browser)
+        self.assertNotIn('case "$SS_STATUS" in SBERKASSA_CAPTURE_FAILED|SBERKASSA_CAPTURE_TIMEOUT|AUTH_REQUIRED|AUTH_TIMEOUT) echo "SBERKASSA_SELL_TAB_FAILED=', browser)
         self.assertIn("REFERENCE_PROFILE_REQUIRED=YES", reusable)
         self.assertIn("inputs.target != 'all'", reusable)
 
