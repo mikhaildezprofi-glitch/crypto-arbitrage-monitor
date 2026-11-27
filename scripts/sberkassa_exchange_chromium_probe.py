@@ -290,7 +290,8 @@ def main() -> int:
         eid_seen = False
         callback_returned = False
         authenticated = False
-        auth_deadline = time.monotonic() + 1800
+        noninteractive = os.environ.get("SBERKASSA_EXCHANGE_NONINTERACTIVE") == "1"
+        auth_deadline = time.monotonic() + (120 if noninteractive else 1800)
         while time.monotonic() < auth_deadline:
             state = probe.command("Runtime.evaluate", {
                 "expression": """(() => ({url: location.href, body: document.body ? document.body.innerText.slice(0,10000) : ''}))()""",
@@ -301,6 +302,10 @@ def main() -> int:
             if host == "e-id.cards" or host.endswith(".e-id.cards"):
                 eid_seen = True
                 print("EID_HANDOFF=IDENTITY_PROVIDER_SEEN", flush=True)
+                if noninteractive:
+                    STATUS_FILE.write_text("SBERKASSA_EXCHANGE_SESSION_EXPIRED", encoding="utf-8")
+                    print("SBERKASSA_EXCHANGE_REAUTH_REQUIRED=YES; collector will not enter E-ID", flush=True)
+                    return 1
             if host == "sberkassa.site" and parsed.path.rstrip("/") == "/exchange":
                 probe.current_path = "/exchange"
                 probe.drain_bodies()
@@ -309,6 +314,9 @@ def main() -> int:
                     print("SBERKASSA_EXCHANGE_SESSION_EXPIRED=YES", flush=True)
                     print("SBERKASSA_EXCHANGE_LOGIN_REQUIRED=SESSION_REAUTH_REQUIRED", flush=True)
                     STATUS_FILE.write_text("SBERKASSA_EXCHANGE_SESSION_EXPIRED", encoding="utf-8")
+                    if noninteractive:
+                        print("SBERKASSA_EXCHANGE_REAUTH_REQUIRED=YES; collector stopped without reauthentication", flush=True)
+                        return 1
                     # Keep the visible browser and CDP bridge alive. The owner
                     # must complete E-ID/login manually in this same session;
                     # after the callback, the loop reopens /exchange and checks
@@ -318,7 +326,7 @@ def main() -> int:
                 if len(body) > 20 and not any(x in body for x in ("войти", "авторизац", "sign in", "login")):
                     authenticated = True
                     break
-            if eid_seen and host == "sberkassa.site" and not callback_returned:
+            if eid_seen and not noninteractive and host == "sberkassa.site" and not callback_returned:
                 callback_returned = True
                 print("EID_HANDOFF=SBERKASSA_CALLBACK_RETURNED", flush=True)
                 probe.command("Page.navigate", {"url": TARGET_URL})
