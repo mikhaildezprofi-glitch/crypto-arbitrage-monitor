@@ -341,13 +341,13 @@ fi
 
 # All three collectors attach to separate tabs in this one Chromium process.
 if [ "$TARGET" = "all" ]; then
-  MONEY_STORAGE_STATUS_FILE=/tmp/money-storage-status \
+  MONEY_STORAGE_NONINTERACTIVE=1 MONEY_STORAGE_STATUS_FILE=/tmp/money-storage-status \
     python3 scripts/money_storage_chromium_bridge.py >/tmp/money-storage-browser.log 2>&1 &
   MONEY_PID=$!
-  SBERKASSA_STATUS_FILE=/tmp/sberkassa-sell-status \
+  SBERKASSA_NONINTERACTIVE=1 SBERKASSA_STATUS_FILE=/tmp/sberkassa-sell-status \
     python3 scripts/sberkassa_chromium_probe.py >/tmp/sberkassa-sell-browser.log 2>&1 &
   SBERKASSA_SELL_PID=$!
-  SBERKASSA_EXCHANGE_STATUS_FILE=/tmp/sberkassa-exchange-status \
+  SBERKASSA_EXCHANGE_NONINTERACTIVE=1 SBERKASSA_EXCHANGE_STATUS_FILE=/tmp/sberkassa-exchange-status \
     python3 scripts/sberkassa_exchange_chromium_probe.py >/tmp/sberkassa-exchange-browser.log 2>&1 &
   SBERKASSA_EXCHANGE_PID=$!
   BRIDGE_PID="$MONEY_PID $SBERKASSA_SELL_PID $SBERKASSA_EXCHANGE_PID"
