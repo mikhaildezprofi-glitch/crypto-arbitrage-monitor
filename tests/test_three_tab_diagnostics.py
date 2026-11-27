@@ -29,6 +29,18 @@ class ThreeTabDiagnosticsTests(unittest.TestCase):
             finally:
                 diagnostics.SOURCES = original
 
+    def test_collector_mode_is_noninteractive_and_does_not_reauthenticate(self):
+        root = Path(__file__).resolve().parents[1]
+        browser = (root / "scripts" / "keep_browser_and_tunnel_alive.sh").read_text(encoding="utf-8")
+        exchange = (root / "scripts" / "sberkassa_exchange_chromium_probe.py").read_text(encoding="utf-8")
+        reusable = (root / ".github" / "workflows" / "browserless-eid-handoff-stable.yml").read_text(encoding="utf-8")
+        self.assertIn("MONEY_STORAGE_NONINTERACTIVE=1", browser)
+        self.assertIn("SBERKASSA_NONINTERACTIVE=1", browser)
+        self.assertIn("SBERKASSA_EXCHANGE_NONINTERACTIVE=1", browser)
+        self.assertIn("collector will not enter E-ID", exchange)
+        self.assertIn("REFERENCE_PROFILE_REQUIRED=YES", reusable)
+        self.assertIn("inputs.target != 'all'", reusable)
+
     def test_success_report_contains_only_allowlisted_redacted_log_lines(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
