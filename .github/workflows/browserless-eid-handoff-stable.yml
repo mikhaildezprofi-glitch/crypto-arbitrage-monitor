@@ -427,10 +427,14 @@ jobs:
           test -n "$CHROMIUM_BIN"
           DISPLAY=:99 "$CHROMIUM_BIN" \
             --no-sandbox --disable-dev-shm-usage --no-first-run --no-default-browser-check \
-            --password-store=basic --restore-last-session \
+            --password-store=basic \
             --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 \
             --remote-allow-origins=* --user-data-dir=/tmp/eid-chromium-profile \
-            --window-size=1440,900 >/tmp/restore-verify-chromium.log 2>&1 &
+            --window-size=1440,900 \
+            "https://storage.money/deals#tab-3" \
+            "https://sberkassa.site/deals#tab-3" \
+            "https://sberkassa.site/exchange" \
+            >/tmp/restore-verify-chromium.log 2>&1 &
           BROWSER_PID=$!
           trap 'kill -TERM "$BROWSER_PID" 2>/dev/null || true; wait "$BROWSER_PID" 2>/dev/null || true' EXIT
           for i in $(seq 1 45); do
