@@ -306,7 +306,12 @@ def main() -> int:
                     print("SBERKASSA_EXCHANGE_SESSION_EXPIRED=YES", flush=True)
                     print("SBERKASSA_EXCHANGE_LOGIN_REQUIRED=SESSION_REAUTH_REQUIRED", flush=True)
                     STATUS_FILE.write_text("SBERKASSA_EXCHANGE_SESSION_EXPIRED", encoding="utf-8")
-                    return 1
+                    # Keep the visible browser and CDP bridge alive. The owner
+                    # must complete E-ID/login manually in this same session;
+                    # after the callback, the loop reopens /exchange and checks
+                    # whether authentication has succeeded.
+                    time.sleep(2)
+                    continue
                 if len(body) > 20 and not any(x in body for x in ("войти", "авторизац", "sign in", "login")):
                     authenticated = True
                     break
