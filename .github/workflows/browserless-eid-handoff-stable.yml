@@ -35,6 +35,11 @@ on:
         required: false
         type: boolean
         default: false
+      profile_cache_key:
+        description: "Exact immutable encrypted Chromium profile cache key for collector-only runs"
+        required: false
+        type: string
+        default: ""
     secrets:
       CHROMIUM_PROFILE_PASSPHRASE:
         required: true
@@ -72,12 +77,10 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/chromium-profile-money_storage.gpg
-          key: ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-${{ inputs.target || 'manual' }}-${{ github.run_id }}-${{ github.run_attempt }}
-          # pull_request runs use refs/pull/<number>/merge. Restore from the
-          # target branch cache instead; PR cache scope can read base-branch caches.
-          # Omit target from the prefix because all targets share one Chromium profile.
-          restore-keys: |
-            ${{ runner.os }}-chromium-profile-money_storage-${{ github.event.pull_request.base.ref || github.ref_name }}-
+          key: ${{ inputs.profile_cache_key || format('{0}-chromium-profile-money_storage-{1}-{2}-{3}-{4}', runner.os, github.ref_name, inputs.target || 'manual', github.run_id, github.run_attempt) }}
+          # Collector-only runs use the exact immutable cache created by the
+          # verified three-tab authentication run. No fallback to a different profile.
+          restore-keys: ${{ inputs.profile_cache_key == '' && format('{0}-chromium-profile_money_storage-{1}-', runner.os, github.event.pull_request.base.ref || github.ref_name) || '' }}
 
       - name: Install browser and tunnel dependencies
         shell: bash
@@ -115,6 +118,20 @@ jobs:
             echo "CHROMIUM_PROFILE_CACHE=EMPTY_FIRST_AUTHENTICATION_REQUIRED"
           fi
 
+      - name: Require the verified reference profile for collector-only runs
+        if: inputs.target == 'all' && inputs.profile_cache_key != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROFILE_ARCHIVE="${RUNNER_TEMP}/chromium-profile-money_storage.gpg"
+          if [ ! -s "$PROFILE_ARCHIVE" ] || [ "${CHROMIUM_PROFILE_RESTORED:-0}" != "1" ]; then
+            echo "REFERENCE_PROFILE_MISSING: refusing to launch collectors without the verified encrypted profile"
+            exit 1
+          fi
+          echo "REFERENCE_PROFILE_REQUIRED=YES"
+          echo "REFERENCE_PROFILE_RESTORED=YES"
+          echo "REFERENCE_PROFILE_CACHE_KEY=EXACT_PINNED_KEY"
+
       # All long-lived processes stay inside this step. The runner tears down
       # background processes when a step ends, which caused the earlier 1033.
       - name: Keep browser and Cloudflare tunnel alive during E-ID handoff
@@ -144,7 +161,7 @@ jobs:
 
       - name: Encrypt Chromium profile for private cache
         id: encrypt-profile
-        if: always() && hashFiles('session-authenticated.txt') != ''
+        if: always() && inputs.target != 'all' && hashFiles('session-authenticated.txt') != ''
         shell: bash
         run: |
           set -euo pipefail
