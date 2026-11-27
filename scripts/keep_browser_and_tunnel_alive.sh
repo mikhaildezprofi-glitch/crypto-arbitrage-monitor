@@ -296,30 +296,38 @@ echo "STANDALONE_CHROMIUM_HEALTHCHECK=OK"
 if [ "$TARGET" = "all" ]; then
   python3 - <<'PY'
 import json, time, urllib.request
-expected = {("storage.money", "/deals"), ("sberkassa.site", "/deals"), ("sberkassa.site", "/exchange")}
+from urllib.parse import urlparse
+expected = {
+    ("storage.money", "/deals"),
+    ("sberkassa.site", "/deals"),
+    ("sberkassa.site", "/exchange"),
+}
 deadline = time.monotonic() + 30
 while time.monotonic() < deadline:
     try:
         with urllib.request.urlopen("http://127.0.0.1:9222/json/list", timeout=3) as response:
             targets = json.load(response)
-        found = set()
+        found = {}
         for item in targets:
-            if item.get("type") != "page":
+            if item.get("type") != "page" or not item.get("id") or not item.get("webSocketDebuggerUrl"):
                 continue
-            from urllib.parse import urlparse
             parsed = urlparse(item.get("url", ""))
-            if parsed.hostname in {"storage.money", "sberkassa.site"}:
-                found.add((parsed.hostname, parsed.path.rstrip("/") or "/"))
-        if expected.issubset(found):
+            key = (parsed.hostname, parsed.path.rstrip("/") or "/")
+            if key in expected:
+                found[key] = item
+        ids = [found[key]["id"] for key in expected if key in found]
+        if set(found) == expected and len(ids) == 3 and len(set(ids)) == 3:
             print("SHARED_CHROMIUM_THREE_TARGET_TABS=VERIFIED")
             for host, path in sorted(expected):
-                print(f"SHARED_CHROMIUM_TAB={host}{path}")
+                item = found[(host, path)]
+                print(f"SHARED_CHROMIUM_TAB={host}{path} TARGET_ID={item['id']} TITLE={item.get('title', '')[:100]}")
+            print("SHARED_CHROMIUM_DISTINCT_TARGET_IDS=3")
             break
     except Exception:
         pass
     time.sleep(1)
 else:
-    raise SystemExit("SHARED_CHROMIUM_THREE_TARGET_TABS_NOT_FOUND")
+    raise SystemExit("SHARED_CHROMIUM_THREE_DISTINCT_TARGET_TABS_NOT_FOUND")
 PY
 fi
 
@@ -335,7 +343,7 @@ if [ "$TARGET" = "all" ]; then
     python3 scripts/sberkassa_exchange_chromium_probe.py >/tmp/sberkassa-exchange-browser.log 2>&1 &
   SBERKASSA_EXCHANGE_PID=$!
   BRIDGE_PID="$MONEY_PID $SBERKASSA_SELL_PID $SBERKASSA_EXCHANGE_PID"
-  echo "CHROMIUM_SINGLE_PROCESS=YES"
+  echo "CHROMIUM_SINGLE_PROCESS=YES PID=$BROWSER_PID"
   echo "CHROMIUM_SHARED_PROFILE=YES"
   echo "CHROMIUM_EXPECTED_TABS=3"
 elif [ "$TARGET" = "money_storage" ] && [ "$INSPECT_CURRENCY_FORM" = "true" ]; then
