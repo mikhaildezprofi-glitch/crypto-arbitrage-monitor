@@ -22,7 +22,7 @@ SOURCES = {
         "artifact": Path("money-storage-current-offers.json"),
         "log_pattern": re.compile(
             r"^(?:INITIAL_NAVIGATION=|BROWSER_READY=|SESSION_REUSE_CHECK=|"
-            r"EID_HANDOFF=|MONEY_STORAGE_|OFFERS_READ_|HTTP_DIAG |REQUEST |"
+            r"EID_HANDOFF=|PAGE_DIAG deals_form=|MONEY_STORAGE_|OFFERS_READ_|HTTP_DIAG |REQUEST |"
             r"PAGE_UPDATE_MARKERS |AUTH_REQUIRED|AUTH_TIMEOUT)"
         ),
     },
