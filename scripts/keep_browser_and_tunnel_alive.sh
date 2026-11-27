@@ -500,6 +500,11 @@ echo "Complete E-ID only in this remote browser. Treat the URL as a temporary se
 # Forward only the browser's sanitized diagnostic lines into Actions logs.
 # The browser process writes to a private file; without this relay its
 # navigation and Cloudflare/E-ID diagnostics remain invisible.
+# The shared auth_only/browser_tabs_only modes use dedicated logs, while the
+# legacy diagnostics loop still tails this compatibility log. Create it before
+# the first wc/grep/sed read so an intentionally unused log is an empty file,
+# not a shell redirection error under set -e.
+: > /tmp/eid-browser.log
 BROWSER_LOG_LINES=0
 # Some modes report through dedicated status files and never assign STATUS.
 # Initialize it so the shared legacy status checks remain safe under set -u.
