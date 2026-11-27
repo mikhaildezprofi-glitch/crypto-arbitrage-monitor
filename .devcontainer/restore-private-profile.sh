@@ -3,6 +3,7 @@ set -euo pipefail
 STATE_DIR="/workspaces/.codespace-private-state"
 PROFILE_DIR="/tmp/eid-chromium-profile"
 ARCHIVE="$STATE_DIR/chromium-profile.tar.gz.gpg"
+trap 'rm -f "$STATE_DIR/chromium-profile.tar.gz"' EXIT
 mkdir -p "$STATE_DIR"
 chmod 700 "$STATE_DIR"
 if [ -s "$ARCHIVE" ] && [ -n "${CHROMIUM_PROFILE_PASSPHRASE:-}" ]; then
