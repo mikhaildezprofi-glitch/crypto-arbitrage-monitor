@@ -293,7 +293,7 @@ if [ -z "$CDP_READY" ]; then
 fi
 echo "STANDALONE_CHROMIUM_HEALTHCHECK=OK"
 
-if [ "$TARGET" = "all" ]; then
+if [ "$TARGET" = "all" ] || [ "$TARGET" = "browser_tabs_only" ]; then
   python3 - <<'PY'
 import json, time, urllib.request
 from urllib.parse import urlparse
