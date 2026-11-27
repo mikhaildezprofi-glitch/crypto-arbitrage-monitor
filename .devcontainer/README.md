@@ -37,16 +37,16 @@ the exact HTTPS host, path, and fragment. It does not collect quotes.
 
 ## Profile persistence
 
-The working Chromium profile is stored in
-`/workspaces/.codespace-private-state/profile`, outside the Git checkout.
-The Codespaces workspace volume persists across stop/start and dev-container
-rebuilds. At browser exit the profile is archived with AES-256 symmetric GPG
-encryption into `chromium-profile.tar.gz.gpg`. The passphrase comes only from
-the Codespaces secret. The plaintext temporary archive is deleted after save.
+The working Chromium profile is restored into ephemeral `/tmp/eid-chromium-profile`.
+At browser exit it is archived with AES-256 symmetric GPG encryption into
+`/workspaces/.codespace-private-state/chromium-profile.tar.gz.gpg`, outside the
+Git checkout. The Codespaces workspace volume persists across stop/start and
+dev-container rebuilds. The passphrase comes only from the Codespaces secret.
+Both the plaintext tar archive and runtime profile are removed after save.
 
 On Codespace restart, `.devcontainer/restore-private-profile.sh` restores the
-encrypted archive. The browser is not started automatically; run the command
-above when needed.
+encrypted archive into ephemeral runtime storage. The browser is not started
+automatically; run the command above when needed.
 
 ## Security and limits
 
