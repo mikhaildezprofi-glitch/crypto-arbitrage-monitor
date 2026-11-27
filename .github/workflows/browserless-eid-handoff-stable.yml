@@ -80,7 +80,7 @@ jobs:
           key: ${{ inputs.profile_cache_key || format('{0}-chromium-profile-money_storage-{1}-{2}-{3}-{4}', runner.os, github.ref_name, inputs.target || 'manual', github.run_id, github.run_attempt) }}
           # Collector-only runs use the exact immutable cache created by the
           # verified three-tab authentication run. No fallback to a different profile.
-          restore-keys: ${{ inputs.profile_cache_key == '' && format('{0}-chromium-profile_money_storage-{1}-', runner.os, github.event.pull_request.base.ref || github.ref_name) || '' }}
+          restore-keys: ${{ inputs.profile_cache_key == '' && format('{0}-chromium-profile-money_storage-{1}-', runner.os, github.event.pull_request.base.ref || github.ref_name) || '' }}
 
       - name: Install browser and tunnel dependencies
         shell: bash
