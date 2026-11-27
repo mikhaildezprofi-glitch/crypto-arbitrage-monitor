@@ -65,9 +65,11 @@ jobs:
         with:
           path: ${{ runner.temp }}/chromium-profile-money_storage.gpg
           key: ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-${{ inputs.target || 'manual' }}-${{ github.run_id }}-${{ github.run_attempt }}
+          # pull_request runs use refs/pull/<number>/merge. Restore from the
+          # target branch cache instead; PR cache scope can read base-branch caches.
+          # Omit target from the prefix because all targets share one Chromium profile.
           restore-keys: |
-            ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-${{ inputs.target || 'manual' }}-
-            ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-
+            ${{ runner.os }}-chromium-profile-money_storage-${{ github.event.pull_request.base.ref || github.ref_name }}-
 
       - name: Install browser and tunnel dependencies
         shell: bash
