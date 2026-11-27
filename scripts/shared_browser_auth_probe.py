@@ -28,33 +28,32 @@ EXPECTED = {
 STATE_EXPRESSION = """(() => {
   const body = (document.body?.innerText || '').toLowerCase();
   const nav = performance.getEntriesByType('navigation')[0];
-  const moneyAuthFailure = /session timed out|you must log in|please log in|unauthenticated/.test(body) || [401,403].includes(nav ? (nav.responseStatus || 0) : 0);\n  const sberkassaLogin = /войти|авторизац|sign in|log in|login|session expired|время сессии истекло/.test(body);
+  const responseStatus = nav ? (nav.responseStatus || 0) : 0;
+  const moneyAuthFailure = /session timed out|you must log in|please log in|unauthenticated/.test(body)
+    || [401, 403].includes(responseStatus);
+  const sberkassaLogin = /войти|авторизац|sign in|log in|login|session expired|время сессии истекло/.test(body);
   const challenge = /captcha|cf-turnstile|verify you are human|checking your browser|проверка браузера|доступ запрещ/.test(body);
   return {
     url: location.href,
     titlePresent: !!(document.title || '').trim(),
     bodyLength: body.trim().length,
-    responseStatus: nav ? (nav.responseStatus || 0) : 0,
-    login,
+    responseStatus,
+    moneyAuthFailure,
+    sberkassaLogin,
     challenge,
     ready: document.readyState
   };
 })()"""
 
 
-def page_targets() -> dict[tuple[str, str], dict]:
+def page_targets() -> list[dict]:
     request = urllib.request.Request(DEBUG_ENDPOINT, headers={"Accept": "application/json"})
     with urllib.request.urlopen(request, timeout=5) as response:
         items = json.loads(response.read().decode("utf-8"))
-    found: dict[tuple[str, str], dict] = {}
-    for item in items:
-        if item.get("type") != "page" or not item.get("id") or not item.get("webSocketDebuggerUrl"):
-            continue
-        parsed = urlparse(item.get("url", ""))
-        key = ((parsed.hostname or "").lower(), parsed.path.rstrip("/") or "/")
-        if key in EXPECTED:
-            found[key] = item
-    return found
+    return [
+        item for item in items
+        if item.get("type") == "page" and item.get("id") and item.get("webSocketDebuggerUrl")
+    ]
 
 
 def evaluate(ws_url: str) -> dict:
@@ -77,11 +76,19 @@ def evaluate(ws_url: str) -> dict:
 
 def classify(key: tuple[str, str], state: dict) -> str:
     parsed = urlparse(str(state.get("url", "")))
-    if (parsed.hostname or "").lower() != key[0] or (parsed.path.rstrip("/") or "/") != key[1]:
-        return "NAVIGATING"
+    host = (parsed.hostname or "").lower()
+    path = parsed.path.rstrip("/") or "/"
     if state.get("challenge"):
         return "CHALLENGE_PENDING"
-    if state.get("login"):
+    if host == "e-id.cards" or host.endswith(".e-id.cards"):
+        return "EID_HANDOFF_IN_PROGRESS"
+    if host != key[0] or path != key[1]:
+        if host == key[0] and any(part in path.lower() for part in ("login", "auth", "oauth", "signin")):
+            return "LOGIN_REQUIRED"
+        return "AUTH_HANDOFF_IN_PROGRESS"
+    if key[0] == "storage.money" and state.get("moneyAuthFailure"):
+        return "LOGIN_REQUIRED"
+    if key[0] == "sberkassa.site" and state.get("sberkassaLogin"):
         return "LOGIN_REQUIRED"
     if state.get("ready") != "complete" or not state.get("titlePresent") or state.get("bodyLength", 0) < 10:
         return "PAGE_LOADING"
@@ -99,17 +106,33 @@ def main() -> int:
     print("SHARED_AUTH_SCOPE=THREE_TABS_NO_QUOTE_COLLECTION", flush=True)
     deadline = time.monotonic() + DEADLINE_SECONDS
     last_report = 0.0
+    bound_ids: dict[tuple[str, str], str] = {}
     while time.monotonic() < deadline:
         try:
-            found = page_targets()
-            ids = [found[key].get("id") for key in EXPECTED if key in found]
-            if set(found) != set(EXPECTED) or len(ids) != 3 or len(set(ids)) != 3:
+            targets = page_targets()
+            by_id = {item["id"]: item for item in targets}
+            if not bound_ids:
+                initial: dict[tuple[str, str], dict] = {}
+                for item in targets:
+                    parsed = urlparse(item.get("url", ""))
+                    key = ((parsed.hostname or "").lower(), parsed.path.rstrip("/") or "/")
+                    if key in EXPECTED:
+                        initial[key] = item
+                initial_ids = [initial[key].get("id") for key in EXPECTED if key in initial]
+                if set(initial) == set(EXPECTED) and len(initial_ids) == 3 and len(set(initial_ids)) == 3:
+                    bound_ids = {key: initial[key]["id"] for key in EXPECTED}
+                    print("SHARED_AUTH_THREE_DISTINCT_TARGET_IDS=VERIFIED", flush=True)
+            if len(bound_ids) != 3 or len(set(bound_ids.values())) != 3:
                 states = {name: "TAB_NOT_BOUND" for name in EXPECTED.values()}
             else:
                 states = {}
                 for key, name in EXPECTED.items():
+                    item = by_id.get(bound_ids[key])
+                    if not item:
+                        states[name] = "TAB_TARGET_MISSING"
+                        continue
                     try:
-                        state = evaluate(found[key]["webSocketDebuggerUrl"])
+                        state = evaluate(item["webSocketDebuggerUrl"])
                         states[name] = classify(key, state)
                     except Exception:
                         states[name] = "CDP_CHECK_RETRY"
