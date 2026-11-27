@@ -41,8 +41,8 @@ jobs:
   inspect-exchange-page:
     uses: ./.github/workflows/browserless-eid-handoff-stable.yml
     with:
-      # Pull-request CI stays exchange-only; a manual dispatch defaults to
-      # the full three-tab shared-browser collection.
-      target: ${{ github.event_name == 'workflow_dispatch' && inputs.target || (github.event_name == 'schedule' && 'all' || 'sberkassa_exchange') }}
+      # Pushes to this working branch and scheduled runs collect all three tabs.
+      # Pull-request validation remains exchange-only; manual dispatch uses its selected target.
+      target: ${{ github.event_name == 'workflow_dispatch' && inputs.target || ((github.event_name == 'schedule' || github.event_name == 'push') && 'all' || 'sberkassa_exchange') }}
       inspect_currency_form: false
     secrets: inherit
