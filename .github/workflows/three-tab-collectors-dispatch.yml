@@ -18,4 +18,5 @@ jobs:
       target: all
       source_ref: feat/three-tab-collector-diagnostics-20261128
       inspect_currency_form: false
+      profile_cache_key: Linux-chromium-profile-money_storage-main-auth_only-46071846825-1
     secrets: inherit
