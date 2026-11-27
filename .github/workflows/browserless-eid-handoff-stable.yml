@@ -126,6 +126,22 @@ jobs:
           COLLECTION_EVENT_NAME: ${{ github.event_name }}
         run: bash scripts/keep_browser_and_tunnel_alive.sh
 
+      - name: Build sanitized per-tab collector diagnostics
+        if: always() && inputs.target == 'all'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/build_three_tab_diagnostics.py --output-dir three-tab-collector-diagnostics
+
+      - name: Publish per-tab collector diagnostics
+        if: always() && inputs.target == 'all' && hashFiles('three-tab-collector-diagnostics/three-tab-collector-report.json') != ''
+        uses: actions/upload-artifact@v5
+        with:
+          name: three-tab-collector-diagnostics
+          path: three-tab-collector-diagnostics/
+          if-no-files-found: error
+          retention-days: 3
+
       - name: Encrypt Chromium profile for private cache
         id: encrypt-profile
         if: always() && hashFiles('session-authenticated.txt') != ''
