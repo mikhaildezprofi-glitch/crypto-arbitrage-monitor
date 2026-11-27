@@ -601,6 +601,10 @@ for i in $(seq 1 900); do
       "$TUNNEL_URL/$ACCESS_TOKEN/websockify" >/dev/null 2>&1 || true)"
     if grep -qE '^HTTP/[0-9.]+ 101' /tmp/eid-ws-headers; then WS_STATUS=101; else WS_STATUS=FAILED; fi
     echo "PUBLIC_TUNNEL_HEALTHCHECK interval=30s http=$CODE websocket=$WS_STATUS"
+    if [ "$TARGET" = "auth_only" ]; then
+      echo "SHARED_AUTH_DIAGNOSTICS_UPDATE:"
+      tail -n 8 /tmp/shared-browser-auth.log 2>/dev/null || echo "SHARED_AUTH_PROBE_LOG_NOT_CREATED_YET"
+    fi
     if [ "$TARGET" = "all" ]; then
       for LOG in /tmp/money-storage-browser.log /tmp/sberkassa-sell-browser.log /tmp/sberkassa-exchange-browser.log; do
         echo "SHARED_TAB_LOG=$(basename "$LOG")"
