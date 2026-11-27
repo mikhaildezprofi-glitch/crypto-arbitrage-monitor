@@ -218,7 +218,7 @@ fi
 echo "STANDALONE_CHROMIUM=$(basename "$(dirname "$CHROMIUM_BIN")")/chrome"
 "$CHROMIUM_BIN" --version
 : "${TARGET:?TARGET must be set}"
-if [ "$TARGET" = "all" ]; then
+if [ "$TARGET" = "all" ] || [ "$TARGET" = "browser_tabs_only" ]; then
   CHROMIUM_START_URL="https://storage.money/deals#tab-3"
   EXTRA_START_URLS=("https://sberkassa.site/deals#tab-3" "https://sberkassa.site/exchange")
   BRIDGE_SCRIPT="all"
