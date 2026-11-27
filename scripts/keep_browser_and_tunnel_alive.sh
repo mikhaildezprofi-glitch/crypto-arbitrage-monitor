@@ -1,8 +1,9 @@
 set -euo pipefail
 umask 077
 
+CODESPACES_MODE="${CODESPACES_MODE:-0}"
 TAILSCALE_AUTHKEY="${TAILSCALE_AUTHKEY:-}"
-if [ -z "$TAILSCALE_AUTHKEY" ]; then
+if [ "$CODESPACES_MODE" != "1" ] && [ -z "$TAILSCALE_AUTHKEY" ]; then
   echo "TAILSCALE_AUTHKEY_SECRET_MISSING"
   exit 1
 fi
@@ -465,14 +466,12 @@ fi
 BRIDGE_PID=$!
 
 
-# Join this ephemeral GitHub-hosted runner to the tailnet.
-curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 https://tailscale.com/install.sh | sh
-sudo systemctl enable --now tailscaled
-sudo tailscale up \
-  --authkey="$TAILSCALE_AUTHKEY" \
-  --hostname="gha-${GITHUB_RUN_ID}" \
-  --advertise-tags=tag:ci \
-  --accept-dns=false
+# Codespaces relies on GitHub authenticated private port forwarding.
+if [ "$CODESPACES_MODE" != "1" ]; then
+  curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 https://tailscale.com/install.sh | sh
+  sudo systemctl enable --now tailscaled
+  sudo tailscale up --authkey="$TAILSCALE_AUTHKEY" --hostname="gha-${GITHUB_RUN_ID}" --advertise-tags=tag:ci --accept-dns=false
+fi
 TUNNEL_PID=""
 
 write_run_diagnostics() {
@@ -546,89 +545,85 @@ cleanup_all() {
   fi
   kill -TERM "$BROWSER_PID" 2>/dev/null || true
   wait "$BROWSER_PID" 2>/dev/null || true
-  sudo tailscale funnel --https=443 off >/dev/null 2>&1 || true
-  sudo tailscale down >/dev/null 2>&1 || true
+  if [ "$CODESPACES_MODE" != "1" ]; then
+    sudo tailscale funnel --https=443 off >/dev/null 2>&1 || true
+    sudo tailscale down >/dev/null 2>&1 || true
+  fi
   cleanup
 }
 trap cleanup_all EXIT
 
 TUNNEL_URL=""
-: > /tmp/tailscale-funnel.log
-sudo tailscale funnel --bg --https=443 http://127.0.0.1:8080 2>&1 | tee /tmp/tailscale-funnel.log
-TUNNEL_HOST="$(sudo tailscale status --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["Self"]["DNSName"].rstrip("."))')"
-if [ -z "$TUNNEL_HOST" ] || [[ ! "$TUNNEL_HOST" =~ \.ts\.net$ ]]; then
-  echo "TAILSCALE_FUNNEL_HOSTNAME_NOT_AVAILABLE"
-  cat /tmp/tailscale-funnel.log
-  exit 1
-fi
-TUNNEL_URL="https://$TUNNEL_HOST"
-echo "TAILSCALE_FUNNEL_CREATED=YES"
-echo "TAILSCALE_FUNNEL_HOSTNAME=$TUNNEL_HOST"
-
-PUBLIC_OK=""
-TUNNEL_IP=""
-FUNNEL_DEADLINE=$((SECONDS + 600))
-FUNNEL_ATTEMPT=0
-echo "FUNNEL_DNS_PROPAGATION_WINDOW_SECONDS=600"
-while (( SECONDS < FUNNEL_DEADLINE )); do
-  FUNNEL_ATTEMPT=$((FUNNEL_ATTEMPT + 1))
-  # Tailscale documents up to 10 minutes for public DNS publication.
-  # Use independent public DoH, then pin curl to the resolved IP while
-  # preserving HTTPS SNI and Host. Do not publish the browser URL until
-  # both the public HTTP and WebSocket checks succeed.
-  TUNNEL_IP="$(timeout 5 python3 scripts/resolve_tailscale_funnel_ipv4.py "$TUNNEL_HOST" || true)"
-  if [ -n "$TUNNEL_IP" ]; then
-    CODE="$(curl --resolve "$TUNNEL_HOST:443:$TUNNEL_IP" -sS --connect-timeout 5 --max-time 8 -o /dev/null -w '%{http_code}' "$TUNNEL_URL/$ACCESS_TOKEN/token-vnc.html" || true)"
-  else
-    CODE="DNS_WAIT"
+if [ "$CODESPACES_MODE" = "1" ]; then
+  LOCAL_PAGE_CODE="$(curl -sS --connect-timeout 3 --max-time 8 -o /dev/null -w '%{http_code}' "http://127.0.0.1:8080/$ACCESS_TOKEN/token-vnc.html" || true)"
+  if [ "$LOCAL_PAGE_CODE" != "200" ]; then
+    echo "CODESPACES_PRIVATE_BROWSER_LOCAL_HEALTH_FAILED status=$LOCAL_PAGE_CODE"
+    exit 1
   fi
-  if [ "$CODE" = "200" ]; then PUBLIC_OK=yes; break; fi
-  if ! sudo tailscale status >/dev/null 2>&1; then
-    echo "TAILSCALE_DAEMON_UNAVAILABLE_DURING_HEALTHCHECK"
+  echo "CODESPACES_PRIVATE_BROWSER_LOCAL_HEALTH=HTTP_200"
+  echo "CODESPACES_PRIVATE_PORT=8080"
+  echo "CODESPACES_PORT_VISIBILITY=PRIVATE"
+  echo "CODESPACES_BROWSER_PATH=/$ACCESS_TOKEN/token-vnc.html"
+  echo "CODESPACES_SESSION_READY_PATH=/$ACCESS_TOKEN/session-ready"
+  echo "CODESPACES_COLLECTION=DISABLED"
+else
+  : > /tmp/tailscale-funnel.log
+  sudo tailscale funnel --bg --https=443 http://127.0.0.1:8080 2>&1 | tee /tmp/tailscale-funnel.log
+  TUNNEL_HOST="$(sudo tailscale status --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["Self"]["DNSName"].rstrip("."))')"
+  if [ -z "$TUNNEL_HOST" ] || [[ ! "$TUNNEL_HOST" =~ \.ts\.net$ ]]; then
+    echo "TAILSCALE_FUNNEL_HOSTNAME_NOT_AVAILABLE"
+    cat /tmp/tailscale-funnel.log
+    exit 1
+  fi
+  TUNNEL_URL="https://$TUNNEL_HOST"
+  echo "TAILSCALE_FUNNEL_CREATED=YES"
+  echo "TAILSCALE_FUNNEL_HOSTNAME=$TUNNEL_HOST"
+  PUBLIC_OK=""
+  TUNNEL_IP=""
+  FUNNEL_DEADLINE=$((SECONDS + 600))
+  FUNNEL_ATTEMPT=0
+  echo "FUNNEL_DNS_PROPAGATION_WINDOW_SECONDS=600"
+  while (( SECONDS < FUNNEL_DEADLINE )); do
+    FUNNEL_ATTEMPT=$((FUNNEL_ATTEMPT + 1))
+    TUNNEL_IP="$(timeout 5 python3 scripts/resolve_tailscale_funnel_ipv4.py "$TUNNEL_HOST" || true)"
+    if [ -n "$TUNNEL_IP" ]; then
+      CODE="$(curl --resolve "$TUNNEL_HOST:443:$TUNNEL_IP" -sS --connect-timeout 5 --max-time 8 -o /dev/null -w '%{http_code}' "$TUNNEL_URL/$ACCESS_TOKEN/token-vnc.html" || true)"
+    else
+      CODE="DNS_WAIT"
+    fi
+    if [ "$CODE" = "200" ]; then PUBLIC_OK=yes; break; fi
+    if ! sudo tailscale status >/dev/null 2>&1; then
+      echo "TAILSCALE_DAEMON_UNAVAILABLE_DURING_HEALTHCHECK"
+      tail -n 100 /tmp/tailscale-funnel.log
+      exit 1
+    fi
+    echo "PUBLIC_TUNNEL_WAIT http=$CODE attempt=$FUNNEL_ATTEMPT"
+    sleep 5
+  done
+  if [ -z "$PUBLIC_OK" ]; then
+    echo "TAILSCALE_FUNNEL_HEALTHCHECK_FAILED"
     tail -n 100 /tmp/tailscale-funnel.log
     exit 1
   fi
-  echo "PUBLIC_TUNNEL_WAIT http=$CODE attempt=$FUNNEL_ATTEMPT"
-  sleep 5
-done
-if [ -z "$PUBLIC_OK" ]; then
-  echo "TAILSCALE_FUNNEL_HEALTHCHECK_FAILED"
-  tail -n 100 /tmp/tailscale-funnel.log
-  exit 1
-fi
-
-echo "PUBLIC_TUNNEL_HEALTHCHECK=HTTP_200"
-
-# Verify the actual WebSocket upgrade through Tailscale Funnel and Nginx.
-# A page-only HTTP 200 is not enough: it was the source of the
-# misleading green health checks in the previous run.
-WS_OK=""
-for i in $(seq 1 10); do
-  curl --resolve "$TUNNEL_HOST:443:$TUNNEL_IP" --http1.1 -sS -D /tmp/eid-ws-headers -o /dev/null --max-time 4 \
-    -H "Connection: Upgrade" \
-    -H "Upgrade: websocket" \
-    -H "Sec-WebSocket-Version: 13" \
-    -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
-    "$TUNNEL_URL/$ACCESS_TOKEN/websockify" || true
-  if grep -qE '^HTTP/[0-9.]+ 101' /tmp/eid-ws-headers; then
-    WS_OK=yes
-    break
+  echo "PUBLIC_TUNNEL_HEALTHCHECK=HTTP_200"
+  WS_OK=""
+  for i in $(seq 1 10); do
+    curl --resolve "$TUNNEL_HOST:443:$TUNNEL_IP" --http1.1 -sS -D /tmp/eid-ws-headers -o /dev/null --max-time 4 \
+      -H "Connection: Upgrade" -H "Upgrade: websocket" \
+      -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
+      "$TUNNEL_URL/$ACCESS_TOKEN/websockify" || true
+    if grep -qE '^HTTP/[0-9.]+ 101' /tmp/eid-ws-headers; then WS_OK=yes; break; fi
+    echo "PUBLIC_WEBSOCKET_WAIT attempt=$i/10"
+    sleep 2
+  done
+  if [ -z "$WS_OK" ]; then
+    echo "PUBLIC_WEBSOCKET_HEALTHCHECK_FAILED"
+    tail -n 80 /tmp/websockify.log || true
+    exit 1
   fi
-  echo "PUBLIC_WEBSOCKET_WAIT attempt=$i/10"
-  cat /tmp/eid-ws-headers || true
-  sleep 2
-done
-if [ -z "$WS_OK" ]; then
-  echo "PUBLIC_WEBSOCKET_HEALTHCHECK_FAILED"
-  tail -n 80 /tmp/websockify.log || true
-  tail -n 80 /tmp/x11vnc.log || true
-  exit 1
+  echo "PUBLIC_WEBSOCKET_HEALTHCHECK=HTTP_101"
+  echo "REMOTE_BROWSER_URL=$TUNNEL_URL/$ACCESS_TOKEN/token-vnc.html"
 fi
-echo "PUBLIC_WEBSOCKET_HEALTHCHECK=HTTP_101"
-
-echo "REMOTE_BROWSER_URL=$TUNNEL_URL/$ACCESS_TOKEN/token-vnc.html"
-echo "REMOTE_BROWSER_AUTH=automatic via temporary per-run access token"
-echo "VNC_AUTH=automatic; credentials are not printed"
 if [ "$TARGET" = "auth_only" ]; then
   echo "MANUAL_AUTH_BUTTON=AVAILABLE; sign in manually, return all three tabs to their exact required URLs, then press 'Проверить вкладки и сохранить авторизацию'. The server validates exact host/path/fragment before accepting."
   echo "AUTH_ONLY_WAIT_LIMIT_SECONDS=600"
@@ -682,8 +677,12 @@ for i in $(seq 1 600); do
       AUTH_SIGNAL_RECEIVED=no
       for wait_index in $(seq 1 300); do
         if [ -f /tmp/manual-auth-ready ]; then AUTH_SIGNAL_RECEIVED=yes; break; fi
-        if ! kill -0 "$BROWSER_PID" 2>/dev/null || ! sudo tailscale status >/dev/null 2>&1; then
-          echo "MANUAL_AUTH_HANDOFF_INTERRUPTED browser_or_tunnel_unavailable"
+        if ! kill -0 "$BROWSER_PID" 2>/dev/null; then
+          echo "MANUAL_AUTH_HANDOFF_INTERRUPTED browser_unavailable"
+          break
+        fi
+        if [ "$CODESPACES_MODE" != "1" ] && ! sudo tailscale status >/dev/null 2>&1; then
+          echo "MANUAL_AUTH_HANDOFF_INTERRUPTED tunnel_unavailable"
           break
         fi
         if [ $((wait_index % 15)) -eq 0 ]; then
@@ -734,7 +733,7 @@ for i in $(seq 1 600); do
     grep -E 'OFFERS_READ_|AUTH_|SBERKASSA_|NAV=|REQUEST |QUOTE_FIELDS |PAGE_UPDATE_MARKERS |HTTP_DIAG ' /tmp/eid-browser.log | tail -n 120 || true
     exit 1
   fi
-  if ! sudo tailscale status >/dev/null 2>&1; then
+  if [ "$CODESPACES_MODE" != "1" ] && ! sudo tailscale status >/dev/null 2>&1; then
     echo "TAILSCALE_DAEMON_UNAVAILABLE"
     tail -n 100 /tmp/tailscale-funnel.log
     exit 1
@@ -750,22 +749,26 @@ for i in $(seq 1 600); do
     exit 1
   fi
   if [ $((i % 15)) -eq 0 ]; then
-    TUNNEL_IP="$(python3 scripts/resolve_tailscale_funnel_ipv4.py "$TUNNEL_HOST" || true)"
-    CODE="DNS_WAIT"
-    if [ -n "$TUNNEL_IP" ]; then
-      CODE="$(curl --resolve "$TUNNEL_HOST:443:$TUNNEL_IP" -sS --connect-timeout 8 --max-time 15 -o /dev/null -w '%{http_code}' "$TUNNEL_URL/$ACCESS_TOKEN/token-vnc.html" || true)"
-    fi
     rm -f /tmp/eid-ws-headers
-    WS_CODE="DNS_WAIT"
-    if [ -n "$TUNNEL_IP" ]; then
-      WS_CODE="$(curl --resolve "$TUNNEL_HOST:443:$TUNNEL_IP" --http1.1 -sS -D /tmp/eid-ws-headers -o /dev/null --max-time 4 \
-      -H "Connection: Upgrade" -H "Upgrade: websocket" \
-      -H "Sec-WebSocket-Version: 13" \
-      -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
-      "$TUNNEL_URL/$ACCESS_TOKEN/websockify" >/dev/null 2>&1 || true)"
+    if [ "$CODESPACES_MODE" = "1" ]; then
+      CODE="$(curl -sS --connect-timeout 3 --max-time 8 -o /dev/null -w '%{http_code}' "http://127.0.0.1:8080/$ACCESS_TOKEN/token-vnc.html" || true)"
+      curl --http1.1 -sS -D /tmp/eid-ws-headers -o /dev/null --max-time 4 \
+        -H "Connection: Upgrade" -H "Upgrade: websocket" \
+        -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
+        "http://127.0.0.1:8080/$ACCESS_TOKEN/websockify" >/dev/null 2>&1 || true
+    else
+      TUNNEL_IP="$(python3 scripts/resolve_tailscale_funnel_ipv4.py "$TUNNEL_HOST" || true)"
+      CODE="DNS_WAIT"
+      if [ -n "$TUNNEL_IP" ]; then
+        CODE="$(curl --resolve "$TUNNEL_HOST:443:$TUNNEL_IP" -sS --connect-timeout 8 --max-time 15 -o /dev/null -w '%{http_code}' "$TUNNEL_URL/$ACCESS_TOKEN/token-vnc.html" || true)"
+        curl --resolve "$TUNNEL_HOST:443:$TUNNEL_IP" --http1.1 -sS -D /tmp/eid-ws-headers -o /dev/null --max-time 4 \
+          -H "Connection: Upgrade" -H "Upgrade: websocket" \
+          -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
+          "$TUNNEL_URL/$ACCESS_TOKEN/websockify" >/dev/null 2>&1 || true
+      fi
     fi
     if grep -qE '^HTTP/[0-9.]+ 101' /tmp/eid-ws-headers; then WS_STATUS=101; else WS_STATUS=FAILED; fi
-    echo "PUBLIC_TUNNEL_HEALTHCHECK interval=30s http=$CODE websocket=$WS_STATUS"
+    echo "BROWSER_ACCESS_HEALTHCHECK interval=30s http=$CODE websocket=$WS_STATUS"
     if [ "$TARGET" = "all" ]; then
       for LOG in /tmp/money-storage-browser.log /tmp/sberkassa-sell-browser.log /tmp/sberkassa-exchange-browser.log; do
         echo "SHARED_TAB_LOG=$(basename "$LOG")"
