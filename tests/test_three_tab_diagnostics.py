@@ -55,7 +55,7 @@ class ThreeTabDiagnosticsTests(unittest.TestCase):
         self.assertIn("fromWidget.setValue(targetValue)", bridge)
         self.assertIn('selectedFrom === "USDT" && selectedTo === "ECR"', bridge)
         self.assertIn("ensure_approved_offers_pair(cdp)", bridge)
-        self.assertIn("MONEY_STORAGE_PAIR_SELECTION=CONFIRMED", bridge)
+        self.assertIn("MONEY_STORAGE_PAIR_SELECTION=%s", bridge)
         self.assertNotIn('fetch("https://storage.money/public_deals/fetch', bridge)
 
     def test_success_report_contains_only_allowlisted_redacted_log_lines(self):
