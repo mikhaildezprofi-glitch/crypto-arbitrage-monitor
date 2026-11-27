@@ -28,7 +28,7 @@ EXPECTED = {
 STATE_EXPRESSION = """(() => {
   const body = (document.body?.innerText || '').toLowerCase();
   const nav = performance.getEntriesByType('navigation')[0];
-  const login = /войти|авторизац|sign in|log in|login|session expired|время сессии истекло/.test(body);
+  const moneyAuthFailure = /session timed out|you must log in|please log in|unauthenticated/.test(body) || [401,403].includes(nav ? (nav.responseStatus || 0) : 0);\n  const sberkassaLogin = /войти|авторизац|sign in|log in|login|session expired|время сессии истекло/.test(body);
   const challenge = /captcha|cf-turnstile|verify you are human|checking your browser|проверка браузера|доступ запрещ/.test(body);
   return {
     url: location.href,
