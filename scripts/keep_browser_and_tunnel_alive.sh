@@ -517,18 +517,32 @@ for i in $(seq 1 900); do
     MS_STATUS="$(cat /tmp/money-storage-status 2>/dev/null || echo WAITING)"
     SS_STATUS="$(cat /tmp/sberkassa-sell-status 2>/dev/null || echo WAITING)"
     SX_STATUS="$(cat /tmp/sberkassa-exchange-status 2>/dev/null || echo WAITING)"
-    echo "SHARED_BROWSER_TAB_STATUS money_storage=$MS_STATUS sberkassa_sell=$SS_STATUS sberkassa_exchange=$SX_STATUS"
-    if [ "$MS_STATUS" = "OFFERS_READ_OK" ] && [ "$SS_STATUS" = "SBERKASSA_CAPTURE_COMPLETE" ] && [ "$SX_STATUS" = "SBERKASSA_EXCHANGE_INSPECTION_COMPLETE" ]; then
-      echo "ALL_THREE_SHARED_BROWSER_TABS_COMPLETE=YES"
-      grep -hE '^(OFFERS_READ_OK|SBERKASSA_CAPTURE_|SBERKASSA_EXCHANGE_INSPECTION_COMPLETE=|SBERKASSA_EXCHANGE_DISPLAYED_RATE=|SBERKASSA_SESSION=|SBERKASSA_SESSION_AUTHENTICATED=)' /tmp/money-storage-browser.log /tmp/sberkassa-sell-browser.log /tmp/sberkassa-exchange-browser.log | tail -n 160 || true
-      exit 0
+    MS_DONE=0
+    SS_DONE=0
+    SX_DONE=0
+    case "$MS_STATUS" in
+      OFFERS_READ_OK|OFFERS_READ_FAILED|AUTH_REQUIRED|AUTH_TIMEOUT) MS_DONE=1 ;;
+    esac
+    case "$SS_STATUS" in
+      SBERKASSA_CAPTURE_COMPLETE|SBERKASSA_CAPTURE_FAILED|SBERKASSA_CAPTURE_TIMEOUT|AUTH_REQUIRED|AUTH_TIMEOUT) SS_DONE=1 ;;
+    esac
+    case "$SX_STATUS" in
+      SBERKASSA_EXCHANGE_INSPECTION_COMPLETE|SBERKASSA_EXCHANGE_AUTH_TIMEOUT|SBERKASSA_EXCHANGE_SESSION_EXPIRED|SBERKASSA_EXCHANGE_SELECTION_TIMEOUT) SX_DONE=1 ;;
+    esac
+    if [ "$MS_DONE" = "0" ] && ! kill -0 "$MONEY_PID" 2>/dev/null; then MS_STATUS=PROCESS_EXITED; MS_DONE=1; fi
+    if [ "$SS_DONE" = "0" ] && ! kill -0 "$SBERKASSA_SELL_PID" 2>/dev/null; then SS_STATUS=PROCESS_EXITED; SS_DONE=1; fi
+    if [ "$SX_DONE" = "0" ] && ! kill -0 "$SBERKASSA_EXCHANGE_PID" 2>/dev/null; then SX_STATUS=PROCESS_EXITED; SX_DONE=1; fi
+    if [ "$MS_DONE" = "1" ] && [ "$SS_DONE" = "1" ] && [ "$SX_DONE" = "1" ]; then
+      echo "ALL_THREE_SHARED_BROWSER_TABS_TERMINAL=YES"
+      echo "FINAL_TAB_STATUS money_storage=$MS_STATUS sberkassa_deals=$SS_STATUS sberkassa_exchange=$SX_STATUS"
+      grep -hE '^(MONEY_STORAGE_PAIR_SELECTION=|OFFERS_READ_|SBERKASSA_CAPTURE_|SBERKASSA_ERUB_RUB_VALIDATED|SBERKASSA_EXCHANGE_INSPECTION_COMPLETE=|SBERKASSA_EXCHANGE_DISPLAYED_RATE=|SBERKASSA_SESSION=|SBERKASSA_SESSION_AUTHENTICATED=)' /tmp/money-storage-browser.log /tmp/sberkassa-sell-browser.log /tmp/sberkassa-exchange-browser.log | tail -n 180 || true
+      if [ "$MS_STATUS" = "OFFERS_READ_OK" ] && [ "$SS_STATUS" = "SBERKASSA_CAPTURE_COMPLETE" ] && [ "$SX_STATUS" = "SBERKASSA_EXCHANGE_INSPECTION_COMPLETE" ]; then
+        echo "ALL_THREE_SHARED_BROWSER_TABS_COMPLETE=YES"
+        exit 0
+      fi
+      echo "THREE_TAB_COLLECTION_PARTIAL_OR_FAILED=YES"
+      exit 1
     fi
-    case "$MS_STATUS" in OFFERS_READ_FAILED|AUTH_REQUIRED|AUTH_TIMEOUT) echo "MONEY_STORAGE_TAB_FAILED=$MS_STATUS"; cat /tmp/money-storage-browser.log; exit 1;; esac
-    case "$SS_STATUS" in SBERKASSA_CAPTURE_FAILED|SBERKASSA_CAPTURE_TIMEOUT|AUTH_REQUIRED|AUTH_TIMEOUT) echo "SBERKASSA_SELL_TAB_FAILED=$SS_STATUS"; cat /tmp/sberkassa-sell-browser.log; exit 1;; esac
-    case "$SX_STATUS" in SBERKASSA_EXCHANGE_AUTH_TIMEOUT|SBERKASSA_EXCHANGE_SESSION_EXPIRED|SBERKASSA_EXCHANGE_SELECTION_TIMEOUT) echo "SBERKASSA_EXCHANGE_TAB_FAILED=$SX_STATUS"; cat /tmp/sberkassa-exchange-browser.log; exit 1;; esac
-    if ! kill -0 "$MONEY_PID" 2>/dev/null && [ "$MS_STATUS" != "OFFERS_READ_OK" ]; then cat /tmp/money-storage-browser.log; exit 1; fi
-    if ! kill -0 "$SBERKASSA_SELL_PID" 2>/dev/null && [ "$SS_STATUS" != "SBERKASSA_CAPTURE_COMPLETE" ]; then cat /tmp/sberkassa-sell-browser.log; exit 1; fi
-    if ! kill -0 "$SBERKASSA_EXCHANGE_PID" 2>/dev/null && [ "$SX_STATUS" != "SBERKASSA_EXCHANGE_INSPECTION_COMPLETE" ]; then cat /tmp/sberkassa-exchange-browser.log; exit 1; fi
   elif [ "$TARGET" = "browser_tabs_only" ] || [ "$TARGET" = "auth_only" ]; then
     if [ "$TARGET" = "auth_only" ]; then
       AUTH_STATUS="$(cat /tmp/shared-browser-auth-status 2>/dev/null || echo WAITING_FOR_AUTH)"
