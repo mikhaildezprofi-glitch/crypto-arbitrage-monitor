@@ -256,8 +256,14 @@ for lock_name in SingletonLock SingletonCookie SingletonSocket; do
 done
 
 CHROMIUM_START_ARGS=("$CHROMIUM_START_URL")
-if [ "$TARGET" = "all" ] || [ "$TARGET" = "browser_tabs_only" ] || [ "$TARGET" = "auth_only" ]; then
-  CHROMIUM_START_ARGS+=("${EXTRA_START_URLS[@]}")
+if { [ "$TARGET" = "all" ] || [ "$TARGET" = "auth_only" ]; } && [ "${CHROMIUM_PROFILE_RESTORED:-0}" = "1" ]; then
+  # Restore the previous browser session, including its three tabs and
+  # session-scoped browser state, rather than opening a fresh anonymous session.
+  CHROMIUM_START_ARGS=(--restore-last-session)
+  echo "CHROMIUM_SESSION_RESTORE=REQUESTED"
+elif [ "$TARGET" = "all" ] || [ "$TARGET" = "browser_tabs_only" ] || [ "$TARGET" = "auth_only" ]; then
+  CHROMIUM_START_ARGS=("$CHROMIUM_START_URL" "${EXTRA_START_URLS[@]}")
+  echo "CHROMIUM_SESSION_RESTORE=FIRST_RUN_OPEN_THREE_TABS"
 fi
 DISPLAY=:99 "$CHROMIUM_BIN" \
   --no-sandbox \
