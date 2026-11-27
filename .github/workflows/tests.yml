@@ -11,8 +11,13 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
-      - name: Validate extracted shared-browser shell script
-        run: bash -n scripts/keep_browser_and_tunnel_alive.sh
+      - name: Validate browser and Codespaces shell scripts
+        run: |
+          bash -n scripts/keep_browser_and_tunnel_alive.sh
+          bash -n .devcontainer/install-browser.sh
+          bash -n .devcontainer/restore-private-profile.sh
+          bash -n .devcontainer/save-private-profile.sh
+          bash -n .devcontainer/start-private-browser.sh
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24'
