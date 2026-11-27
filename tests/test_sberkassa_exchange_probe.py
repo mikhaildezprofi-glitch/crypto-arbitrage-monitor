@@ -130,6 +130,8 @@ class SberkassaExchangeProbeTests(unittest.TestCase):
         self.assertIn("CHROMIUM_SESSION_RESTORE_DATA=VERIFIED", persistence_workflow)
         self.assertIn("RESTORED_THREE_TAB_SESSION=VERIFIED", persistence_workflow)
         self.assertIn('STATUS=""', shared)
+        self.assertIn(': > /tmp/eid-browser.log', shared)
+        self.assertLess(shared.index(': > /tmp/eid-browser.log'), shared.index('for i in $(seq 1 900); do'))
         self.assertIn("SHARED_CHROMIUM_THREE_TARGET_TABS=VERIFIED", shared)
         self.assertIn("SHARED_CHROMIUM_DISTINCT_TARGET_IDS=3", shared)
         self.assertIn("CHROMIUM_SINGLE_PROCESS=YES PID=$BROWSER_PID", shared)
