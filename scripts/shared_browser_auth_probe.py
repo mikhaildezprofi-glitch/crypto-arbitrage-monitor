@@ -31,7 +31,15 @@ STATE_EXPRESSION = """(() => {
   const responseStatus = nav ? (nav.responseStatus || 0) : 0;
   const moneyAuthFailure = /session timed out|you must log in|please log in|unauthenticated/.test(body)
     || [401, 403].includes(responseStatus);
-  const sberkassaLogin = /войти|авторизац|sign in|log in|login|session expired|время сессии истекло/.test(body);
+  const visible = element => {
+    const style = getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+  };
+  const hasVisiblePasswordField = Array.from(document.querySelectorAll('input[type=password]')).some(visible);
+  const explicitSessionExpiry = /session expired|время сессии истекло|сессия истекла|unauthorized|не авторизован/.test(body);
+  const loginPrompt = /войти|авторизац|sign in|log in|login/.test(body);
+  const sberkassaLogin = explicitSessionExpiry || (loginPrompt && hasVisiblePasswordField);
   const challenge = /captcha|cf-turnstile|verify you are human|checking your browser|проверка браузера|доступ запрещ/.test(body);
   return {
     url: location.href,
@@ -40,6 +48,7 @@ STATE_EXPRESSION = """(() => {
     responseStatus,
     moneyAuthFailure,
     sberkassaLogin,
+    hasVisiblePasswordField,
     challenge,
     ready: document.readyState
   };
@@ -92,10 +101,15 @@ def classify(key: tuple[str, str], state: dict) -> str:
         return "LOGIN_REQUIRED"
     if state.get("ready") != "complete" or not state.get("titlePresent") or state.get("bodyLength", 0) < 10:
         return "PAGE_LOADING"
-    if key == ("storage.money", "/deals"):
-        return "AUTHENTICATED" if state.get("responseStatus") == 200 else "HTTP_STATUS_UNCONFIRMED"
-    if key[0] == "sberkassa.site":
-        return "AUTHENTICATED" if state.get("responseStatus") == 200 else "HTTP_STATUS_UNCONFIRMED"
+    # Chromium may restore a previously authenticated tab without exposing a
+    # navigation responseStatus (0). A missing timing field is not an HTTP
+    # failure. Reject explicit auth failures above and known error statuses,
+    # but accept a loaded protected route with a populated page and no login UI.
+    response_status = state.get("responseStatus", 0)
+    if response_status not in (0, 200, 304):
+        return "HTTP_STATUS_UNCONFIRMED"
+    if key in EXPECTED:
+        return "AUTHENTICATED"
     return "AUTHENTICATION_UNCONFIRMED"
 
 
