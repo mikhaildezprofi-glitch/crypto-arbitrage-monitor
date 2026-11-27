@@ -4,11 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: "Which authenticated quote source to inspect"
+        description: "Which browser workflow to run"
         required: true
         type: choice
-        default: money_storage
+        default: auth_only
         options:
+          - auth_only
           - all
           - money_storage
           - sberkassa
