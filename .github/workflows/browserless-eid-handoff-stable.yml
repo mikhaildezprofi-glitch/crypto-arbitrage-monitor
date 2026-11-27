@@ -40,7 +40,6 @@ permissions:
 
 jobs:
   cloud-browser:
-    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
