@@ -38,6 +38,8 @@ class ThreeTabDiagnosticsTests(unittest.TestCase):
         self.assertIn("SBERKASSA_NONINTERACTIVE=1", browser)
         self.assertIn("SBERKASSA_EXCHANGE_NONINTERACTIVE=1", browser)
         self.assertIn("collector will not enter E-ID", exchange)
+        self.assertIn('os.environ.get("SBERKASSA_NONINTERACTIVE") == "1"', (root / "scripts" / "sberkassa_chromium_probe.py").read_text(encoding="utf-8"))
+        self.assertIn('case "$SS_STATUS" in SBERKASSA_CAPTURE_FAILED|SBERKASSA_CAPTURE_TIMEOUT|AUTH_REQUIRED|AUTH_TIMEOUT)', browser)
         self.assertIn("REFERENCE_PROFILE_REQUIRED=YES", reusable)
         self.assertIn("inputs.target != 'all'", reusable)
 
