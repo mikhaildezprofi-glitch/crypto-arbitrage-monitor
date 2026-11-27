@@ -25,11 +25,13 @@ class CodespacesPrivateBrowserTests(unittest.TestCase):
         restore = (ROOT / ".devcontainer/restore-private-profile.sh").read_text()
         save = (ROOT / ".devcontainer/save-private-profile.sh").read_text()
         run = (ROOT / ".devcontainer/start-private-browser.sh").read_text()
+        self.assertIn('/tmp/eid-chromium-profile', restore)
         self.assertIn('/workspaces/.codespace-private-state', restore)
         self.assertIn('--cipher-algo AES256', save)
         self.assertIn('CHROMIUM_PROFILE_PASSPHRASE', save)
-        self.assertIn('ln -s "$PROFILE_DIR" /tmp/eid-chromium-profile', run)
+        self.assertIn('bash "$ROOT/.devcontainer/restore-private-profile.sh"', run)
         self.assertIn('TARGET=auth_only', run)
+        self.assertIn('CODESPACES_MODE=1', run)
 
     def test_docs_forbid_public_forwarding_and_explain_manual_auth(self):
         docs = (ROOT / ".devcontainer/README.md").read_text()
