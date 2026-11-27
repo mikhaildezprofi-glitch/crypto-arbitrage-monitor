@@ -83,11 +83,33 @@ class SberkassaExchangeProbeTests(unittest.TestCase):
         self.assertIn('BRIDGE_SCRIPT="scripts/sberkassa_chromium_probe.py"', workflow)
 
 
+    def test_three_tab_auth_only_probe_is_read_only_and_checks_exact_tabs(self):
+        root = Path(__file__).resolve().parents[1]
+        path = root / "scripts" / "shared_browser_auth_probe.py"
+        source = path.read_text(encoding="utf-8")
+        compile(source, str(path), "exec")
+        self.assertIn('("storage.money", "/deals")', source)
+        self.assertIn('("sberkassa.site", "/deals")', source)
+        self.assertIn('("sberkassa.site", "/exchange")', source)
+        self.assertIn("ALL_THREE_TABS_AUTHENTICATED", source)
+        self.assertIn("responseStatus", source)
+        self.assertIn("login", source)
+        self.assertIn("challenge", source)
+        self.assertNotIn("Network.getResponseBody", source)
+        self.assertNotIn("Network.getAllCookies", source)
+        self.assertNotIn("Input.dispatchMouseEvent", source)
+        self.assertNotIn("fetch(", source)
+        self.assertNotIn("XMLHttpRequest", source)
+
     def test_manual_scheduled_and_push_runs_use_shared_browser_tabs(self):
         root = Path(__file__).resolve().parents[1]
         caller = (root / ".github" / "workflows" / "sberkassa-exchange-inspection.yml").read_text(encoding="utf-8")
         shared = (root / "scripts" / "keep_browser_and_tunnel_alive.sh").read_text(encoding="utf-8")
-        self.assertIn("default: all", caller)
+        self.assertIn("default: auth_only", caller)
+        self.assertIn("- auth_only", caller)
+        self.assertIn("THREE_TAB_AUTH_ONLY=YES", shared)
+        self.assertIn("ALL_THREE_TABS_AUTHENTICATED", shared)
+        self.assertIn("shared_browser_auth_probe.py", shared)
         self.assertIn("- all", caller)
         self.assertIn("github.event_name == 'workflow_dispatch' && inputs.target", caller)
         self.assertIn("github.event_name == 'schedule' && 'all'", caller)
