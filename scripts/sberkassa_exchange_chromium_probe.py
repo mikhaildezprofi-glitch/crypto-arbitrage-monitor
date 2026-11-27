@@ -257,9 +257,12 @@ def main() -> int:
         try:
             targets = page_targets()
             target = next((x for x in targets
-                           if "sberkassa.site" in x.get("url", "") and urlparse(x.get("url", "")).path.rstrip("/") == "/exchange"),
-                          targets[0] if targets else None)
+                           if urlparse(x.get("url", "")).hostname == "sberkassa.site"
+                           and urlparse(x.get("url", "")).path.rstrip("/") == "/exchange"),
+                          None)
             if target:
+                print("CHROMIUM_TAB_BINDING=sberkassa.site/exchange TARGET_ID=" +
+                      str(target.get("id", "unknown")), flush=True)
                 break
         except Exception:
             pass
