@@ -1,9 +1,10 @@
 name: tests
+# Codespaces private browser lifecycle checks are part of the branch CI.
 
 on:
   workflow_dispatch:
   push:
-    branches: [main, feat/money-storage-eid-cloudflare-state-machine-20261122, feat/integrated-arbitrage-automation-20261123, feat/tailscale-funnel-ci-20261126]
+    branches: [main, feat/money-storage-eid-cloudflare-state-machine-20261122, feat/integrated-arbitrage-automation-20261123, feat/tailscale-funnel-ci-20261126, feat/codespaces-private-browser-20261127]
   pull_request:
 
 jobs:
@@ -11,8 +12,13 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
-      - name: Validate extracted shared-browser shell script
-        run: bash -n scripts/keep_browser_and_tunnel_alive.sh
+      - name: Validate browser and Codespaces shell scripts
+        run: |
+          bash -n scripts/keep_browser_and_tunnel_alive.sh
+          bash -n .devcontainer/install-browser.sh
+          bash -n .devcontainer/restore-private-profile.sh
+          bash -n .devcontainer/save-private-profile.sh
+          bash -n .devcontainer/start-private-browser.sh
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24'
