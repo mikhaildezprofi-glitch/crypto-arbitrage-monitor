@@ -119,11 +119,15 @@ jobs:
           fi
 
       - name: Require the verified reference profile for collector-only runs
-        if: inputs.target == 'all' && inputs.profile_cache_key != ''
+        if: inputs.target == 'all'
         shell: bash
         run: |
           set -euo pipefail
           PROFILE_ARCHIVE="${RUNNER_TEMP}/chromium-profile-money_storage.gpg"
+          if [ -z "${{ inputs.profile_cache_key }}" ]; then
+            echo "REFERENCE_PROFILE_KEY_MISSING: collector runs must pin the verified reference profile"
+            exit 1
+          fi
           if [ ! -s "$PROFILE_ARCHIVE" ] || [ "${CHROMIUM_PROFILE_RESTORED:-0}" != "1" ]; then
             echo "REFERENCE_PROFILE_MISSING: refusing to launch collectors without the verified encrypted profile"
             exit 1
