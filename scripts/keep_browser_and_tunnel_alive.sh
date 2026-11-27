@@ -256,14 +256,16 @@ for lock_name in SingletonLock SingletonCookie SingletonSocket; do
 done
 
 CHROMIUM_START_ARGS=("$CHROMIUM_START_URL")
-if { [ "$TARGET" = "all" ] || [ "$TARGET" = "auth_only" ]; } && [ "${CHROMIUM_PROFILE_RESTORED:-0}" = "1" ]; then
-  # Restore the previous browser session, including its three tabs and
-  # session-scoped browser state, rather than opening a fresh anonymous session.
-  CHROMIUM_START_ARGS=(--restore-last-session)
-  echo "CHROMIUM_SESSION_RESTORE=REQUESTED"
-elif [ "$TARGET" = "all" ] || [ "$TARGET" = "browser_tabs_only" ] || [ "$TARGET" = "auth_only" ]; then
+if [ "$TARGET" = "all" ] || [ "$TARGET" = "browser_tabs_only" ] || [ "$TARGET" = "auth_only" ]; then
+  # Reopen the exact protected routes on every runner. Authentication is
+  # carried by the encrypted Chromium profile; browser tab restore files
+  # are not required and may not exist on headless CI runners.
   CHROMIUM_START_ARGS=("$CHROMIUM_START_URL" "${EXTRA_START_URLS[@]}")
-  echo "CHROMIUM_SESSION_RESTORE=FIRST_RUN_OPEN_THREE_TABS"
+  if [ "${CHROMIUM_PROFILE_RESTORED:-0}" = "1" ]; then
+    echo "CHROMIUM_PROFILE_RESTORED=YES; OPENING_PROTECTED_ROUTES=YES"
+  else
+    echo "CHROMIUM_SESSION_RESTORE=FIRST_RUN_OPEN_THREE_TABS"
+  fi
 fi
 DISPLAY=:99 "$CHROMIUM_BIN" \
   --no-sandbox \
