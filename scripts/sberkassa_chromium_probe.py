@@ -501,6 +501,10 @@ def main() -> int:
                 if not eid_provider_seen:
                     print("EID_HANDOFF=IDENTITY_PROVIDER_SEEN", flush=True)
                 eid_provider_seen = True
+                if os.environ.get("SBERKASSA_NONINTERACTIVE") == "1":
+                    STATUS_FILE.write_text("AUTH_REQUIRED", encoding="utf-8")
+                    print("AUTH_REQUIRED: restored profile was redirected to E-ID; collector stopped without reauthentication", flush=True)
+                    return 1
 
             cdp.drain_json_bodies()
             is_deals_landing = (
