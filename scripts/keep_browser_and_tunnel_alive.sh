@@ -745,22 +745,26 @@ for i in $(seq 1 600); do
     exit 1
   fi
   if [ $((i % 15)) -eq 0 ]; then
-    TUNNEL_IP="$(python3 scripts/resolve_tailscale_funnel_ipv4.py "$TUNNEL_HOST" || true)"
-    CODE="DNS_WAIT"
-    if [ -n "$TUNNEL_IP" ]; then
-      CODE="$(curl --resolve "$TUNNEL_HOST:443:$TUNNEL_IP" -sS --connect-timeout 8 --max-time 15 -o /dev/null -w '%{http_code}' "$TUNNEL_URL/$ACCESS_TOKEN/token-vnc.html" || true)"
-    fi
     rm -f /tmp/eid-ws-headers
-    WS_CODE="DNS_WAIT"
-    if [ -n "$TUNNEL_IP" ]; then
-      WS_CODE="$(curl --resolve "$TUNNEL_HOST:443:$TUNNEL_IP" --http1.1 -sS -D /tmp/eid-ws-headers -o /dev/null --max-time 4 \
-      -H "Connection: Upgrade" -H "Upgrade: websocket" \
-      -H "Sec-WebSocket-Version: 13" \
-      -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
-      "$TUNNEL_URL/$ACCESS_TOKEN/websockify" >/dev/null 2>&1 || true)"
+    if [ "$CODESPACES_MODE" = "1" ]; then
+      CODE="$(curl -sS --connect-timeout 3 --max-time 8 -o /dev/null -w '%{http_code}' "http://127.0.0.1:8080/$ACCESS_TOKEN/token-vnc.html" || true)"
+      curl --http1.1 -sS -D /tmp/eid-ws-headers -o /dev/null --max-time 4 \
+        -H "Connection: Upgrade" -H "Upgrade: websocket" \
+        -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
+        "http://127.0.0.1:8080/$ACCESS_TOKEN/websockify" >/dev/null 2>&1 || true
+    else
+      TUNNEL_IP="$(python3 scripts/resolve_tailscale_funnel_ipv4.py "$TUNNEL_HOST" || true)"
+      CODE="DNS_WAIT"
+      if [ -n "$TUNNEL_IP" ]; then
+        CODE="$(curl --resolve "$TUNNEL_HOST:443:$TUNNEL_IP" -sS --connect-timeout 8 --max-time 15 -o /dev/null -w '%{http_code}' "$TUNNEL_URL/$ACCESS_TOKEN/token-vnc.html" || true)"
+        curl --resolve "$TUNNEL_HOST:443:$TUNNEL_IP" --http1.1 -sS -D /tmp/eid-ws-headers -o /dev/null --max-time 4 \
+          -H "Connection: Upgrade" -H "Upgrade: websocket" \
+          -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
+          "$TUNNEL_URL/$ACCESS_TOKEN/websockify" >/dev/null 2>&1 || true
+      fi
     fi
     if grep -qE '^HTTP/[0-9.]+ 101' /tmp/eid-ws-headers; then WS_STATUS=101; else WS_STATUS=FAILED; fi
-    echo "PUBLIC_TUNNEL_HEALTHCHECK interval=30s http=$CODE websocket=$WS_STATUS"
+    echo "BROWSER_ACCESS_HEALTHCHECK interval=30s http=$CODE websocket=$WS_STATUS"
     if [ "$TARGET" = "all" ]; then
       for LOG in /tmp/money-storage-browser.log /tmp/sberkassa-sell-browser.log /tmp/sberkassa-exchange-browser.log; do
         echo "SHARED_TAB_LOG=$(basename "$LOG")"
