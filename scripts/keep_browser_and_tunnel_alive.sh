@@ -524,7 +524,7 @@ for i in $(seq 1 900); do
       exit 0
     fi
     case "$MS_STATUS" in OFFERS_READ_FAILED|AUTH_REQUIRED|AUTH_TIMEOUT) echo "MONEY_STORAGE_TAB_FAILED=$MS_STATUS"; cat /tmp/money-storage-browser.log; exit 1;; esac
-    case "$SS_STATUS" in SBERKASSA_CAPTURE_FAILED|SBERKASSA_CAPTURE_TIMEOUT|AUTH_TIMEOUT) echo "SBERKASSA_SELL_TAB_FAILED=$SS_STATUS"; cat /tmp/sberkassa-sell-browser.log; exit 1;; esac
+    case "$SS_STATUS" in SBERKASSA_CAPTURE_FAILED|SBERKASSA_CAPTURE_TIMEOUT|AUTH_REQUIRED|AUTH_TIMEOUT) echo "SBERKASSA_SELL_TAB_FAILED=$SS_STATUS"; cat /tmp/sberkassa-sell-browser.log; exit 1;; esac
     case "$SX_STATUS" in SBERKASSA_EXCHANGE_AUTH_TIMEOUT|SBERKASSA_EXCHANGE_SESSION_EXPIRED|SBERKASSA_EXCHANGE_SELECTION_TIMEOUT) echo "SBERKASSA_EXCHANGE_TAB_FAILED=$SX_STATUS"; cat /tmp/sberkassa-exchange-browser.log; exit 1;; esac
     if ! kill -0 "$MONEY_PID" 2>/dev/null && [ "$MS_STATUS" != "OFFERS_READ_OK" ]; then cat /tmp/money-storage-browser.log; exit 1; fi
     if ! kill -0 "$SBERKASSA_SELL_PID" 2>/dev/null && [ "$SS_STATUS" != "SBERKASSA_CAPTURE_COMPLETE" ]; then cat /tmp/sberkassa-sell-browser.log; exit 1; fi
