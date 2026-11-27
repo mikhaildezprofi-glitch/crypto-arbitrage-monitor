@@ -1,0 +1,16 @@
+name: Three-tab browser authentication
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  authenticate-three-tabs:
+    uses: mikhaildezprofi-glitch/crypto-arbitrage-monitor/.github/workflows/browserless-eid-handoff-stable.yml@feat/three-tab-auth-only-20261128
+    with:
+      target: auth_only
+      source_ref: feat/three-tab-auth-only-20261128
+      inspect_currency_form: false
+    secrets: inherit
