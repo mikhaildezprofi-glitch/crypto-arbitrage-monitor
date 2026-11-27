@@ -218,7 +218,7 @@ fi
 echo "STANDALONE_CHROMIUM=$(basename "$(dirname "$CHROMIUM_BIN")")/chrome"
 "$CHROMIUM_BIN" --version
 : "${TARGET:?TARGET must be set}"
-if [ "$TARGET" = "all" ] || [ "$TARGET" = "browser_tabs_only" ]; then
+if [ "$TARGET" = "all" ] || [ "$TARGET" = "browser_tabs_only" ] || [ "$TARGET" = "auth_only" ]; then
   CHROMIUM_START_URL="https://storage.money/deals#tab-3"
   EXTRA_START_URLS=("https://sberkassa.site/deals#tab-3" "https://sberkassa.site/exchange")
   BRIDGE_SCRIPT="all"
@@ -349,6 +349,11 @@ if [ "$TARGET" = "all" ]; then
 elif [ "$TARGET" = "browser_tabs_only" ]; then
   echo "BROWSER_TABS_ONLY=YES; quote collectors are disabled"
   BRIDGE_PID=""
+elif [ "$TARGET" = "auth_only" ]; then
+  echo "THREE_TAB_AUTH_ONLY=YES; quote collectors are disabled"
+  SHARED_AUTH_STATUS_FILE=/tmp/shared-browser-auth-status \
+    python3 scripts/shared_browser_auth_probe.py >/tmp/shared-browser-auth.log 2>&1 &
+  BRIDGE_PID=$!
 elif [ "$TARGET" = "money_storage" ] && [ "$INSPECT_CURRENCY_FORM" = "true" ]; then
   MONEY_STORAGE_FORM_INSPECTION=1 python3 "$BRIDGE_SCRIPT" >/tmp/eid-browser.log 2>&1 &
 elif [ "$TARGET" = "sberkassa" ] && [ "$COLLECTION_EVENT_NAME" = "push" ]; then
@@ -508,7 +513,23 @@ for i in $(seq 1 900); do
     if ! kill -0 "$MONEY_PID" 2>/dev/null && [ "$MS_STATUS" != "OFFERS_READ_OK" ]; then cat /tmp/money-storage-browser.log; exit 1; fi
     if ! kill -0 "$SBERKASSA_SELL_PID" 2>/dev/null && [ "$SS_STATUS" != "SBERKASSA_CAPTURE_COMPLETE" ]; then cat /tmp/sberkassa-sell-browser.log; exit 1; fi
     if ! kill -0 "$SBERKASSA_EXCHANGE_PID" 2>/dev/null && [ "$SX_STATUS" != "SBERKASSA_EXCHANGE_INSPECTION_COMPLETE" ]; then cat /tmp/sberkassa-exchange-browser.log; exit 1; fi
-  elif [ "$TARGET" = "browser_tabs_only" ]; then
+  elif [ "$TARGET" = "browser_tabs_only" ] || [ "$TARGET" = "auth_only" ]; then
+    if [ "$TARGET" = "auth_only" ]; then
+      AUTH_STATUS="$(cat /tmp/shared-browser-auth-status 2>/dev/null || echo WAITING_FOR_AUTH)"
+      if [ "$AUTH_STATUS" = "ALL_THREE_TABS_AUTHENTICATED" ]; then
+        cat /tmp/shared-browser-auth.log
+        exit 0
+      fi
+      if [ "$AUTH_STATUS" = "AUTH_TIMEOUT" ]; then
+        cat /tmp/shared-browser-auth.log
+        exit 1
+      fi
+      if ! kill -0 "$BRIDGE_PID" 2>/dev/null; then
+        echo "SHARED_AUTH_PROBE_EXITED"
+        cat /tmp/shared-browser-auth.log || true
+        exit 1
+      fi
+    fi
     if ! kill -0 "$BROWSER_PID" 2>/dev/null; then
       echo "BROWSER_TABS_ONLY_CHROMIUM_EXITED"
       tail -n 80 /tmp/chromium.log || true
@@ -552,7 +573,7 @@ for i in $(seq 1 900); do
     tail -n 100 /tmp/chromium.log || true
     exit 1
   fi
-  if [ "$TARGET" != "all" ] && ! kill -0 "$BRIDGE_PID" 2>/dev/null; then
+  if [ "$TARGET" != "all" ] && [ "$TARGET" != "browser_tabs_only" ] && [ "$TARGET" != "auth_only" ] && ! kill -0 "$BRIDGE_PID" 2>/dev/null; then
     echo "CHROMIUM_SESSION_BRIDGE_EXITED"
     tail -n 100 /tmp/eid-browser.log || true
     exit 1
