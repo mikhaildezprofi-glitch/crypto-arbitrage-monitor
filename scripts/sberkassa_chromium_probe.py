@@ -420,10 +420,14 @@ def connect() -> CDP:
         try:
             targets = page_targets()
             target = next(
-                (item for item in targets if "sberkassa.site" in item.get("url", "") and urlparse(item.get("url", "")).path.rstrip("/") == "/deals"),
-                targets[0] if targets else None,
+                (item for item in targets
+                 if urlparse(item.get("url", "")).hostname == "sberkassa.site"
+                 and urlparse(item.get("url", "")).path.rstrip("/") == "/deals"),
+                None,
             )
             if target:
+                print("CHROMIUM_TAB_BINDING=sberkassa.site/deals TARGET_ID=" +
+                      str(target.get("id", "unknown")), flush=True)
                 return CDP(target["webSocketDebuggerUrl"])
         except Exception as exc:
             last_error = type(exc).__name__
