@@ -256,7 +256,7 @@ for lock_name in SingletonLock SingletonCookie SingletonSocket; do
 done
 
 CHROMIUM_START_ARGS=("$CHROMIUM_START_URL")
-if [ "$TARGET" = "all" ] || [ "$TARGET" = "browser_tabs_only" ]; then
+if [ "$TARGET" = "all" ] || [ "$TARGET" = "browser_tabs_only" ] || [ "$TARGET" = "auth_only" ]; then
   CHROMIUM_START_ARGS+=("${EXTRA_START_URLS[@]}")
 fi
 DISPLAY=:99 "$CHROMIUM_BIN" \
@@ -293,7 +293,7 @@ if [ -z "$CDP_READY" ]; then
 fi
 echo "STANDALONE_CHROMIUM_HEALTHCHECK=OK"
 
-if [ "$TARGET" = "all" ] || [ "$TARGET" = "browser_tabs_only" ]; then
+if [ "$TARGET" = "all" ] || [ "$TARGET" = "browser_tabs_only" ] || [ "$TARGET" = "auth_only" ]; then
   python3 - <<'PY'
 import json, time, urllib.request
 from urllib.parse import urlparse
