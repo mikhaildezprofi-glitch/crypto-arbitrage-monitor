@@ -53,6 +53,17 @@ class FourStepRunnerSyntaxTests(unittest.TestCase):
         self.assertIn("ALL_THREE_SHARED_BROWSER_TABS_COMPLETE=YES", reusable)
 
 
+    def test_authenticated_profile_cache_uses_attempt_unique_key_and_auth_marker(self):
+        root = Path(__file__).resolve().parents[1]
+        workflow = (root / ".github" / "workflows" / "browserless-eid-handoff-stable.yml").read_text(encoding="utf-8")
+        attempt_key = "${{ github.run_id }}-${{ github.run_attempt }}"
+        self.assertEqual(workflow.count(attempt_key), 3)
+        self.assertIn("hashFiles('session-authenticated.txt') != ''", workflow)
+        self.assertNotIn("hashFiles('money-storage-profile-ready.txt')", workflow)
+        self.assertIn("for attempt in 1; do", workflow)
+        self.assertIn("SESSION_CHECK_RESULT=1_OF_1_SUCCESS", workflow)
+
+
 
 if __name__ == "__main__":
     unittest.main()
