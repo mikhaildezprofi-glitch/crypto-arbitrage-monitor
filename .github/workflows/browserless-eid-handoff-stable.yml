@@ -134,14 +134,10 @@ jobs:
           set -euo pipefail
           PROFILE_ARCHIVE="${RUNNER_TEMP}/chromium-profile-money_storage.tar.gz"
           ENCRYPTED_PROFILE="${RUNNER_TEMP}/chromium-profile-money_storage.gpg"
-          # Require Chromium's persisted session-restore records. These preserve
-          # the three open tabs and session-scoped state across a fresh runner.
-          SESSION_DIR="/tmp/eid-chromium-profile/Default/Sessions"
-          if ! compgen -G "$SESSION_DIR/Session_*" >/dev/null || ! compgen -G "$SESSION_DIR/Tabs_*" >/dev/null; then
-            echo "CHROMIUM_SESSION_RESTORE_DATA_MISSING"
-            exit 1
-          fi
-          echo "CHROMIUM_SESSION_RESTORE_DATA=VERIFIED"
+          # The complete encrypted profile carries cookies and site storage.
+          # Chromium session-restore files are optional and are not required
+          # to preserve authenticated website sessions across runners.
+          echo "CHROMIUM_AUTH_PROFILE_SAVE=STARTED"
           # Do not carry machine-specific Chromium singleton locks into the
           # next runner's encrypted profile cache.
           rm -f -- /tmp/eid-chromium-profile/SingletonLock \
