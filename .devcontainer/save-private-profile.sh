@@ -3,6 +3,7 @@ set -euo pipefail
 STATE_DIR="/workspaces/.codespace-private-state"
 PROFILE_DIR="/tmp/eid-chromium-profile"
 ARCHIVE="$STATE_DIR/chromium-profile.tar.gz.gpg"
+trap 'rm -f "$STATE_DIR/chromium-profile.tar.gz" "$STATE_DIR/chromium-profile.tar.gz.gpg.tmp"' EXIT
 if [ ! -d "$PROFILE_DIR" ]; then
   echo "CODESPACES_PROFILE_DIRECTORY_MISSING"
   exit 1
