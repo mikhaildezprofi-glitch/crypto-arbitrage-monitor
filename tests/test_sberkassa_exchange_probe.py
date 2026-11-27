@@ -83,5 +83,18 @@ class SberkassaExchangeProbeTests(unittest.TestCase):
         self.assertIn('BRIDGE_SCRIPT="scripts/sberkassa_chromium_probe.py"', workflow)
 
 
+    def test_manual_dispatch_defaults_to_all_three_shared_browser_tabs(self):
+        root = Path(__file__).resolve().parents[1]
+        caller = (root / ".github" / "workflows" / "sberkassa-exchange-inspection.yml").read_text(encoding="utf-8")
+        shared = (root / "scripts" / "keep_browser_and_tunnel_alive.sh").read_text(encoding="utf-8")
+        self.assertIn("default: all", caller)
+        self.assertIn("- all", caller)
+        self.assertIn("github.event_name == 'workflow_dispatch' && inputs.target || 'sberkassa_exchange'", caller)
+        self.assertIn("SHARED_CHROMIUM_THREE_TARGET_TABS=VERIFIED", shared)
+        self.assertIn("CHROMIUM_SINGLE_PROCESS=YES", shared)
+        self.assertIn("CHROMIUM_SHARED_PROFILE=YES", shared)
+        self.assertIn("ALL_THREE_SHARED_BROWSER_TABS_COMPLETE=YES", shared)
+
+
 if __name__ == "__main__":
     unittest.main()
