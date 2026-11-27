@@ -14,6 +14,8 @@ class SberkassaExchangeProbeTests(unittest.TestCase):
         self.assertNotIn('"url": "https://sberkassa.site/"', source)
         self.assertIn("SBERKASSA_EXCHANGE_SESSION_EXPIRED=YES", source)
         self.assertIn("SBERKASSA_EXCHANGE_LOGIN_REQUIRED=SESSION_REAUTH_REQUIRED", source)
+        self.assertIn("Keep the visible browser and CDP bridge alive", source)
+        self.assertIn("time.sleep(2)\n                    continue", source)
         self.assertIn("selection_method", source)
         self.assertIn('"chromium_cdp_pointer_clicks"', source)
         self.assertIn("Input.dispatchMouseEvent", source)
