@@ -388,6 +388,14 @@ def main() -> int:
               from:rect(document.querySelector('#currency_fromSelectBoxIt')),
               to:rect(document.querySelector('#currency_toSelectBoxIt'))
             },
+            trigger_text:{
+              from:rect(document.querySelector('#currency_fromSelectBoxItText')),
+              to:rect(document.querySelector('#currency_toSelectBoxItText'))
+            },
+            menus_visible:{
+              from:visible(document.querySelector('#currency_fromSelectBoxItOptions')),
+              to:visible(document.querySelector('#currency_toSelectBoxItOptions'))
+            },
             options:{from:options('from'),to:options('to')}
           };
         })()"""
@@ -525,8 +533,9 @@ def main() -> int:
         def select_currency(direction: str, wanted: str, timeout: float = 30) -> dict:
             deadline = time.monotonic() + timeout
             last_state: dict = {}
-            clicked_trigger = False
+            trigger_clicks = 0
             clicked_option = False
+            menu_opened = False
             while time.monotonic() < deadline:
                 state = evaluate_page(page_state_expression)
                 last_state = state
@@ -536,43 +545,83 @@ def main() -> int:
                 label = state.get("selected_labels", {}).get(direction, "")
                 if currency_code(label) == wanted:
                     return {"selected": True, "label": label,
-                            "trigger_clicked": clicked_trigger,
+                            "trigger_clicks": trigger_clicks,
+                            "menu_opened": menu_opened,
                             "option_clicked": clicked_option}
-                if not clicked_trigger:
-                    if not dispatch_click(state.get("triggers", {}).get(direction)):
-                        time.sleep(0.5)
-                        continue
-                    clicked_trigger = True
-                    time.sleep(0.25)
+
+                # SelectBoxIt keeps its native <select> hidden. Click the
+                # visible text portion of the generated control, not the
+                # geometric centre of the full-width wrapper (which can be
+                # an inert gap between label and arrow).
+                if not state.get("menus_visible", {}).get(direction, False):
+                    text_rect = state.get("trigger_text", {}).get(direction)
+                    trigger_rect = state.get("triggers", {}).get(direction)
+                    if trigger_clicks == 0:
+                        clicked = dispatch_click(text_rect)
+                    elif trigger_clicks == 1:
+                        # Some layouts bind the toggle to the arrow-side of
+                        # the same control. Use a real pointer click there.
+                        arrow_rect = None
+                        if isinstance(trigger_rect, dict) and trigger_rect.get("visible"):
+                            arrow_rect = {
+                                "visible": True,
+                                "x": float(trigger_rect["x"]) + float(trigger_rect["width"]) - 16,
+                                "y": trigger_rect["y"],
+                            }
+                        clicked = dispatch_click(arrow_rect)
+                    else:
+                        clicked = False
+                    if clicked:
+                        trigger_clicks += 1
+                        wait_until = min(deadline, time.monotonic() + 1.5)
+                        while time.monotonic() < wait_until:
+                            opened = evaluate_page(page_state_expression)
+                            last_state = opened
+                            if opened.get("menus_visible", {}).get(direction, False):
+                                menu_opened = True
+                                break
+                            time.sleep(0.1)
+                        if menu_opened:
+                            continue
+                    else:
+                        time.sleep(0.2)
+                    if trigger_clicks >= 2 and not menu_opened:
+                        break
                     continue
+
+                menu_opened = True
                 matching = next((item for item in state.get("options", {}).get(direction, [])
                                  if currency_code(item.get("text")) == wanted
                                  and isinstance(item.get("rect"), dict)
                                  and item["rect"].get("visible") is True), None)
                 if matching:
                     if not dispatch_click(matching.get("rect")):
-                        time.sleep(0.25)
+                        time.sleep(0.2)
                         continue
                     clicked_option = True
-                    verify_deadline = time.monotonic() + 5
+                    verify_deadline = min(deadline, time.monotonic() + 5)
                     while time.monotonic() < verify_deadline:
                         verify = evaluate_page(page_state_expression)
+                        last_state = verify
                         label = verify.get("selected_labels", {}).get(direction, "")
                         if currency_code(label) == wanted:
                             return {"selected": True, "label": label,
-                                    "trigger_clicked": clicked_trigger,
+                                    "trigger_clicks": trigger_clicks,
+                                    "menu_opened": menu_opened,
                                     "option_clicked": clicked_option}
                         time.sleep(0.2)
-                    # A failed attempt may have closed the list; reopen it.
-                    clicked_trigger = False
+                    # A click that failed to select may close the list.
+                    menu_opened = False
+                    trigger_clicks = 0
                 else:
-                    # The menu may still be animating or its option list may
-                    # be rendered only after the real pointer event.
-                    time.sleep(0.25)
+                    time.sleep(0.15)
+
             return {"selected": False,
                     "last_label": last_state.get("selected_labels", {}).get(direction, ""),
-                    "trigger_clicked": clicked_trigger,
+                    "trigger_clicks": trigger_clicks,
+                    "menu_opened": menu_opened,
                     "option_clicked": clicked_option,
+                    "menus_visible": last_state.get("menus_visible", {}),
                     "available_options": [
                         x.get("text", "") for x in last_state.get("options", {}).get(direction, [])
                     ][:40]}
