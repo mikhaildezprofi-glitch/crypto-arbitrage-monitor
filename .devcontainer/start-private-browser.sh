@@ -2,15 +2,12 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE_DIR="/workspaces/.codespace-private-state"
-PROFILE_DIR="$STATE_DIR/profile"
+PROFILE_DIR="/tmp/eid-chromium-profile"
 mkdir -p "$STATE_DIR"
 chmod 700 "$STATE_DIR"
 if [ ! -d "$PROFILE_DIR" ]; then
-  mkdir -p "$PROFILE_DIR"
-  chmod 700 "$PROFILE_DIR"
+  bash "$ROOT/.devcontainer/restore-private-profile.sh"
 fi
-rm -rf /tmp/eid-chromium-profile
-ln -s "$PROFILE_DIR" /tmp/eid-chromium-profile
 export CODESPACES_MODE=1
 export TARGET=auth_only
 export GITHUB_WORKSPACE="$ROOT"
