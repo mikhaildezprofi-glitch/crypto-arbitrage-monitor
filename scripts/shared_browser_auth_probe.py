@@ -20,10 +20,11 @@ STATUS_FILE = Path(os.environ.get("SHARED_AUTH_STATUS_FILE", "/tmp/shared-browse
 DEADLINE_SECONDS = int(os.environ.get("SHARED_AUTH_TIMEOUT_SECONDS", "1800"))
 
 EXPECTED = {
-    ("storage.money", "/deals"): "money_storage",
-    ("sberkassa.site", "/deals"): "sberkassa_deals",
-    ("sberkassa.site", "/exchange"): "sberkassa_exchange",
+    ("storage.money", "/deals"): ("money_storage", "https://storage.money/deals#tab-3"),
+    ("sberkassa.site", "/deals"): ("sberkassa_deals", "https://sberkassa.site/deals#tab-3"),
+    ("sberkassa.site", "/exchange"): ("sberkassa_exchange", "https://sberkassa.site/exchange"),
 }
+EXPECTED_NAMES = {name for name, _ in EXPECTED.values()}
 
 # A navigation timing entry is immutable for a document. Some providers finish
 # an E-ID callback inside an SPA without replacing that document. Therefore a
@@ -106,6 +107,27 @@ def evaluate(ws_url: str) -> dict:
         ws.close()
 
 
+def navigate_to_expected(ws_url: str, target_url: str) -> None:
+    """Navigate the same authenticated tab back to its protected route."""
+    ws = websocket.create_connection(ws_url, timeout=5, suppress_origin=True)
+    try:
+        ws.send(json.dumps({
+            "id": 2,
+            "method": "Page.navigate",
+            "params": {"url": target_url},
+        }))
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            message = json.loads(ws.recv())
+            if message.get("id") == 2:
+                if message.get("error"):
+                    raise RuntimeError("CDP Page.navigate failed")
+                return
+        raise TimeoutError("CDP Page.navigate timed out")
+    finally:
+        ws.close()
+
+
 def classify(key: tuple[str, str], state: dict) -> str:
     parsed = urlparse(str(state.get("url", "")))
     host = (parsed.hostname or "").lower()
@@ -117,7 +139,7 @@ def classify(key: tuple[str, str], state: dict) -> str:
     if host != key[0] or path != key[1]:
         if host == key[0] and any(part in path.lower() for part in ("login", "auth", "oauth", "signin")):
             return "LOGIN_REQUIRED"
-        return "AUTH_HANDOFF_IN_PROGRESS"
+        return "POST_AUTH_REDIRECT_HOME" if host == key[0] and path in ("/", "/home", "/index.php") else "AUTH_HANDOFF_IN_PROGRESS"
     if state.get("ready") != "complete" or not state.get("titlePresent") or state.get("bodyLength", 0) < 10:
         return "PAGE_LOADING"
 
@@ -160,9 +182,11 @@ def main() -> int:
     print("SHARED_AUTH_PROBE=STARTED", flush=True)
     print("SHARED_AUTH_SCOPE=THREE_TABS_NO_QUOTE_COLLECTION", flush=True)
     print("SHARED_AUTH_DETECTION=SITE_DOM_MARKERS_WITH_STALE_NAV_STATUS_GUARD", flush=True)
+    print("SHARED_AUTH_POST_EID_REDIRECT=AUTOMATIC_RETURN_TO_PROTECTED_ROUTE", flush=True)
     deadline = time.monotonic() + DEADLINE_SECONDS
     last_report = 0.0
     bound_ids: dict[tuple[str, str], str] = {}
+    redirected_tabs: set[tuple[str, str]] = set()
     while time.monotonic() < deadline:
         try:
             targets = page_targets()
@@ -179,7 +203,7 @@ def main() -> int:
                     bound_ids = {key: initial[key]["id"] for key in EXPECTED}
                     print("SHARED_AUTH_THREE_DISTINCT_TARGET_IDS=VERIFIED", flush=True)
             if len(bound_ids) != 3 or len(set(bound_ids.values())) != 3:
-                states = {name: "TAB_NOT_BOUND" for name in EXPECTED.values()}
+                states = {name: "TAB_NOT_BOUND" for name in EXPECTED_NAMES}
             else:
                 states = {}
                 details = {}
@@ -190,7 +214,15 @@ def main() -> int:
                         continue
                     try:
                         state = evaluate(item["webSocketDebuggerUrl"])
-                        states[name] = classify(key, state)
+                        state_class = classify(key, state)
+                        if state_class == "POST_AUTH_REDIRECT_HOME" and key not in redirected_tabs:
+                            target_url = EXPECTED[key][1]
+                            navigate_to_expected(item["webSocketDebuggerUrl"], target_url)
+                            redirected_tabs.add(key)
+                            print(f"SHARED_AUTH_POST_EID_NAVIGATION tab={name} result=STARTED target={key[0]}{key[1]}", flush=True)
+                            states[name] = "POST_AUTH_NAVIGATION_STARTED"
+                        else:
+                            states[name] = state_class
                         details[name] = diagnostic(key, state)
                     except Exception as exc:
                         states[name] = "CDP_CHECK_RETRY"
@@ -201,7 +233,7 @@ def main() -> int:
                 for name, detail in details.items() if len(bound_ids) == 3 else []:
                     print(f"SHARED_AUTH_TAB_DIAGNOSTIC {name} {detail}", flush=True)
                 last_report = now
-            if all(states.get(name) == "AUTHENTICATED" for name in EXPECTED.values()):
+            if all(states.get(name) == "AUTHENTICATED" for name in EXPECTED_NAMES):
                 STATUS_FILE.write_text("ALL_THREE_TABS_AUTHENTICATED", encoding="utf-8")
                 Path("session-authenticated.txt").write_text(
                     "money_storage\nsberkassa_deals\nsberkassa_exchange\n", encoding="utf-8"
