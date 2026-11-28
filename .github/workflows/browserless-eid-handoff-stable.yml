@@ -46,6 +46,11 @@ permissions:
 
 jobs:
   cloud-browser:
+    # Serialize profile writers for this cache scope. GitHub caches are immutable;
+    # without serialization, an older session finishing later could become newest.
+    concurrency:
+      group: chromium-profile-${{ github.ref_name }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
@@ -128,10 +133,24 @@ jobs:
 
       - name: Encrypt Chromium profile for private cache
         id: encrypt-profile
-        if: always() && hashFiles('session-authenticated.txt') != ''
+        # Only auth_only can promote a profile, and only after the shared probe
+        # has positively authenticated all three protected tabs.
+        if: always() && inputs.target == 'auth_only' && hashFiles('session-authenticated.txt') != ''
         shell: bash
         run: |
           set -euo pipefail
+          AUTH_STATUS="$(cat /tmp/shared-browser-auth-status 2>/dev/null || true)"
+          if [ "$AUTH_STATUS" != "ALL_THREE_TABS_AUTHENTICATED" ]; then
+            echo "CHROMIUM_PROFILE_SAVE_BLOCKED: three-tab auth status not confirmed"
+            exit 1
+          fi
+          EXPECTED_MARKERS="$(printf '%s\\n' money_storage sberkassa_deals sberkassa_exchange)"
+          ACTUAL_MARKERS="$(LC_ALL=C sort -u session-authenticated.txt)"
+          if [ "$ACTUAL_MARKERS" != "$EXPECTED_MARKERS" ]; then
+            echo "CHROMIUM_PROFILE_SAVE_BLOCKED: authenticated-tab marker set is incomplete or unexpected"
+            exit 1
+          fi
+          echo "CHROMIUM_PROFILE_SAVE_GUARD=ALL_THREE_TABS_AUTHENTICATED"
           PROFILE_ARCHIVE="${RUNNER_TEMP}/chromium-profile-money_storage.tar.gz"
           ENCRYPTED_PROFILE="${RUNNER_TEMP}/chromium-profile-money_storage.gpg"
           # The complete encrypted profile carries cookies and site storage.
