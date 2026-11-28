@@ -144,7 +144,7 @@ jobs:
             echo "CHROMIUM_PROFILE_SAVE_BLOCKED: three-tab auth status not confirmed"
             exit 1
           fi
-          EXPECTED_MARKERS="$(printf '%s\\n' money_storage sberkassa_deals sberkassa_exchange)"
+          EXPECTED_MARKERS="$(printf '%s\n' money_storage sberkassa_deals sberkassa_exchange)"
           ACTUAL_MARKERS="$(LC_ALL=C sort -u session-authenticated.txt)"
           if [ "$ACTUAL_MARKERS" != "$EXPECTED_MARKERS" ]; then
             echo "CHROMIUM_PROFILE_SAVE_BLOCKED: authenticated-tab marker set is incomplete or unexpected"
