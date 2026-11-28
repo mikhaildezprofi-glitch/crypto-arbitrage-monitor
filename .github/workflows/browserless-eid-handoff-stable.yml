@@ -4,11 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: "Which authenticated quote source to inspect"
+        description: "Which browser workflow to run"
         required: true
         type: choice
-        default: money_storage
+        default: auth_only
         options:
+          - auth_only
           - all
           - money_storage
           - sberkassa
@@ -24,6 +25,11 @@ on:
         description: "Which authenticated quote source to inspect"
         required: true
         type: string
+      source_ref:
+        description: "Git ref containing the browser scripts to execute"
+        required: false
+        type: string
+        default: ""
       inspect_currency_form:
         description: "Keep the browser open for manual Money Storage currency-form inspection"
         required: false
@@ -40,6 +46,11 @@ permissions:
 
 jobs:
   cloud-browser:
+    # Serialize profile writers for this cache scope. GitHub caches are immutable;
+    # without serialization, an older session finishing later could become newest.
+    concurrency:
+      group: chromium-profile-${{ github.ref_name }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
@@ -48,6 +59,8 @@ jobs:
       CLOUDFLARE_TUNNEL_HOSTNAME: ${{ vars.CLOUDFLARE_TUNNEL_HOSTNAME }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
 
       - name: Verify runner UTC clock against independent HTTPS time references
         run: python3 scripts/check_runner_clock.py
@@ -102,6 +115,7 @@ jobs:
             tar -xzf "${RUNNER_TEMP}/chromium-profile-money_storage.tar.gz" -C /tmp/eid-chromium-profile
             rm -f "${RUNNER_TEMP}/chromium-profile-money_storage.tar.gz"
             echo "CHROMIUM_PROFILE_CACHE=RESTORED_AND_DECRYPTED"
+            echo "CHROMIUM_PROFILE_RESTORED=1" >> "$GITHUB_ENV"
           else
             echo "CHROMIUM_PROFILE_CACHE=EMPTY_FIRST_AUTHENTICATION_REQUIRED"
           fi
@@ -119,12 +133,30 @@ jobs:
 
       - name: Encrypt Chromium profile for private cache
         id: encrypt-profile
-        if: always() && hashFiles('session-authenticated.txt') != ''
+        # Only auth_only can promote a profile, and only after the shared probe
+        # has positively authenticated all three protected tabs.
+        if: success() && inputs.target == 'auth_only' && hashFiles('shared-session-authenticated-tabs.txt') != '' && hashFiles('auth-collection-complete.txt') != ''
         shell: bash
         run: |
           set -euo pipefail
+          AUTH_STATUS="$(cat /tmp/shared-browser-auth-status 2>/dev/null || true)"
+          if [ "$AUTH_STATUS" != "ALL_THREE_TABS_AUTHENTICATED" ]; then
+            echo "CHROMIUM_PROFILE_SAVE_BLOCKED: three-tab auth status not confirmed"
+            exit 1
+          fi
+          EXPECTED_MARKERS="$(printf '%s\n' money_storage sberkassa_deals sberkassa_exchange)"
+          ACTUAL_MARKERS="$(LC_ALL=C sort -u shared-session-authenticated-tabs.txt)"
+          if [ "$ACTUAL_MARKERS" != "$EXPECTED_MARKERS" ]; then
+            echo "CHROMIUM_PROFILE_SAVE_BLOCKED: authenticated-tab marker set is incomplete or unexpected"
+            exit 1
+          fi
+          echo "CHROMIUM_PROFILE_SAVE_GUARD=ALL_THREE_TABS_AUTHENTICATED"
           PROFILE_ARCHIVE="${RUNNER_TEMP}/chromium-profile-money_storage.tar.gz"
           ENCRYPTED_PROFILE="${RUNNER_TEMP}/chromium-profile-money_storage.gpg"
+          # The complete encrypted profile carries cookies and site storage.
+          # Chromium session-restore files are optional and are not required
+          # to preserve authenticated website sessions across runners.
+          echo "CHROMIUM_AUTH_PROFILE_SAVE=STARTED"
           # Do not carry machine-specific Chromium singleton locks into the
           # next runner's encrypted profile cache.
           rm -f -- /tmp/eid-chromium-profile/SingletonLock \
@@ -345,4 +377,3 @@ jobs:
           path: session-check-results/
           if-no-files-found: warn
           retention-days: 3
-

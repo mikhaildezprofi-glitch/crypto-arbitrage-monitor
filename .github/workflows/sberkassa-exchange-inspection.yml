@@ -25,11 +25,12 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: "Run only the exchange probe or all three authenticated tabs in one shared Chromium profile"
+        description: "Authenticate all three shared browser tabs without collecting quotes, or run a later inspection"
         required: true
         type: choice
-        default: all
+        default: auth_only
         options:
+          - auth_only
           - all
           - browser_tabs_only
           - sberkassa_exchange
