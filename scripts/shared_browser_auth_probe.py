@@ -53,11 +53,11 @@ STATE_EXPRESSION = """(() => {
   const explicitAuthFailure = /session timed out|session expired|you must log in|please log in|unauthenticated|время сессии истекло|сессия истекла|не авторизован/.test(body);
   const visibleAuthControls = Array.from(document.querySelectorAll('a, button, [role=button]'))
     .filter(visible).map(el => String(el.innerText || el.textContent || el.getAttribute('aria-label') || '').toLowerCase());
-  const hasLogoutControl = visibleAuthControls.some(text => /(^|\\b)(log out|logout|sign out)(\\b|$)|выйти/.test(text));
+  const hasLogoutControl = visibleAuthControls.some(text => /(^|\b)(log out|logout|sign out)(\b|$)|выйти/.test(text));
   const from = document.querySelector('#select_from');
   const to = document.querySelector('#select_to');
   const moneyCurrencyFormReady = !!(visible(from) && visible(to) && from.tomselect && to.tomselect);
-  const sberkassaContentMarker = /предложен|обмен|курс|\\busdt\\b|\\berub\\b|\\brub\\b|рубл/.test(body);
+  const sberkassaContentMarker = /предложен|обмен|курс|\busdt\b|\berub\b|\brub\b|рубл/.test(body);
   const challenge = /cf-turnstile|verify you are human|checking your browser|проверка браузера|доступ запрещ/.test(body);
   return {
     url: location.href,
