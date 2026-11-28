@@ -1,13 +1,21 @@
-name: Three-tab browser authentication
+name: Three-source browser collection
 
 on:
   workflow_dispatch:
+    inputs:
+      target:
+        description: "Refresh/check the shared session, then collect all three read-only quotes in the same browser session"
+        required: true
+        type: choice
+        default: auth_only
+        options:
+          - auth_only
 
 permissions:
   contents: read
 
 jobs:
-  authenticate-three-tabs:
+  collect-three-sources:
     uses: mikhaildezprofi-glitch/crypto-arbitrage-monitor/.github/workflows/browserless-eid-handoff-stable.yml@feat/three-tab-auth-only-20261128
     with:
       target: auth_only
