@@ -326,7 +326,7 @@ for page in pages():
     except Exception:
         pass
 for url in urls:
-    req = urllib.request.Request(base + "/json/new?" + quote(url, safe=":/#?=&"), method="PUT")
+    req = urllib.request.Request(base + "/json/new?" + quote(url, safe=":/?=&"), method="PUT")
     with urllib.request.urlopen(req, timeout=8) as r:
         json.load(r)
 deadline = time.monotonic() + 45
