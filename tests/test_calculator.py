@@ -104,6 +104,55 @@ class CalculatorTests(unittest.TestCase):
         steps = five_step_route(quotes, fees)
         self.assertEqual(steps[0].fee_percent, Decimal("0"))
 
+
+    def test_unconfigured_fees_default_to_zero_for_all_five_legs(self):
+        pairs = {
+            "money_storage": ("USDT", "ECR"),
+            "blackbit": ("ECR", "USDT"),
+            "winance": ("ERUB", "USDT"),
+            "sberkassa_sell": ("ERUB", "RUB"),
+            "sberkassa_exchange": ("RUB", "USDT"),
+        }
+        quotes = {
+            key: self.quote(base, quote, "1")
+            for key, (base, quote) in pairs.items()
+        }
+
+        steps_without_config = five_step_route(quotes, {})
+        steps_with_unset_values = five_step_route(
+            quotes, {key: None for key in pairs}
+        )
+        steps_without_argument = five_step_route(quotes)
+
+        for steps in (steps_without_config, steps_with_unset_values, steps_without_argument):
+            self.assertEqual(
+                [step.fee_percent for step in steps],
+                [Decimal("0")] * 5,
+            )
+
+    def test_zero_fee_route_has_equal_gross_and_net_outputs(self):
+        pairs = {
+            "money_storage": ("USDT", "ECR"),
+            "blackbit": ("ECR", "USDT"),
+            "winance": ("ERUB", "USDT"),
+            "sberkassa_sell": ("ERUB", "RUB"),
+            "sberkassa_exchange": ("RUB", "USDT"),
+        }
+        quotes = {
+            key: self.quote(base, quote, "1")
+            for key, (base, quote) in pairs.items()
+        }
+        steps = five_step_route(quotes)
+        results = calculate_route(
+            Decimal("1000"), "USDT", steps, max_quote_age_seconds=900
+        )
+        self.assertEqual(results.final_amount, Decimal("1000"))
+        self.assertEqual(results.profit, Decimal("0"))
+        self.assertTrue(all(step.fee_amount == 0 for step in results.steps))
+        self.assertTrue(
+            all(step.gross_output == step.net_output for step in results.steps)
+        )
+
     def test_five_step_route_rejects_missing_source_quote(self):
         with self.assertRaisesRegex(ValueError, "Missing quote: blackbit"):
             five_step_route(
