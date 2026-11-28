@@ -100,9 +100,14 @@ def calculate_route(
 
 def five_step_route(
     quotes: dict[str, Quote],
-    fees_percent: dict[str, Decimal | None],
+    fees_percent: dict[str, Decimal | None] | None = None,
 ) -> tuple[RouteStep, ...]:
-    """Build the configured route from its five required quote keys."""
+    """Build the five-step route; unconfigured fees default to zero for now.
+
+    Explicit fee values remain available for the later manual calculator
+    configuration. Provider-page commission metadata must never be passed here.
+    """
+    configured_fees = fees_percent or {}
     definitions = (
         ("Money Storage", "USDT", "ECR", "money_storage", False),
         ("BlackBit", "ECR", "USDT", "blackbit", True),
@@ -114,9 +119,15 @@ def five_step_route(
     for name, input_currency, output_currency, key, indicative in definitions:
         if key not in quotes:
             raise ValueError(f"Missing quote: {key}")
-        # This route uses the approved Money Storage "Всем предлагают" source.
-        # Per project rules, the displayed commission is not applied to this leg.
-        fee_percent = Decimal("0") if key == "money_storage" else fees_percent.get(key)
+        # Money Storage's displayed commission is never applied to this route.
+        # Every other unconfigured fee also defaults to zero until manual
+        # calculator settings are introduced after all collectors are ready.
+        configured_fee = configured_fees.get(key)
+        fee_percent = (
+            Decimal("0")
+            if key == "money_storage" or configured_fee is None
+            else configured_fee
+        )
         steps.append(
             RouteStep(
                 name=name,
