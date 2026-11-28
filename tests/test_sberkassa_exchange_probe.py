@@ -136,7 +136,7 @@ class SberkassaExchangeProbeTests(unittest.TestCase):
         persistence_workflow = (root / ".github" / "workflows" / "browserless-eid-handoff-stable.yml").read_text(encoding="utf-8")
         self.assertNotIn("verify-restored-three-tab-session", persistence_workflow)
         self.assertIn("hashFiles('shared-session-authenticated-tabs.txt') != ''", persistence_workflow)
-        self.assertIn("hashFiles('auth-collection-complete.txt') != ''", persistence_workflow)
+        self.assertNotIn("hashFiles('auth-collection-complete.txt') != ''", persistence_workflow)
         self.assertIn("CHROMIUM_PROFILE_SAVE_GUARD=ALL_THREE_TABS_AUTHENTICATED", persistence_workflow)
         self.assertIn("ALL_THREE_QUOTE_COLLECTORS_SUCCEEDED", shared)
         self.assertIn("CHROMIUM_AUTH_PROFILE_SAVE=STARTED", persistence_workflow)
