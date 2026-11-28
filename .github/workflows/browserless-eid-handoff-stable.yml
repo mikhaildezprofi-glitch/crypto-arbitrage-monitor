@@ -36,7 +36,7 @@ on:
         type: boolean
         default: false
       profile_cache_key:
-        description: "Exact immutable encrypted Chromium profile cache key for collector-only runs"
+        description: "Optional exact profile cache key; all-mode uses the latest saved profile in this branch cache namespace"
         required: false
         type: string
         default: ""
@@ -73,14 +73,16 @@ jobs:
             exit 1
           fi
 
-      - name: Restore encrypted Chromium profile cache
+      - name: Restore latest encrypted Chromium profile cache
+        id: restore-profile
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/chromium-profile-money_storage.gpg
-          key: ${{ inputs.profile_cache_key || format('{0}-chromium-profile-money_storage-{1}-{2}-{3}-{4}', runner.os, github.ref_name, inputs.target || 'manual', github.run_id, github.run_attempt) }}
-          # Collector-only runs use the exact immutable cache created by the
-          # verified three-tab authentication run. No fallback to a different profile.
-          restore-keys: ${{ inputs.profile_cache_key == '' && format('{0}-chromium-profile-money_storage-{1}-', runner.os, github.event.pull_request.base.ref || github.ref_name) || '' }}
+          # Every all-mode run gets a unique write key. Restore falls back to
+          # the newest profile in the same branch namespace, enabling rotation.
+          # A caller-supplied exact key remains available for non-all diagnostics.
+          key: ${{ (inputs.target == 'all' || inputs.profile_cache_key == '') && format('{0}-chromium-profile-money_storage-{1}-{2}-{3}-{4}', runner.os, github.ref_name, inputs.target || 'manual', github.run_id, github.run_attempt) || inputs.profile_cache_key }}
+          restore-keys: ${{ (inputs.target == 'all' || inputs.profile_cache_key == '') && format('{0}-chromium-profile-money_storage-{1}-', runner.os, github.event.pull_request.base.ref || github.ref_name) || '' }}
 
       - name: Install browser and tunnel dependencies
         shell: bash
@@ -124,17 +126,13 @@ jobs:
         run: |
           set -euo pipefail
           PROFILE_ARCHIVE="${RUNNER_TEMP}/chromium-profile-money_storage.gpg"
-          if [ -z "${{ inputs.profile_cache_key }}" ]; then
-            echo "REFERENCE_PROFILE_KEY_MISSING: collector runs must pin the verified reference profile"
-            exit 1
-          fi
           if [ ! -s "$PROFILE_ARCHIVE" ] || [ "${CHROMIUM_PROFILE_RESTORED:-0}" != "1" ]; then
-            echo "REFERENCE_PROFILE_MISSING: refusing to launch collectors without the verified encrypted profile"
+            echo "REFERENCE_PROFILE_MISSING: refusing to launch collectors without a restored encrypted profile"
             exit 1
           fi
           echo "REFERENCE_PROFILE_REQUIRED=YES"
           echo "REFERENCE_PROFILE_RESTORED=YES"
-          echo "REFERENCE_PROFILE_CACHE_KEY=EXACT_PINNED_KEY"
+          echo "REFERENCE_PROFILE_CACHE_KEY=${{ steps.restore-profile.outputs.cache-matched-key }}"
 
       # All long-lived processes stay inside this step. The runner tears down
       # background processes when a step ends, which caused the earlier 1033.
@@ -154,6 +152,15 @@ jobs:
           set -euo pipefail
           python3 scripts/build_three_tab_diagnostics.py --output-dir three-tab-collector-diagnostics
 
+      - name: Mark all-mode profile eligible for rotation
+        if: always() && inputs.target == 'all' && hashFiles('three-tab-collector-diagnostics/three-tab-collector-report.json') != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/mark_profile_rotation_eligible.py \
+            --report three-tab-collector-diagnostics/three-tab-collector-report.json \
+            --marker session-authenticated.txt
+
       - name: Publish per-tab collector diagnostics
         if: always() && inputs.target == 'all' && hashFiles('three-tab-collector-diagnostics/three-tab-collector-report.json') != ''
         uses: actions/upload-artifact@v5
@@ -165,13 +172,14 @@ jobs:
 
       - name: Encrypt Chromium profile for private cache
         id: encrypt-profile
-        if: always() && inputs.target != 'all' && hashFiles('session-authenticated.txt') != ''
+        if: always() && hashFiles('session-authenticated.txt') != ''
         shell: bash
         run: |
           set -euo pipefail
           PROFILE_ARCHIVE="${RUNNER_TEMP}/chromium-profile-money_storage.tar.gz"
           ENCRYPTED_PROFILE="${RUNNER_TEMP}/chromium-profile-money_storage.gpg"
           # The complete encrypted profile carries cookies and site storage.
+          # The marker is created only after all required authentication checks pass.
           # Chromium session-restore files are optional and are not required
           # to preserve authenticated website sessions across runners.
           echo "CHROMIUM_AUTH_PROFILE_SAVE=STARTED"
