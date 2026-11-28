@@ -576,18 +576,11 @@ for i in $(seq 1 900); do
         fi
         cp session-authenticated.txt shared-session-authenticated-tabs.txt
         echo "SHARED_AUTH_MARKERS_PRESERVED=YES"
-        echo "AUTH_COLLECTIONS_STARTING_IN_EXISTING_TABS=YES"
-        MONEY_STORAGE_STATUS_FILE=/tmp/money-storage-status \
-          python3 scripts/money_storage_chromium_bridge.py >/tmp/money-storage-browser.log 2>&1 &
-        MONEY_PID=$!
-        SBERKASSA_STATUS_FILE=/tmp/sberkassa-sell-status \
-          python3 scripts/sberkassa_chromium_probe.py >/tmp/sberkassa-sell-browser.log 2>&1 &
-        SBERKASSA_SELL_PID=$!
-        SBERKASSA_EXCHANGE_STATUS_FILE=/tmp/sberkassa-exchange-status \
-          python3 scripts/sberkassa_exchange_chromium_probe.py >/tmp/sberkassa-exchange-browser.log 2>&1 &
-        SBERKASSA_EXCHANGE_PID=$!
-        AUTH_COLLECTIONS_STARTED=1
-        echo "AUTH_COLLECTIONS_STARTED=3"
+        echo "AUTH_PROFILE_SAVE_GATE=PASSED"
+        echo "AUTH_COLLECTIONS_DEFERRED_UNTIL_PROFILE_IS_ENCRYPTED=YES"
+        # Exit now. The EXIT trap gracefully closes Chromium, then the next
+        # workflow steps archive, encrypt, verify and cache the profile.
+        # Collectors run only after that cache save succeeds.
       fi
       if [ "$AUTH_STATUS" = "AUTH_TIMEOUT" ]; then
         cat /tmp/shared-browser-auth.log
@@ -595,6 +588,10 @@ for i in $(seq 1 900); do
           echo "SAVED_SESSION_INVALID_MANUAL_EID_REQUIRED=YES"
         fi
         exit 1
+      fi
+      if [ "$AUTH_STATUS" = "ALL_THREE_TABS_AUTHENTICATED" ]; then
+        echo "AUTHENTICATED_PROFILE_READY_FOR_IMMEDIATE_SAVE=YES"
+        exit 0
       fi
       if [ "${AUTH_COLLECTIONS_STARTED:-0}" = "1" ]; then
         MS_STATUS="$(cat /tmp/money-storage-status 2>/dev/null || echo WAITING)"
