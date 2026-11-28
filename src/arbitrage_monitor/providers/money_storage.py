@@ -10,7 +10,7 @@ from typing import Any, Mapping
 from ..models import Quote
 
 MONEY_STORAGE_PAGE_SIZE = 20
-MONEY_STORAGE_POLL_SECONDS = 900
+MONEY_STORAGE_FRESHNESS_SECONDS = 900
 
 
 @dataclass(frozen=True)
@@ -170,11 +170,11 @@ def average_first_20_offer_rate(
 
 
 class MoneyStorageQuoteProvider:
-    """Disabled direct HTTP adapter; page-based freshness requires the browser bridge.
+    """Disabled direct HTTP adapter; authenticated browser capture is required.
 
-    This adapter intentionally has no browser-session or cookie support. It
-    refuses to publish a quote because a plain HTTPS request cannot confirm
-    the visible page update timestamp required by the project.
+    This adapter intentionally has no browser-session or cookie support.
+    It refuses to publish a quote rather than bypassing the approved
+    human-operated authenticated browser flow.
     """
 
     def __init__(
@@ -202,6 +202,74 @@ class MoneyStorageQuoteProvider:
     def fetch_quote(self) -> Quote:
         """Fail closed: plain HTTPS cannot prove the authenticated page's update time."""
         raise RuntimeError(
-            "Direct Money Storage HTTP polling cannot verify the page update timestamp; "
-            "use the manually authenticated page bridge."
+            "Direct Money Storage HTTP polling is disabled; "
+            "use the manually authenticated browser bridge."
+        )
+
+
+class MoneyStorageSnapshotQuoteProvider:
+    """Read one normalized snapshot produced by the authenticated browser bridge."""
+
+    def __init__(self, snapshot_path: str = "money-storage-current-offers.json", *, max_age_seconds: int = MONEY_STORAGE_FRESHNESS_SECONDS):
+        if max_age_seconds <= 0:
+            raise ValueError("max_age_seconds must be positive.")
+        self.snapshot_path = snapshot_path
+        self.max_age_seconds = max_age_seconds
+
+    def fetch_quote(self) -> Quote:
+        import json
+        from pathlib import Path
+
+        try:
+            snapshot = json.loads(Path(self.snapshot_path).read_text(encoding="utf-8"))
+        except FileNotFoundError as exc:
+            raise RuntimeError("Money Storage authenticated snapshot is missing.") from exc
+        except (OSError, json.JSONDecodeError) as exc:
+            raise RuntimeError("Money Storage authenticated snapshot cannot be read.") from exc
+        if not isinstance(snapshot, dict):
+            raise RuntimeError("Money Storage snapshot must be a JSON object.")
+        if snapshot.get("source") != "money_storage" or snapshot.get("tab") != "everyone_offers":
+            raise RuntimeError("Money Storage snapshot source or tab does not match the approved page.")
+        if snapshot.get("pair") != "USDT/ECR":
+            raise RuntimeError("Money Storage snapshot has an unexpected currency direction.")
+        if snapshot.get("freshness_confirmed") is not True:
+            raise RuntimeError("Money Storage snapshot does not confirm offer freshness.")
+        try:
+            observed_at = datetime.fromisoformat(str(snapshot["observed_at"]).replace("Z", "+00:00"))
+            newest_offer_created_at = datetime.fromisoformat(
+                str(snapshot["newest_offer_created_at"]).replace("Z", "+00:00")
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RuntimeError("Money Storage collection or newest-offer timestamp is missing or invalid.") from exc
+        if observed_at.tzinfo is None or newest_offer_created_at.tzinfo is None:
+            raise RuntimeError("Money Storage timestamps must include an explicit timezone.")
+        now = datetime.now(timezone.utc)
+        observed_at = observed_at.astimezone(timezone.utc)
+        newest_offer_created_at = newest_offer_created_at.astimezone(timezone.utc)
+
+        collection_age = (now - observed_at).total_seconds()
+        if collection_age < -5:
+            raise RuntimeError("Money Storage collection timestamp is ahead of the runner clock.")
+        if collection_age > self.max_age_seconds:
+            raise RuntimeError("Money Storage snapshot collection time is stale.")
+
+        offer_age = (observed_at - newest_offer_created_at).total_seconds()
+        if offer_age < 0:
+            raise RuntimeError("Money Storage newest offer timestamp is ahead of the collection clock.")
+        if offer_age > self.max_age_seconds:
+            raise RuntimeError("Money Storage newest offer is older than the 900-second freshness window.")
+
+        try:
+            rate = Decimal(str(snapshot["rate"]))
+        except (KeyError, InvalidOperation, ValueError, TypeError) as exc:
+            raise RuntimeError("Money Storage snapshot rate is missing or invalid.") from exc
+        if not rate.is_finite() or rate <= 0:
+            raise RuntimeError("Money Storage snapshot rate must be finite and positive.")
+        return Quote(
+            source="Money Storage",
+            pair="USDT/ECR",
+            base_currency="USDT",
+            quote_currency="ECR",
+            rate=rate,
+            observed_at=observed_at,
         )

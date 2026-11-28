@@ -1,0 +1,26 @@
+name: Winance live read-only validation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: winance-live-validation-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate ERUB/USDT pair ID 18
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Fetch and validate the public ERUB/USDT rate
+        env:
+          PYTHONPATH: src
+        run: python scripts/validate_winance_live.py

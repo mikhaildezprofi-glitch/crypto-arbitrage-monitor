@@ -1,6 +1,6 @@
 # Sberkassa quote-source investigation
 
-Research date: 2026-11-18
+Research date: 2026-11-18 (initial investigation; historical)
 
 ## Scope
 
@@ -54,9 +54,9 @@ Do not open `storage.money/account` as an intermediate login step in the Sberkas
 
 This reuses the proven browser infrastructure and avoids a second authentication implementation. It does not assume that a Money Storage application session itself grants access to Sberkassa. No cookies, tokens, authorization headers, or CSRF values are exported or transferred. The browser performs navigation only; it does not submit login forms or bypass verification.
 
-## Current implementation decision
+## Historical implementation decision (2026-11-18; superseded)
 
-No Sberkassa or Sberkassa Exchange provider adapter is implemented. Both route steps remain unavailable until their own read-only quote sources are verified.
+At the time of this initial investigation no Sberkassa provider adapter was implemented. Subsequent authorized browser inspection and implementation work followed. See the current status at the end of this document and the active project README.
 
 Do not guess undocumented endpoint paths or replay authenticated requests. Do not export or transfer browser cookies, session tokens, authorization headers, CSRF values, or personal account data. Any authenticated inspection must be explicitly authorized by the account owner and limited to redacted request metadata and response schema. Do not bypass CAPTCHA, MFA, or device binding.
 
@@ -130,10 +130,10 @@ The account owner has confirmed the intended Sberkassa source and quote-freshnes
 - For the ERUB -> RUB route step, use only `https://sberkassa.site/deals#tab-3`, the **«Всем предлагают»** tab.
 - Do not substitute «Мне предлагают» or «Я предлагаю».
 - Ignore each offer's individual creation timestamp when deciding whether the current quote snapshot is fresh. Offers may have different creation times.
-- Freshness must be established by the page's own visible update/refresh timestamp, and only when that timestamp corresponds to a successful refresh of the displayed offers. Merely opening the tab or seeing a newly rendered page is not proof that the underlying offers were refreshed.
-- Record the page's confirmed update time as the quote's observation time. If the page does not show a trustworthy update time, or the refresh fails, mark this source unavailable; never reuse an older snapshot as fresh.
+- For freshness, use the UTC timestamp when the browser successfully finishes loading the selected page. Do not search for an internal quote-update timestamp or a separate quote-refresh event.
+- Record that page-load time as the quote's observation time. A page that fails to load, is not the intended page, or does not expose the required rate/direction is unavailable. Do not reuse an older snapshot as fresh.
 
-The separate ERUB -> RUB page timestamp must not be applied to the second route step. For **Sberkassa Exchange RUB -> USDT**, inspect `https://sberkassa.site/exchange` independently and use that page's own confirmed update time. Its quote semantics, fees, limits, and refresh behavior still require verification.
+Each Sberkassa route step has its own page-load timestamp. For **Sberkassa Exchange RUB -> USDT**, open `https://sberkassa.site/exchange` directly and use the Chromium `Page.loadEventFired` time for that navigation as `observed_at_utc`. The browser page-load timestamp is the selected freshness anchor; the exchange's internal quote-update time is not required.
 
 This is a project source-selection and acceptance rule, not evidence that the live Sberkassa page or its network request has already been captured. The exact request, response schema, current rate, page timestamp, and permitted polling method remain unverified. Do not implement or enable either provider until those facts are captured in the normal authenticated browser session or confirmed by official documentation. Do not bypass CAPTCHA, MFA, or device binding, and do not export cookies or session tokens.
 
@@ -150,3 +150,16 @@ The account owner has confirmed that Sberkassa commissions and liquidity/volume 
 - Keep page freshness independent for each route step: ERUB -> RUB uses the `/deals#tab-3` page marker; RUB -> USDT uses the `/exchange` page marker. Individual offer creation times are ignored for freshness.
 
 The browser probe is intentionally limited to rate/price and timestamp-related response fields. Commission, volume, reserve, and limit fields are outside the required capture.
+
+
+## Updated RUB -> USDT observation-time rule (2026-11-26)
+
+The account owner has explicitly selected successful browser page-load time as the freshness anchor for Sberkassa Exchange RUB -> USDT. The cloud probe records the UTC time at which Chromium emits `Page.loadEventFired` for the direct `/exchange` navigation. That timestamp is stored as `page_loaded_at_utc` and `observed_at_utc` in the inspection artifact and is used instead of an exchange-internal quote-update timestamp. No internal quote-update time or separate quote-refresh event is required. The Money Storage server-side `create_time` rule remains unchanged.
+
+## Current implementation status (2026-11-28)
+
+- A read-only ERUB -> RUB browser collector and provider adapter now exist. They accept only the authenticated `/deals#tab-3` page and the exact page-originated `GET /public_deals/fetch` request with `from=ERUB&to=RUB`. Non-GET requests to Sberkassa are blocked; there is no POST fallback.
+- The ERUB -> RUB rate uses the arithmetic mean of the first 20 correctly directed `back_rate` values, or all available when fewer than 20 exist. At least one valid record is required, and freshness is checked from qualifying `create_time` values within 900 seconds.
+- A separate RUB -> USDT /exchange probe and snapshot provider exist. The displayed numeric rate and independent successful-refresh freshness signal still require fresh live confirmation; this leg must remain unavailable until then.
+- These implementations and tests do not prove that the current provider pages use GET-only quote requests. A new authenticated live run is required. If the required quote request is non-GET, the collector correctly blocks it and the source remains unavailable.
+- Current active requirements and branch status are in README.md and docs/OPERATIONS_STATUS.md.

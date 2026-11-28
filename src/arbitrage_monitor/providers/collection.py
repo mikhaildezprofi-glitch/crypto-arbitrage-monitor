@@ -17,6 +17,10 @@ REQUIRED_PROVIDER_KEYS = (
     "sberkassa_exchange",
 )
 
+# Diagnostic route requested for a four-source test. It intentionally stops
+# at RUB and must never be treated as a completed arbitrage cycle.
+FOUR_STEP_PROVIDER_KEYS = REQUIRED_PROVIDER_KEYS[:4]
+
 EXPECTED_PAIRS = {
     "money_storage": ("USDT", "ECR"),
     "blackbit": ("ECR", "USDT"),
@@ -32,20 +36,31 @@ class QuoteBatch:
 
     quotes: Mapping[str, Quote]
     errors: Mapping[str, str]
+    required_keys: tuple[str, ...] = REQUIRED_PROVIDER_KEYS
 
     @property
     def complete(self) -> bool:
-        return not self.errors and all(key in self.quotes for key in REQUIRED_PROVIDER_KEYS)
+        """True only when every source selected for this collection succeeded."""
+        return not self.errors and all(key in self.quotes for key in self.required_keys)
 
 
 def collect_quotes(
     providers: Mapping[str, QuoteProvider],
+    required_keys: tuple[str, ...] = REQUIRED_PROVIDER_KEYS,
 ) -> QuoteBatch:
-    """Fetch all required sources independently and retain only this cycle's results."""
+    """Fetch only the selected sources; the default remains the full five-step route."""
+    if not required_keys:
+        raise ValueError("At least one provider key must be selected.")
+    if len(set(required_keys)) != len(required_keys):
+        raise ValueError("Provider keys must be unique.")
+    unknown = set(required_keys) - set(EXPECTED_PAIRS)
+    if unknown:
+        raise ValueError(f"Unknown provider key(s): {', '.join(sorted(unknown))}.")
+
     quotes: dict[str, Quote] = {}
     errors: dict[str, str] = {}
 
-    for key in REQUIRED_PROVIDER_KEYS:
+    for key in required_keys:
         provider = providers.get(key)
         if provider is None:
             errors[key] = "Provider is not configured."
@@ -70,4 +85,5 @@ def collect_quotes(
     return QuoteBatch(
         quotes=MappingProxyType(quotes),
         errors=MappingProxyType(errors),
+        required_keys=tuple(required_keys),
     )

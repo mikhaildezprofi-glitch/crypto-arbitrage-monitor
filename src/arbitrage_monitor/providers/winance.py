@@ -16,22 +16,6 @@ API_URL = os.getenv(
     "https://winance.exchange/site/currency_pairs",
 )
 PAIR_ID = "18"
-def parse_poll_seconds(raw_value: str | None) -> int | None:
-    """Return an explicitly selected 15–60 minute cadence, or None if undecided."""
-    if raw_value is None or not raw_value.strip():
-        return None
-    try:
-        seconds = int(raw_value)
-    except ValueError as exc:
-        raise ValueError("WINANCE_POLL_SECONDS must be an integer from 900 to 3600.") from exc
-    if not 900 <= seconds <= 3600:
-        raise ValueError("WINANCE_POLL_SECONDS must be between 900 and 3600 seconds.")
-    return seconds
-
-
-POLL_SECONDS = parse_poll_seconds(os.getenv("WINANCE_POLL_SECONDS"))
-
-
 class WinanceQuoteError(RuntimeError):
     """Raised when the Winance response cannot provide the required pair."""
 
@@ -91,6 +75,10 @@ def _extract_rate(item: dict) -> Decimal | None:
 
 
 def parse_winance_response(payload: object, observed_at: datetime | None = None) -> Quote:
+    if not isinstance(payload, dict):
+        raise WinanceQuoteError("Winance response must be a JSON object.")
+    if payload.get("result") != "ok" or payload.get("status") != 200:
+        raise WinanceQuoteError("Winance API response envelope is not successful.")
     matches = [item for item in _walk(payload) if _is_target_pair(item)]
     for item in matches:
         rate = _extract_rate(item)
@@ -111,7 +99,12 @@ def parse_winance_response(payload: object, observed_at: datetime | None = None)
 def fetch_quote(timeout_seconds: int = 15) -> Quote:
     request = Request(
         API_URL,
-        headers={"Accept": "application/json", "User-Agent": "CryptoArbitrageMonitor/0.1"},
+        headers={
+            "Accept": "application/json",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+            "User-Agent": "CryptoArbitrageMonitor/0.1",
+        },
     )
     try:
         with urlopen(request, timeout=timeout_seconds) as response:
@@ -121,6 +114,18 @@ def fetch_quote(timeout_seconds: int = 15) -> Quote:
     except (URLError, TimeoutError, json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise WinanceQuoteError(f"Unable to retrieve Winance quote: {exc}") from exc
     return parse_winance_response(payload)
+
+
+class WinanceQuoteProvider:
+    """QuoteProvider-compatible wrapper for the common route collector."""
+
+    def __init__(self, timeout_seconds: int = 15):
+        if timeout_seconds < 1:
+            raise ValueError("timeout_seconds must be at least 1.")
+        self.timeout_seconds = timeout_seconds
+
+    def fetch_quote(self) -> Quote:
+        return fetch_quote(timeout_seconds=self.timeout_seconds)
 
 
 if __name__ == "__main__":
@@ -133,7 +138,6 @@ if __name__ == "__main__":
                 "pair_id": quote.source_pair_id,
                 "rate": str(quote.rate),
                 "observed_at": quote.observed_at.isoformat(),
-                "poll_seconds": POLL_SECONDS,
             },
             ensure_ascii=False,
         )

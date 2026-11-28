@@ -1,0 +1,28 @@
+name: Sberkassa RUB to USDT read-only inspection
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Authenticate all three shared browser tabs without collecting quotes, or run a later inspection"
+        required: true
+        type: choice
+        default: auth_only
+        options:
+          - auth_only
+          - all
+          - browser_tabs_only
+          - sberkassa_exchange
+
+permissions:
+  contents: read
+
+# Manual read-only discovery probe; sanitized output only.
+jobs:
+  inspect-exchange-page:
+    uses: ./.github/workflows/browserless-eid-handoff-stable.yml
+    with:
+      # Manual-only diagnostic; no timer or automatic browser run.
+      target: ${{ inputs.target || 'sberkassa_exchange' }}
+      inspect_currency_form: false
+    secrets: inherit
