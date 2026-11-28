@@ -135,7 +135,7 @@ jobs:
         id: encrypt-profile
         # Only auth_only can promote a profile, and only after the shared probe
         # has positively authenticated all three protected tabs.
-        if: always() && inputs.target == 'auth_only' && hashFiles('shared-session-authenticated-tabs.txt') != ''
+        if: success() && inputs.target == 'auth_only' && hashFiles('shared-session-authenticated-tabs.txt') != '' && hashFiles('auth-collection-complete.txt') != ''
         shell: bash
         run: |
           set -euo pipefail
