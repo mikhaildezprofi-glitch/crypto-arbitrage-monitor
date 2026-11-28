@@ -3,10 +3,25 @@ name: tests
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, feat/money-storage-eid-cloudflare-state-machine-20261122, feat/integrated-arbitrage-automation-20261123, feat/three-tab-auth-only-20261128]
   pull_request:
 
 jobs:
+  workflow-lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Validate extracted shared-browser shell script
+        run: bash -n scripts/keep_browser_and_tunnel_alive.sh
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Install actionlint
+        run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+      - name: Validate GitHub Actions workflow syntax and semantics
+        run: |
+          "$(go env GOPATH)/bin/actionlint" -color=false -shellcheck= .github/workflows/*.yml
+
   unit-tests:
     runs-on: ubuntu-24.04
     steps:
@@ -14,6 +29,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Verify runner UTC clock against independent HTTPS time references
+        run: python3 scripts/check_runner_clock.py
       - name: Run unit tests
         env:
           PYTHONPATH: src

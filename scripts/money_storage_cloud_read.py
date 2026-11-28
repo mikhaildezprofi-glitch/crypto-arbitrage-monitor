@@ -5,12 +5,12 @@ No cookies, tokens, local storage, or raw provider payloads are exported or pers
 from __future__ import annotations
 
 import json
+import os
 import re
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
 from pathlib import Path
 from typing import Any, Mapping
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo
 
 from arbitrage_monitor.providers.money_storage import (
@@ -18,9 +18,7 @@ from arbitrage_monitor.providers.money_storage import (
     parse_public_offers,
 )
 
-OFFERS_URL = "https://storage.money/deals#tab-3"
-API_URL = "https://storage.money/public_deals/fetch?offset=0&limit=20&from=ECR&to=USDT"
-MAX_BODY_CHARS = 1_000_000
+
 UPDATE_MARKER_RE = re.compile(r"(обновл|updated|refresh|last update|время обнов|последн.*курс)", re.I)
 ISO_TIMESTAMP_RE = re.compile(
     r"\b(20\d{2}-\d{1,2}-\d{1,2}[ T]\d{1,2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:?\d{2})?)"
@@ -43,21 +41,24 @@ def parse_page_update_timestamp(
     timezone_name: str,
     browser_local_now: Mapping[str, int],
 ) -> tuple[datetime, str]:
-    """Parse the page's own update marker; never substitute the scrape time."""
+    """Parse a visible page update marker without substituting scrape time."""
     try:
         page_zone = ZoneInfo(timezone_name)
     except Exception as exc:
-        raise ValueError("Money Storage browser timezone is unavailable or invalid.") from exc
+        raise ValueError("Browser page timezone is unavailable or invalid.") from exc
 
-    local_now = datetime(
-        int(browser_local_now["year"]),
-        int(browser_local_now["month"]),
-        int(browser_local_now["day"]),
-        int(browser_local_now["hour"]),
-        int(browser_local_now["minute"]),
-        int(browser_local_now.get("second", 0)),
-        tzinfo=page_zone,
-    )
+    try:
+        local_now = datetime(
+            int(browser_local_now["year"]),
+            int(browser_local_now["month"]),
+            int(browser_local_now["day"]),
+            int(browser_local_now["hour"]),
+            int(browser_local_now["minute"]),
+            int(browser_local_now.get("second", 0)),
+            tzinfo=page_zone,
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("Browser local clock metadata is incomplete or invalid.") from exc
 
     for line in lines:
         if not UPDATE_MARKER_RE.search(line):
@@ -97,6 +98,7 @@ def parse_page_update_timestamp(
             else:
                 delta = timedelta(days=amount)
             return (local_now - delta).astimezone(timezone.utc), line[:240]
+
         if re.search(r"(только что|just now|сейчас)", line, re.I):
             return local_now.astimezone(timezone.utc), line[:240]
 
@@ -110,7 +112,35 @@ def parse_page_update_timestamp(
                 parsed -= timedelta(days=1)
             return parsed.astimezone(timezone.utc), line[:240]
 
-    raise ValueError("Money Storage page did not expose a parseable update timestamp.")
+    raise ValueError("Page did not expose a parseable update timestamp.")
+
+
+OFFERS_URL = "https://storage.money/deals#tab-3"
+API_URL = "https://storage.money/public_deals/fetch?offset=0&limit=20&from=ECR&to=USDT"
+MAX_BODY_CHARS = 1_000_000
+
+
+def latest_offer_created_at(offers) -> datetime:
+    """Return the newest provider-supplied offer creation time."""
+    if not offers:
+        raise ValueError("Money Storage returned no offers with creation timestamps.")
+    timestamps = [offer.created_at for offer in offers]
+    if any(value.tzinfo is None for value in timestamps):
+        raise ValueError("Money Storage offer creation timestamp has no timezone.")
+    return max(value.astimezone(timezone.utc) for value in timestamps)
+
+
+def confirm_offer_freshness(offers, *, collected_at: datetime, max_age_seconds: int = 900) -> datetime:
+    """Fresh only when the newest offer was created within the last 15 minutes."""
+    if collected_at.tzinfo is None:
+        raise ValueError("Money Storage collection time must be timezone-aware.")
+    newest = latest_offer_created_at(offers)
+    age_seconds = (collected_at.astimezone(timezone.utc) - newest).total_seconds()
+    if age_seconds < 0:
+        raise ValueError("Money Storage newest offer creation time is in the future.")
+    if age_seconds > max_age_seconds:
+        raise ValueError("Money Storage newest offer is older than the 900-second freshness window.")
+    return newest
 
 
 class TransientMoneyStorageReadError(RuntimeError):
@@ -122,6 +152,7 @@ def parse_authenticated_payload(payload: Mapping[str, Any], observed_at: datetim
     if not isinstance(payload, Mapping) or payload.get("result") != "ok":
         raise ValueError("Money Storage did not return result=ok.")
     offers = parse_public_offers(payload)
+    newest_offer_created_at = confirm_offer_freshness(offers, collected_at=observed_at)
     quote = average_first_20_offer_rate(offers, observed_at=observed_at)
     rows = []
     for offer in offers[:20]:
@@ -139,6 +170,9 @@ def parse_authenticated_payload(payload: Mapping[str, Any], observed_at: datetim
         "observed_at": quote.observed_at.isoformat(),
         "offer_count": len(rows),
         "offers": rows,
+        "newest_offer_created_at": newest_offer_created_at.isoformat(),
+        "freshness_window_seconds": 900,
+        "freshness_confirmed": True,
         "commission_applied": False,
         "historical_data_saved": False,
     }
@@ -154,78 +188,91 @@ def fetch_from_authenticated_page(page) -> dict[str, Any]:
     ):
         raise RuntimeError("Authenticated page is not Money Storage Deals -> «Всем предлагают».")
 
-    page_meta = page.evaluate(
-        """() => {
-          const lines = (document.body ? document.body.innerText : "")
-            .split(/\\n/)
-            .map(line => line.trim())
-            .filter(line => line && /(обновл|updated|refresh|last update|время обнов|последн.*курс)/i.test(line))
-            .slice(0, 12);
-          const now = new Date();
-          return {
-            updateLines: lines,
-            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-            localNow: {
-              year: now.getFullYear(), month: now.getMonth() + 1, day: now.getDate(),
-              hour: now.getHours(), minute: now.getMinutes(), second: now.getSeconds()
-            }
-          };
-        }"""
-    )
-    page_updated_at, page_update_text = parse_page_update_timestamp(
-        page_meta.get("updateLines", []),
-        timezone_name=page_meta.get("timezone", ""),
-        browser_local_now=page_meta.get("localNow", {}),
-    )
-    observed_now = datetime.now(timezone.utc)
-    age_seconds = (observed_now - page_updated_at).total_seconds()
-    if age_seconds < -60:
-        raise RuntimeError("Money Storage page update timestamp is in the future.")
-    if age_seconds > 900:
-        raise RuntimeError("Money Storage page update timestamp is older than the 900-second source interval.")
+    runner_now = datetime.now(timezone.utc)
+    browser_now_ms = page.evaluate("() => Date.now()")
+    if not isinstance(browser_now_ms, (int, float)):
+        raise RuntimeError("Money Storage browser clock could not be read.")
+    browser_now = datetime.fromtimestamp(browser_now_ms / 1000, tz=timezone.utc)
+    clock_skew_seconds = abs((runner_now - browser_now).total_seconds())
+    if clock_skew_seconds > 5:
+        raise RuntimeError(
+            "Money Storage browser and cloud-runner clocks differ by more than 5 seconds."
+        )
 
+    # The Deals page itself requests this endpoint while rendering the offers tab.
+    # Reuse that authenticated response instead of issuing a second request that can
+    # trigger provider rate limits (HTTP 429).
     result = page.evaluate(
-        """async (url) => {
-          const response = await fetch(url, {
-            method: "GET",
-            headers: { "Accept": "application/json" },
-            credentials: "same-origin",
-            cache: "no-store",
-            redirect: "follow"
-          });
-          const finalUrl = new URL(response.url);
-          if (finalUrl.origin !== "https://storage.money") {
-            return { status: response.status, finalUrl: response.url, contentType: "", text: "", invalidOrigin: true };
+        """async () => {
+          const approved = url => {
+            try {
+              const u = new URL(url, location.href);
+              const q = u.searchParams;
+              return u.protocol === "https:"
+                && u.hostname === "storage.money"
+                && u.pathname === "/public_deals/fetch"
+                && q.getAll("offset").length === 1 && q.get("offset") === "0"
+                && q.getAll("limit").length === 1 && q.get("limit") === "20"
+                && q.getAll("from").length === 1 && q.get("from") === "ECR"
+                && q.getAll("to").length === 1 && q.get("to") === "USDT";
+            } catch (_) { return false; }
+          };
+          const deadline = Date.now() + 15000;
+          while (Date.now() < deadline) {
+            const captures = window.__moneyStorageOffersCaptures || [];
+            const captured = captures.find(item => item && (approved(item.finalUrl) || approved(item.requestUrl)));
+            if (captured) return captured;
+            await new Promise(resolve => setTimeout(resolve, 100));
           }
-          const declaredLength = Number(response.headers.get("content-length") || 0);
-          if (Number.isFinite(declaredLength) && declaredLength > 1000000) {
-            await response.body?.cancel();
-            return { status: response.status, finalUrl: response.url, contentType: "", text: "", tooLarge: true };
-          }
-          if (!response.body) {
-            return { status: response.status, finalUrl: response.url, contentType: "", text: "" };
-          }
-          const reader = response.body.getReader();
-          const chunks = [];
-          let total = 0;
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            total += value.byteLength;
-            if (total > 1000000) {
-              await reader.cancel();
-              return { status: response.status, finalUrl: response.url, contentType: "", text: "", tooLarge: true };
-            }
-            chunks.push(value);
-          }
-          const bytes = new Uint8Array(total);
-          let offset = 0;
-          for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
-          const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-          return { status: response.status, finalUrl: response.url, contentType: response.headers.get("content-type") || "", text };
+          const captures = window.__moneyStorageOffersCaptures || [];
+          return {
+            notCaptured: true,
+            observed: captures.slice(0, 12).map(item => {
+              try {
+                const u = new URL(item.finalUrl || item.requestUrl, location.href);
+                return {
+                  path: u.pathname,
+                  offset: u.searchParams.getAll("offset").slice(0, 2),
+                  limit: u.searchParams.getAll("limit").slice(0, 2),
+                  from: u.searchParams.getAll("from").slice(0, 2),
+                  to: u.searchParams.getAll("to").slice(0, 2),
+                  status: item.status
+                };
+              } catch (_) { return { path: "unparseable" }; }
+            })
+          };
         }""",
-        API_URL,
+        None,
     )
+    if result.get("notCaptured"):
+        observed = result.get("observed", [])
+        safe_summary = "; ".join(
+            "path=%s offset=%s limit=%s from=%s to=%s status=%s" % (
+                item.get("path", "?"), item.get("offset", []), item.get("limit", []),
+                item.get("from", []), item.get("to", []), item.get("status", "?")
+            )
+            for item in observed
+        )
+        raise RuntimeError(
+            "Money Storage page did not expose the exact approved offers request. "
+            + (safe_summary[:500] if safe_summary else "No endpoint responses were captured.")
+        )
+    request_url = urlparse(result.get("requestUrl") or result.get("finalUrl", ""))
+    request_query = parse_qs(request_url.query)
+    final_url = urlparse(result.get("finalUrl") or result.get("requestUrl", ""))
+    if (
+        request_url.scheme != "https"
+        or request_url.netloc.lower() != "storage.money"
+        or request_url.path != "/public_deals/fetch"
+        or request_query.get("offset") != ["0"]
+        or request_query.get("limit") != ["20"]
+        or request_query.get("from") != ["ECR"]
+        or request_query.get("to") != ["USDT"]
+        or final_url.scheme != "https"
+        or final_url.netloc.lower() != "storage.money"
+        or final_url.path != "/public_deals/fetch"
+    ):
+        raise RuntimeError("Captured Money Storage response did not match the approved offers endpoint.")
     if result.get("invalidOrigin"):
         raise RuntimeError("Money Storage read redirected outside the approved origin.")
     if result.get("tooLarge"):
@@ -246,10 +293,17 @@ def fetch_from_authenticated_page(page) -> dict[str, Any]:
         payload = json.loads(result["text"])
     except json.JSONDecodeError as exc:
         raise RuntimeError("Money Storage returned malformed JSON.") from exc
-    snapshot = parse_authenticated_payload(payload, observed_at=page_updated_at)
-    snapshot["page_updated_at"] = page_updated_at.isoformat()
-    snapshot["page_update_text"] = page_update_text
-    snapshot["page_timezone"] = page_meta.get("timezone")
+    if not isinstance(payload, Mapping) or payload.get("result") != "ok":
+        raise RuntimeError("Money Storage authenticated endpoint did not return result=ok.")
+
+    # A successful protected API response proves the browser session is
+    # authenticated even when the quote itself is stale. Preserve the encrypted
+    # session independently from quote freshness so the user need not repeat E-ID.
+    workspace = Path(os.environ.get("GITHUB_WORKSPACE", "."))
+    (workspace / "session-authenticated.txt").write_text("money_storage\\n", encoding="utf-8")
+
+    snapshot = parse_authenticated_payload(payload, observed_at=runner_now)
+    snapshot["browser_clock_skew_seconds"] = round(clock_skew_seconds, 3)
     return snapshot
 
 

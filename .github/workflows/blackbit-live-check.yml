@@ -1,0 +1,33 @@
+name: BlackBit live read-only validation
+
+on:
+  push:
+    branches:
+      - feat/integrated-arbitrage-automation-20261123
+    paths:
+      - "src/arbitrage_monitor/providers/blackbit.py"
+      - "scripts/validate_blackbit_live.py"
+      - ".github/workflows/blackbit-live-check.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: blackbit-live-validation-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate displayed ECR/USDT last_rate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Fetch and validate the public displayed rate
+        env:
+          PYTHONPATH: src
+        run: python scripts/validate_blackbit_live.py

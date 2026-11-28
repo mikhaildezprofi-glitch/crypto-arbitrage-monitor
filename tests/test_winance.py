@@ -7,6 +7,7 @@ from arbitrage_monitor.providers.winance import (
     WinanceQuoteError,
     parse_poll_seconds,
     parse_winance_response,
+    fetch_quote,
 )
 
 
@@ -55,6 +56,47 @@ class WinanceProviderTests(unittest.TestCase):
         self.assertEqual(quote.quote_currency, "USDT")
         self.assertEqual(quote.rate, Decimal("0.037335"))
         self.assertEqual(quote.observed_at, self.observed_at)
+
+    def test_rejects_unsuccessful_api_envelope(self):
+        payload = {
+            "currency_pairs": [
+                {"id": "18", "name": "ERUB/USDT", "rate": "0.037"},
+            ],
+            "result": "error",
+            "status": 500,
+        }
+        with self.assertRaises(WinanceQuoteError):
+            parse_winance_response(payload, self.observed_at)
+
+    def test_fetch_quote_requests_cache_revalidation(self):
+        import json
+        from unittest.mock import patch
+
+        payload_bytes = json.dumps(self.live_shape_payload()).encode()
+
+        class FakeResponse:
+            status = 200
+
+            def read(self):
+                return payload_bytes
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        with patch(
+            "arbitrage_monitor.providers.winance.urlopen",
+            return_value=FakeResponse(),
+        ) as mocked:
+            quote = fetch_quote(timeout_seconds=7)
+
+        request = mocked.call_args.args[0]
+        self.assertEqual(request.get_header("Cache-control"), "no-cache")
+        self.assertEqual(request.get_header("Pragma"), "no-cache")
+        self.assertEqual(quote.source_pair_id, "18")
+        self.assertEqual(quote.pair, "ERUB/USDT")
 
     def test_poll_interval_is_not_selected_by_default(self):
         self.assertIsNone(POLL_SECONDS)
@@ -131,7 +173,9 @@ class WinanceProviderTests(unittest.TestCase):
             "currency_pairs": [
                 {"id": "18", "name": "ERUB/USDT", "rate": "Infinity"},
                 {"id": "18", "name": "ERUB/USDT", "rate": "0.031"},
-            ]
+            ],
+            "result": "ok",
+            "status": 200,
         }
         quote = parse_winance_response(payload, self.observed_at)
         self.assertEqual(quote.rate, Decimal("0.031"))

@@ -102,7 +102,12 @@ def parse_order_book_rate(
 def _get_json(path: str, *, timeout_seconds: int) -> object:
     request = Request(
         f"{API_BASE_URL}{path}",
-        headers={"Accept": "application/json", "User-Agent": "CryptoArbitrageMonitor/0.1"},
+        headers={
+            "Accept": "application/json",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+            "User-Agent": "CryptoArbitrageMonitor/0.1",
+        },
     )
     try:
         with urlopen(request, timeout=timeout_seconds) as response:
