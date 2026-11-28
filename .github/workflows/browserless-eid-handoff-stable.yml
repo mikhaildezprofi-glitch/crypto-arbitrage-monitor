@@ -151,25 +151,50 @@ jobs:
             exit 1
           fi
           echo "CHROMIUM_PROFILE_SAVE_GUARD=ALL_THREE_TABS_AUTHENTICATED"
+          PROFILE_DIR="/tmp/eid-chromium-profile"
           PROFILE_ARCHIVE="${RUNNER_TEMP}/chromium-profile-money_storage.tar.gz"
           ENCRYPTED_PROFILE="${RUNNER_TEMP}/chromium-profile-money_storage.gpg"
-          # The complete encrypted profile carries cookies and site storage.
-          # Chromium session-restore files are optional and are not required
-          # to preserve authenticated website sessions across runners.
-          echo "CHROMIUM_AUTH_PROFILE_SAVE=STARTED"
-          # Do not carry machine-specific Chromium singleton locks into the
-          # next runner's encrypted profile cache.
-          rm -f -- /tmp/eid-chromium-profile/SingletonLock \
-            /tmp/eid-chromium-profile/SingletonCookie \
-            /tmp/eid-chromium-profile/SingletonSocket
-          tar -czf "$PROFILE_ARCHIVE" -C /tmp/eid-chromium-profile .
+          VERIFY_ARCHIVE="${RUNNER_TEMP}/chromium-profile-verify.tar.gz"
+          echo "CHROMIUM_PROFILE_SAVE_GUARD=ALL_THREE_TABS_AUTHENTICATED"
+          # The browser shell trap must have terminated Chromium before this step.
+          if pgrep -af '[c]hrome.*--user-data-dir=/tmp/eid-chromium-profile' >/dev/null; then
+            echo "CHROMIUM_PROFILE_SAVE_BLOCKED: Chromium is still running"
+            exit 1
+          fi
+          test -s "$PROFILE_DIR/Local State"
+          test -s "$PROFILE_DIR/Default/Preferences"
+          SESSIONS_DIR="$PROFILE_DIR/Default/Sessions"
+          if [ ! -d "$SESSIONS_DIR" ] || ! find "$SESSIONS_DIR" -maxdepth 1 -type f -name 'Session_*' -print -quit | grep -q . || ! find "$SESSIONS_DIR" -maxdepth 1 -type f -name 'Tabs_*' -print -quit | grep -q .; then
+            echo "CHROMIUM_SESSION_RESTORE_DATA_MISSING"
+            exit 1
+          fi
+          # Flush completed browser writes before producing the immutable snapshot.
+          sync
+          tar -czf "$PROFILE_ARCHIVE" -C "$PROFILE_DIR" .
+          tar -tzf "$PROFILE_ARCHIVE" > "${RUNNER_TEMP}/chromium-profile-file-list.txt"
+          if grep -Eq '(^/|(^|/)\.\.(/|$))' "${RUNNER_TEMP}/chromium-profile-file-list.txt"; then
+            echo "CHROMIUM_PROFILE_ARCHIVE_UNSAFE_PATH"
+            exit 1
+          fi
+          grep -q '^./Local State$' "${RUNNER_TEMP}/chromium-profile-file-list.txt"
+          grep -q '^./Default/Sessions/Session_' "${RUNNER_TEMP}/chromium-profile-file-list.txt"
+          grep -q '^./Default/Sessions/Tabs_' "${RUNNER_TEMP}/chromium-profile-file-list.txt"
           exec 3<<<"$CHROMIUM_PROFILE_PASSPHRASE"
           gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \
             --symmetric --cipher-algo AES256 --output "$ENCRYPTED_PROFILE" "$PROFILE_ARCHIVE"
           exec 3<&-
-          rm -f "$PROFILE_ARCHIVE"
           chmod 600 "$ENCRYPTED_PROFILE"
-          echo "CHROMIUM_PROFILE_CACHE=ENCRYPTED"
+          # Verify the encrypted payload can be decrypted and the exact tar archive survives.
+          exec 3<<<"$CHROMIUM_PROFILE_PASSPHRASE"
+          gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \
+            --output "$VERIFY_ARCHIVE" --decrypt "$ENCRYPTED_PROFILE"
+          exec 3<&-
+          cmp -s "$PROFILE_ARCHIVE" "$VERIFY_ARCHIVE"
+          tar -tzf "$VERIFY_ARCHIVE" >/dev/null
+          rm -f "$PROFILE_ARCHIVE" "$VERIFY_ARCHIVE" "${RUNNER_TEMP}/chromium-profile-file-list.txt"
+          chmod 600 "$ENCRYPTED_PROFILE"
+          echo "CHROMIUM_PROFILE_ARCHIVE_VALIDATED=YES"
+          echo "CHROMIUM_PROFILE_CACHE=ENCRYPTED_AND_VERIFIED"
 
       - name: Save encrypted Chromium profile cache
         if: steps.encrypt-profile.outcome == 'success'
