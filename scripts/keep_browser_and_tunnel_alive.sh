@@ -304,8 +304,8 @@ fi
 echo "STANDALONE_CHROMIUM_HEALTHCHECK=OK"
 
 if [ "$TARGET" = "all" ] || [ "$TARGET" = "browser_tabs_only" ] || [ "$TARGET" = "auth_only" ]; then
-  # Create exact destinations and actively recover tabs redirected to a
-  # homepage. Each URL gets up to four bounded navigation attempts.
+  # Remove tabs restored from the encrypted profile before opening the three
+  # required destinations. A restored homepage must never count as a target.
   python3 - <<'PY'
 import json, time, urllib.request
 from urllib.parse import quote, urlparse
@@ -318,15 +318,18 @@ urls = [
 def pages():
     with urllib.request.urlopen(base + "/json/list", timeout=5) as r:
         return [x for x in json.load(r) if x.get("type") == "page" and x.get("id")]
-def create(url):
-    req = urllib.request.Request(base + "/json/new?" + quote(url, safe=":/?=&"), method="PUT")
-    with urllib.request.urlopen(req, timeout=8) as r:
-        return json.load(r)["id"]
 def close(target_id):
     try:
         urllib.request.urlopen(base + "/json/close/" + quote(target_id, safe=""), timeout=3).read()
     except Exception:
         pass
+def create(url):
+    req = urllib.request.Request(base + "/json/new?" + quote(url, safe=":/?=&"), method="PUT")
+    with urllib.request.urlopen(req, timeout=8) as r:
+        return json.load(r)["id"]
+for old in pages():
+    close(old["id"])
+time.sleep(1)
 targets = {}
 for url in urls:
     target_id = None
@@ -335,8 +338,13 @@ for url in urls:
         if target_id:
             close(target_id)
         target_id = create(url)
-        time.sleep(3)
-        page = next((p for p in pages() if p["id"] == target_id), None)
+        page = None
+        for _ in range(10):
+            time.sleep(1)
+            page = next((p for p in pages() if p["id"] == target_id), None)
+            actual = urlparse(page.get("url", "")) if page else None
+            if actual and (actual.hostname, actual.path.rstrip("/") or "/", actual.fragment) == (wanted.hostname, wanted.path.rstrip("/") or "/", wanted.fragment):
+                break
         actual = urlparse(page.get("url", "")) if page else None
         if actual and (actual.hostname, actual.path.rstrip("/") or "/", actual.fragment) == (wanted.hostname, wanted.path.rstrip("/") or "/", wanted.fragment):
             print(f"STARTUP_TAB_READY url={url} attempt={attempt} target_id={target_id}", flush=True)
@@ -345,12 +353,168 @@ for url in urls:
         print(f"STARTUP_TAB_REDIRECT_RECOVERY url={url} attempt={attempt} actual={page.get('url','<missing>') if page else '<missing>'}", flush=True)
     else:
         raise SystemExit(f"STARTUP_TAB_NAVIGATION_FAILED_AFTER_4_ATTEMPTS url={url}")
-if len(set(targets.values())) != 3:
-    raise SystemExit("STARTUP_TAB_TARGET_IDS_NOT_UNIQUE")
+time.sleep(2)
+live = {p["id"]: p for p in pages()}
+if len(set(targets.values())) != 3 or not set(targets.values()).issubset(live):
+    raise SystemExit("STARTUP_TAB_TARGET_IDS_NOT_UNIQUE_OR_MISSING")
+for url, target_id in targets.items():
+    wanted = urlparse(url)
+    actual = urlparse(live[target_id].get("url", ""))
+    if (actual.hostname, actual.path.rstrip("/") or "/", actual.fragment) != (wanted.hostname, wanted.path.rstrip("/") or "/", wanted.fragment):
+        raise SystemExit(f"STARTUP_TAB_FINAL_DESTINATION_MISMATCH expected={url} actual={live[target_id].get('url','')}")
 print("SHARED_CHROMIUM_THREE_TARGET_TABS=VERIFIED")
 print("SHARED_CHROMIUM_DISTINCT_TARGET_IDS=3")
 PY
 fi
+
+# All three collectors attach to separate tabs in this one Chromium process.
+if [ "$TARGET" = "all" ]; then
+  MONEY_STORAGE_STATUS_FILE=/tmp/money-storage-status \
+    python3 scripts/money_storage_chromium_bridge.py >/tmp/money-storage-browser.log 2>&1 &
+  MONEY_PID=$!
+  SBERKASSA_STATUS_FILE=/tmp/sberkassa-sell-status \
+    python3 scripts/sberkassa_chromium_probe.py >/tmp/sberkassa-sell-browser.log 2>&1 &
+  SBERKASSA_SELL_PID=$!
+  SBERKASSA_EXCHANGE_STATUS_FILE=/tmp/sberkassa-exchange-status \
+    python3 scripts/sberkassa_exchange_chromium_probe.py >/tmp/sberkassa-exchange-browser.log 2>&1 &
+  SBERKASSA_EXCHANGE_PID=$!
+  BRIDGE_PID="$MONEY_PID $SBERKASSA_SELL_PID $SBERKASSA_EXCHANGE_PID"
+  echo "CHROMIUM_SINGLE_PROCESS=YES PID=$BROWSER_PID"
+  echo "CHROMIUM_SHARED_PROFILE=YES"
+  echo "CHROMIUM_EXPECTED_TABS=3"
+elif [ "$TARGET" = "browser_tabs_only" ]; then
+  echo "BROWSER_TABS_ONLY=YES; quote collectors are disabled"
+  BRIDGE_PID=""
+elif [ "$TARGET" = "auth_only" ]; then
+  echo "THREE_TAB_AUTH_THEN_COLLECT=YES"
+  if [ "${COLLECTION_EVENT_NAME:-}" = "schedule" ]; then
+    SHARED_AUTH_TIMEOUT_SECONDS=120 SHARED_AUTH_STATUS_FILE=/tmp/shared-browser-auth-status \
+      python3 scripts/shared_browser_auth_probe.py >/tmp/shared-browser-auth.log 2>&1 &
+    echo "SCHEDULED_SESSION_CHECK=NONINTERACTIVE_120_SECONDS"
+  else
+    SHARED_AUTH_TIMEOUT_SECONDS=1800 SHARED_AUTH_STATUS_FILE=/tmp/shared-browser-auth-status \
+      python3 scripts/shared_browser_auth_probe.py >/tmp/shared-browser-auth.log 2>&1 &
+  fi
+  BRIDGE_PID=$!
+elif [ "$TARGET" = "money_storage" ] && [ "$INSPECT_CURRENCY_FORM" = "true" ]; then
+  MONEY_STORAGE_FORM_INSPECTION=1 python3 "$BRIDGE_SCRIPT" >/tmp/eid-browser.log 2>&1 &
+elif [ "$TARGET" = "sberkassa" ] && [ "$COLLECTION_EVENT_NAME" = "push" ]; then
+  # Push-triggered test uses the previously saved session only. If it
+  # expired, fail closed instead of waiting for a manual login.
+  SBERKASSA_NONINTERACTIVE=1 python3 "$BRIDGE_SCRIPT" >/tmp/eid-browser.log 2>&1 &
+else
+  # Default Money Storage mode is the original authenticated, read-only
+  # quote capture. Access-only diagnostics require an explicit input.
+  python3 "$BRIDGE_SCRIPT" >/tmp/eid-browser.log 2>&1 &
+fi
+BRIDGE_PID=$!
+
+
+curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 \
+  https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
+  -o /tmp/cloudflared
+sudo install -m 0755 /tmp/cloudflared /usr/local/bin/cloudflared
+TUNNEL_PID=""
+
+cleanup_all() {
+  local shutdown_failed=0
+  # Stop each collector independently and preserve its own status/log result.
+  if [ "$TARGET" = "all" ] || { [ "$TARGET" = "auth_only" ] && [ "${AUTH_COLLECTIONS_STARTED:-0}" = "1" ]; }; then
+    for pid in "${MONEY_PID:-}" "${SBERKASSA_SELL_PID:-}" "${SBERKASSA_EXCHANGE_PID:-}"; do
+      [ -n "$pid" ] && kill -TERM "$pid" 2>/dev/null || true
+    done
+    for pid in "${MONEY_PID:-}" "${SBERKASSA_SELL_PID:-}" "${SBERKASSA_EXCHANGE_PID:-}"; do
+      [ -n "$pid" ] && wait "$pid" 2>/dev/null || true
+    done
+  else
+    if [ -n "${BRIDGE_PID:-}" ]; then
+      kill -TERM "$BRIDGE_PID" 2>/dev/null || true
+      wait "$BRIDGE_PID" 2>/dev/null || true
+    fi
+  fi
+
+  # Chromium is multi-process. Stop its dedicated process group, not just
+  # the browser leader, or renderer/GPU children can retain the profile lock.
+  kill -TERM -- "-$BROWSER_PID" 2>/dev/null || true
+  for attempt in $(seq 1 30); do
+    if ! kill -0 -- "-$BROWSER_PID" 2>/dev/null; then break; fi
+    sleep 1
+  done
+  if kill -0 -- "-$BROWSER_PID" 2>/dev/null; then
+    echo "CHROMIUM_GRACEFUL_SHUTDOWN_TIMEOUT=YES"
+    kill -KILL -- "-$BROWSER_PID" 2>/dev/null || true
+    shutdown_failed=1
+  fi
+  wait "$BROWSER_PID" 2>/dev/null || true
+  for attempt in $(seq 1 10); do
+    if ! pgrep -af '[c]hrome.*--user-data-dir=/tmp/eid-chromium-profile' >/dev/null; then break; fi
+    sleep 1
+  done
+  if pgrep -af '[c]hrome.*--user-data-dir=/tmp/eid-chromium-profile' >/dev/null; then
+    echo "CHROMIUM_PROFILE_PROCESS_REMAINS=YES"
+    pgrep -af '[c]hrome.*--user-data-dir=/tmp/eid-chromium-profile' || true
+    shutdown_failed=1
+  else
+    printf '%s\\n' "CHROMIUM_CLOSED_AND_PROFILE_FLUSHED" > chromium-profile-shutdown.txt
+    sync
+    echo "CHROMIUM_PROFILE_SHUTDOWN_VERIFIED=YES"
+  fi
+
+  if [ -n "${TUNNEL_PID:-}" ]; then
+    kill -TERM "$TUNNEL_PID" 2>/dev/null || true
+    wait "$TUNNEL_PID" 2>/dev/null || true
+  fi
+  cleanup
+  if [ "$shutdown_failed" -ne 0 ]; then return 1; fi
+}
+trap cleanup_all EXIT
+
+TUNNEL_URL=""
+if [ -n "$CLOUDFLARE_TUNNEL_TOKEN" ]; then
+  TUNNEL_URL="https://$CLOUDFLARE_TUNNEL_HOSTNAME"
+  cloudflared tunnel --no-autoupdate run --token "$CLOUDFLARE_TUNNEL_TOKEN" >/tmp/cloudflared.log 2>&1 &
+  TUNNEL_PID=$!
+  echo "CLOUDFLARE_NAMED_TUNNEL_START=YES"
+else
+  echo "CLOUDFLARE_NAMED_TUNNEL_NOT_CONFIGURED; using temporary Quick Tunnel fallback"
+  for tunnel_attempt in 1 2 3; do
+    : > /tmp/cloudflared.log
+    cloudflared tunnel --no-autoupdate --url http://127.0.0.1:8080 >/tmp/cloudflared.log 2>&1 &
+    TUNNEL_PID=$!
+    for i in $(seq 1 60); do
+      TUNNEL_URL="$(grep -Eo 'https://[a-zA-Z0-9.-]+\.trycloudflare\.com' /tmp/cloudflared.log | head -n 1 || true)"
+      if [ -n "$TUNNEL_URL" ]; then break; fi
+      if ! kill -0 "$TUNNEL_PID" 2>/dev/null; then break; fi
+      sleep 2
+    done
+    if [ -n "$TUNNEL_URL" ]; then
+      echo "CLOUDFLARE_QUICK_TUNNEL_CREATED attempt=$tunnel_attempt"
+      break
+    fi
+    wait "$TUNNEL_PID" 2>/dev/null || true
+    TUNNEL_PID=""
+    if grep -Eq 'status 429|HTTP 429| 429:' /tmp/cloudflared.log; then
+      if [ "$tunnel_attempt" -lt 3 ]; then
+        BACKOFF_SECONDS=$((tunnel_attempt * 30))
+        echo "CLOUDFLARE_QUICK_TUNNEL_RATE_LIMITED retry=$((tunnel_attempt + 1))/3 backoff_seconds=$BACKOFF_SECONDS"
+        sleep "$BACKOFF_SECONDS"
+        continue
+      fi
+      echo "CLOUDFLARE_QUICK_TUNNEL_RATE_LIMIT_EXHAUSTED"
+      tail -n 100 /tmp/cloudflared.log
+      exit 1
+    fi
+    echo "CLOUDFLARED_EXITED_BEFORE_TUNNEL_URL attempt=$tunnel_attempt"
+    tail -n 100 /tmp/cloudflared.log
+    exit 1
+  done
+fi
+if [ -z "$TUNNEL_URL" ]; then
+  echo "TUNNEL_URL_NOT_CREATED"
+  tail -n 100 /tmp/cloudflared.log
+  exit 1
+fi
+
 PUBLIC_OK=""
 for i in $(seq 1 90); do
   CODE="$(curl -sS --connect-timeout 8 --max-time 15 -o /dev/null -w '%{http_code}' "$TUNNEL_URL/$ACCESS_TOKEN/token-vnc.html" || true)"
