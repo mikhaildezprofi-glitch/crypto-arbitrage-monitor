@@ -383,21 +383,49 @@ sudo install -m 0755 /tmp/cloudflared /usr/local/bin/cloudflared
 TUNNEL_PID=""
 
 cleanup_all() {
-  # Stop Chromium first and wait for it to flush profile databases
-  # before the following workflow step encrypts the profile.
+  local shutdown_failed=0
+  # Stop each collector independently and preserve its own status/log result.
   if [ "$TARGET" = "all" ] || { [ "$TARGET" = "auth_only" ] && [ "${AUTH_COLLECTIONS_STARTED:-0}" = "1" ]; }; then
-    kill -TERM "${MONEY_PID:-}" "${SBERKASSA_SELL_PID:-}" "${SBERKASSA_EXCHANGE_PID:-}" 2>/dev/null || true
-    wait "${MONEY_PID:-}" 2>/dev/null || true
-    wait "${SBERKASSA_SELL_PID:-}" 2>/dev/null || true
-    wait "${SBERKASSA_EXCHANGE_PID:-}" 2>/dev/null || true
+    for pid in "${MONEY_PID:-}" "${SBERKASSA_SELL_PID:-}" "${SBERKASSA_EXCHANGE_PID:-}"; do
+      [ -n "$pid" ] && kill -TERM "$pid" 2>/dev/null || true
+    done
+    for pid in "${MONEY_PID:-}" "${SBERKASSA_SELL_PID:-}" "${SBERKASSA_EXCHANGE_PID:-}"; do
+      [ -n "$pid" ] && wait "$pid" 2>/dev/null || true
+    done
   else
-    kill -TERM "${BRIDGE_PID:-}" 2>/dev/null || true
-    wait "${BRIDGE_PID:-}" 2>/dev/null || true
+    if [ -n "${BRIDGE_PID:-}" ]; then
+      kill -TERM "$BRIDGE_PID" 2>/dev/null || true
+      wait "$BRIDGE_PID" 2>/dev/null || true
+    fi
   fi
-  kill -TERM "$BROWSER_PID" "$TUNNEL_PID" 2>/dev/null || true
+
+  # Give Chromium time to close SQLite/WAL databases and write Session_* / Tabs_*.
+  kill -TERM "$BROWSER_PID" 2>/dev/null || true
+  for attempt in $(seq 1 30); do
+    if ! kill -0 "$BROWSER_PID" 2>/dev/null; then break; fi
+    sleep 1
+  done
+  if kill -0 "$BROWSER_PID" 2>/dev/null; then
+    echo "CHROMIUM_GRACEFUL_SHUTDOWN_TIMEOUT=YES"
+    kill -KILL "$BROWSER_PID" 2>/dev/null || true
+    shutdown_failed=1
+  fi
   wait "$BROWSER_PID" 2>/dev/null || true
-  wait "$TUNNEL_PID" 2>/dev/null || true
+  if pgrep -af '[c]hrome.*--user-data-dir=/tmp/eid-chromium-profile' >/dev/null; then
+    echo "CHROMIUM_PROFILE_PROCESS_REMAINS=YES"
+    shutdown_failed=1
+  else
+    printf '%s\n' "CHROMIUM_CLOSED_AND_PROFILE_FLUSHED" > chromium-profile-shutdown.txt
+    sync
+    echo "CHROMIUM_PROFILE_SHUTDOWN_VERIFIED=YES"
+  fi
+
+  if [ -n "${TUNNEL_PID:-}" ]; then
+    kill -TERM "$TUNNEL_PID" 2>/dev/null || true
+    wait "$TUNNEL_PID" 2>/dev/null || true
+  fi
   cleanup
+  if [ "$shutdown_failed" -ne 0 ]; then return 1; fi
 }
 trap cleanup_all EXIT
 
