@@ -53,7 +53,7 @@ Starting capital is a runtime setting and has not been fixed at 1000 USDT. All f
 
 ## Collection and safety
 
-- The common collector requires all five keys by default: `money_storage`, `blackbit`, `winance`, `sberkassa_sell`, and `sberkassa_exchange`.
+- The common collector requires all five keys by default: `money_storage`, `blackbit`, `winance`, `sberkassa_sell`, and `sberkassa_exchange`. It blocks non-GET quote requests for Money Storage and Sberkassa and fails closed when a quote method is not confirmed GET.
 - Each cycle is independent. A failed refresh makes that source unavailable for the cycle. Never backfill from an earlier snapshot or cache.
 - The four-source diagnostic workflow intentionally ends in RUB. It must never report final USDT, profit, ROI, or a completed arbitrage route.
 - CAPTCHA, E-ID, MFA, Cloudflare challenges, and device binding are not bypassed. A valid saved session may be reused; if the provider rejects it, automated collection stops safely and reports authentication required.
@@ -66,26 +66,26 @@ Implemented:
 - Decimal-based route calculation with explicit fee validation and stale/future quote rejection.
 - Read-only BlackBit and Winance public API adapters.
 - Money Storage authenticated page-response capture and normalized snapshot validation.
-- Sberkassa ERUB -> RUB offer parsing, first-20 `back_rate` average, and 15-minute `create_time` freshness helper.
+- Sberkassa ERUB -> RUB offer parsing, first-20 `back_rate` average (or all available when fewer than 20), and 15-minute `create_time` freshness helper.
 - Sberkassa browser diagnostics that separately inspect `/deals#tab-3` and `/exchange`.
-- A common five-key quote collector that records per-source errors and never substitutes old quotes.
+- A common five-key quote collector that records per-source errors, rejects stale/missing quotes, and now connects the full five-step Decimal calculator to a normalized 1 USDT pre-fee estimate.
 - Encrypted Chromium profile persistence, session-first browser startup, and a supervised E-ID fallback.
 - Consolidated operating rules in [docs/OPERATIONS_STATUS.md](docs/OPERATIONS_STATUS.md).
 
-Live validation status (2026-11-26):
-- Money Storage: encrypted Chromium profile restored and decrypted; three independent fresh-runner processes each read 20 authenticated USDT -> ECR offers and passed the 900-second `create_time` freshness check (workflow run `45688839011`). No repeated E-ID handoff was needed for this verification.
+Historical live validation evidence (2026-11-25 to 2026-11-26; fresh confirmation still required after the new GET-only guards):
+- Money Storage: encrypted Chromium profile restored and decrypted; three independent fresh-runner processes each read 20 authenticated USDT -> ECR offers and passed the 900-second `create_time` freshness check (workflow run `45688839011`). The new quote-endpoint GET-only guard must be confirmed by a fresh run.
 - BlackBit: live public API validation passed (workflow run `45690240533`). Pair ID `6`, displayed `last_rate` `1.311`, retrieved at `2026-11-25T19:57:32Z`. The endpoint exposes no provider quote timestamp, so freshness is based on a live HTTPS retrieval with `Cache-Control: no-cache`; the quote remains indicative only.
 - Winance: live public API validation passed (workflow run `45690618669`). Pair ID `18`, ERUB/USDT displayed rate `0.032728`, retrieved at `2026-11-25T19:59:57Z`. The endpoint exposes no quote timestamp, so freshness is based on live HTTPS retrieval with `Cache-Control: no-cache`; this does not imply execution certainty.
-- Sberkassa ERUB -> RUB: live direction, first-20 `back_rate` average, and 15-minute `create_time` freshness were validated in the 2026-11-25 read-only run.
+- Sberkassa ERUB -> RUB: a 2026-11-25 read-only run validated direction, `back_rate` averaging, and `create_time` freshness. The new GET-only request guard and 1-to-20 offer rule still require a fresh live confirmation.
 - Sberkassa RUB -> USDT: a snapshot provider and validation tests exist, but the live displayed numeric field and independent successful-refresh freshness signal still require confirmation.
-- One integrated five-source report workflow, notification destination, and measured free-runner cost are not complete.
+- The five-source workflow and normalized pre-fee route calculation are implemented and unit-tested, but no end-to-end live five-source run has passed. Notification destination, Oracle deployment, and measured free-runner cost remain open.
 - Recurring hourly schedule remains disabled until all sources are validated and free-runtime cost is demonstrated.
 
 ## Intended schedule after validation
 
 Hourly, 09:00 through 02:00 Astana time (Asia/Almaty, UTC+5), including both endpoints: 18 runs/day. Equivalent GitHub Actions cron: `0 4-21 * * *` UTC.
 
-Each report must show all five route legs, direction, rate, UTC collection time, source freshness/status, and the reason for every unavailable source. A route estimate is permitted only when all five quotes are fresh and valid. With temporary 0% fee defaults it is pre-fee only; net profit and ROI require manual fee configuration. Otherwise the route is unavailable.
+Each report must show all five route legs, direction, rate, UTC collection time, source freshness/status, and the reason for every unavailable source. A route estimate is permitted only when all five quotes are fresh and valid. With temporary 0% fee defaults it is pre-fee only. A normalized pre-fee ROI may be shown per 1 USDT basis; net profit and net ROI require manual fee configuration. Otherwise the route is unavailable.
 
 ## Tests
 
@@ -101,3 +101,10 @@ PYTHONPATH=src python -m unittest discover -s tests -v
 - `CHROMIUM_PROFILE_PASSPHRASE` (GitHub Actions secret; never place its value in source control or logs)
 - `CLOUDFLARE_TUNNEL_TOKEN` (optional GitHub Actions secret for a stable named Cloudflare Tunnel; recommended after Quick Tunnel HTTP 429 errors)
 - `CLOUDFLARE_TUNNEL_HOSTNAME` (GitHub Actions repository variable; the public hostname configured in the named tunnel to route to `http://127.0.0.1:8080`)
+
+## Current integration caveats (2026-11-28)
+
+- The browser workflow currently opens three protected tabs. BlackBit and Winance are fetched through their public HTTPS GET APIs. This is more lightweight than five browser tabs but differs from the original five-tab requirement; resolve this explicitly before merging PR #34.
+- The integrated collection workflow is manual-only. It requires the authenticated encrypted Chromium profile and current-run snapshots from all three protected browser sources. A complete end-to-end live run has not yet been performed after the new read-only guards.
+- Money Storage and Sberkassa quote requests are GET-only. Non-GET requests are blocked and not replayed. If the provider's current UI requires POST for its quote feed, the collector will fail closed.
+- The route result is normalized to 1 USDT and labelled pre-fee. It is not based on a user-selected starting capital and is not net profit.

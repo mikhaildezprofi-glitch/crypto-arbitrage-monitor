@@ -11,11 +11,30 @@ This file consolidates the agreed project rules and the verified implementation 
 - All five route-fee defaults are temporarily `0%` during collector development. This is a placeholder, not a claim about actual provider fees. Ignore provider-displayed commissions. After all collectors work, configure manual fees in the calculator. Until then, report route results as pre-fee estimates, not net profit.
 - Starting capital is not fixed at 1000 USDT; it must remain configurable and no default amount is assumed.
 - Intended cadence remains hourly from 09:00 through 02:00 Asia/Astana (`0 4-21 * * *` UTC), but recurring workflows remain disabled until all five live sources are validated and free-runner cost is measured. Collection workflows are manual-only during development.
-- Live checks previously completed: Money Storage authenticated USDT -> ECR, BlackBit ECR -> USDT (indicative), Winance USDT -> ERUB, and Sberkassa ERUB -> RUB. Sberkassa RUB -> USDT still requires confirmation of the actual displayed rate and independent successful-refresh freshness signal.
+- Previous live checks exist for Money Storage, BlackBit, Winance, and Sberkassa ERUB -> RUB. The new GET-only enforcement for Money Storage and Sberkassa quote endpoints requires a fresh read-only run. Sberkassa RUB -> USDT still requires confirmation of the actual displayed rate and independent successful-refresh freshness signal.
 - Keep the four-source workflow only as an explicitly manual diagnostic that ends at RUB; it must not be presented as a complete arbitrage route.
 - The fixed-cache profile export workflow tied to an old branch/run was removed. The current shared-browser workflow owns profile persistence.
 
-## Operating rules
+
+## Current implementation and validation (2026-11-28)
+
+- `run_full_collection.py` now connects the five providers to `five_step_route` and the Decimal calculator. It evaluates only a complete set of five fresh quotes, uses a normalized 1 USDT basis (not an assumed starting capital), and reports a pre-fee estimate. It never labels the result net profit; the five 0% fee values are temporary placeholders.
+- The collection workflow now fails when browser collection fails, a required artifact is missing, any quote is stale, or route validation fails. It uploads a sanitized report for diagnosis even when route validation fails.
+- Money Storage's quote endpoint and Sberkassa's protected quote requests enforce GET-only collection. Non-GET requests are blocked; there is no POST fallback. If a provider requires POST to expose its read-only quote, that source remains unavailable.
+- Sberkassa ERUB -> RUB averages the first 20 correctly directed offers, or all available if fewer than 20. At least one valid offer is required, and the newest qualifying `create_time` must be within 900 seconds.
+- The authenticated-profile save gate no longer incorrectly depends on a quote-collection marker. It saves only after the shared authentication probe confirms all three protected tabs.
+- Runtime Python dependency is `websocket-client`, declared in `pyproject.toml` and verified by CI. Playwright is used only to download the Chromium binary in the browser workflow; the browser session is driven through CDP.
+- All remaining scripts have identified callers in workflows or imports. No further script deletion is justified by the usage audit. The inactive `WINANCE_POLL_SECONDS` setting was removed because it did not control collection cadence; the external scheduler owns cadence.
+- Current browser workflow has three protected tabs: Money Storage, Sberkassa Deals, and Sberkassa Exchange. BlackBit and Winance use direct public HTTPS GET adapters, not browser tabs. This differs from the original five-tab design and must be explicitly accepted or changed before merge.
+- Unit tests and workflow lint passed on the preceding integration revision; the current revision is being revalidated after the final cleanup. No end-to-end live five-source collection has yet passed.
+- No Oracle VM deployment, recurring schedule, notification channel, or production collection has been enabled. The agreed schedule remains hourly 09:00-02:00 Asia/Astana, disabled until live acceptance and free-runtime measurement.
+- PR #34 remains open. Do not merge until live source behavior, the three-tab/five-tab architecture decision, and end-to-end route reporting are accepted.
+
+## Historical notes (superseded; retained for traceability)
+
+The sections below record earlier investigations and decisions. Where they conflict with the current decisions and implementation above, they are historical only. Use the current README and the current sections at the top of this document for active requirements.
+
+### Historical operating rules
 
 - Cloud-only development and execution. Do not use the phone, Termux, ADB, Polydev, or a local browser.
 - Free infrastructure only. Do not enable paid services, paid APIs, VPS instances, paid plans, or automatic paid fallbacks.
