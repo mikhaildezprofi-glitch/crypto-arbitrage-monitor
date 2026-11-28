@@ -10,7 +10,7 @@ from typing import Any, Mapping
 from ..models import Quote
 
 MONEY_STORAGE_PAGE_SIZE = 20
-MONEY_STORAGE_POLL_SECONDS = 900
+MONEY_STORAGE_FRESHNESS_SECONDS = 900
 
 
 @dataclass(frozen=True)
@@ -210,7 +210,7 @@ class MoneyStorageQuoteProvider:
 class MoneyStorageSnapshotQuoteProvider:
     """Read one normalized snapshot produced by the authenticated browser bridge."""
 
-    def __init__(self, snapshot_path: str = "money-storage-current-offers.json", *, max_age_seconds: int = 900):
+    def __init__(self, snapshot_path: str = "money-storage-current-offers.json", *, max_age_seconds: int = MONEY_STORAGE_FRESHNESS_SECONDS):
         if max_age_seconds <= 0:
             raise ValueError("max_age_seconds must be positive.")
         self.snapshot_path = snapshot_path

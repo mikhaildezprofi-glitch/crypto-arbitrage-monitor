@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from arbitrage_monitor.providers.money_storage import (
     MONEY_STORAGE_PAGE_SIZE,
-    MONEY_STORAGE_POLL_SECONDS,
+    MONEY_STORAGE_FRESHNESS_SECONDS,
     MoneyStorageQuoteProvider,
     average_first_20_offer_rate,
     parse_public_offer,
@@ -113,7 +113,7 @@ class MoneyStorageParserTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "no USDT/ECR offers"):
             average_first_20_offer_rate([], observed_at=datetime(2026, 11, 16, 12, 0, tzinfo=timezone.utc))
 
-    def test_money_storage_polling_interval_is_15_minutes(self):
+    def test_money_storage_offer_freshness_window_is_15_minutes(self):
         self.assertEqual(MONEY_STORAGE_POLL_SECONDS, 900)
         self.assertEqual(MONEY_STORAGE_PAGE_SIZE, 20)
 

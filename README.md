@@ -97,7 +97,10 @@ PYTHONPATH=src python -m unittest discover -s tests -v
 
 - `BLACKBIT_API_BASE_URL` (default: `https://blackbit.exchange/site`)
 - `WINANCE_API_URL` (default: `https://winance.exchange/site/currency_pairs`)
-- `QUOTE_MAX_AGE_SECONDS` (must be explicitly selected after the polling cadence is chosen)
+- `QUOTE_MAX_AGE_SECONDS` (default `900` in the manual integrated workflow)
+- `MONEY_STORAGE_SNAPSHOT_PATH` (default `money-storage-current-offers.json`)
+- `SBERKASSA_SELL_SNAPSHOT_PATH` (default `sberkassa-current-inspection.json`)
+- `SBERKASSA_EXCHANGE_SNAPSHOT_PATH` (default `sberkassa-exchange-inspection.json`)
 - `CHROMIUM_PROFILE_PASSPHRASE` (GitHub Actions secret; never place its value in source control or logs)
 - `CLOUDFLARE_TUNNEL_TOKEN` (optional GitHub Actions secret for a stable named Cloudflare Tunnel; recommended after Quick Tunnel HTTP 429 errors)
 - `CLOUDFLARE_TUNNEL_HOSTNAME` (GitHub Actions repository variable; the public hostname configured in the named tunnel to route to `http://127.0.0.1:8080`)

@@ -14,6 +14,7 @@ from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo
 
 from arbitrage_monitor.providers.money_storage import (
+    MONEY_STORAGE_FRESHNESS_SECONDS,
     average_first_20_offer_rate,
     parse_public_offers,
 )
@@ -130,7 +131,7 @@ def latest_offer_created_at(offers) -> datetime:
     return max(value.astimezone(timezone.utc) for value in timestamps)
 
 
-def confirm_offer_freshness(offers, *, collected_at: datetime, max_age_seconds: int = 900) -> datetime:
+def confirm_offer_freshness(offers, *, collected_at: datetime, max_age_seconds: int = MONEY_STORAGE_FRESHNESS_SECONDS) -> datetime:
     """Fresh only when the newest offer was created within the last 15 minutes."""
     if collected_at.tzinfo is None:
         raise ValueError("Money Storage collection time must be timezone-aware.")
@@ -171,7 +172,7 @@ def parse_authenticated_payload(payload: Mapping[str, Any], observed_at: datetim
         "offer_count": len(rows),
         "offers": rows,
         "newest_offer_created_at": newest_offer_created_at.isoformat(),
-        "freshness_window_seconds": 900,
+        "freshness_window_seconds": MONEY_STORAGE_FRESHNESS_SECONDS,
         "freshness_confirmed": True,
         "commission_applied": False,
         "historical_data_saved": False,
