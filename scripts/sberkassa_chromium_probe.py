@@ -843,10 +843,10 @@ def main() -> int:
                     "to": "RUB",
                     "status": 200,
                 }
-                if request != expected_request or len(records) < 20:
+                if request != expected_request or not records:
                     STATUS_FILE.write_text("SBERKASSA_CAPTURE_FAILED", encoding="utf-8")
                     print(
-                        "SBERKASSA_OFFERS_VALIDATION_FAILED request_ok=%s records=%s required=20"
+                        "SBERKASSA_OFFERS_VALIDATION_FAILED request_ok=%s records=%s required_at_least=1"
                         % (request == expected_request, len(records)),
                         flush=True,
                     )

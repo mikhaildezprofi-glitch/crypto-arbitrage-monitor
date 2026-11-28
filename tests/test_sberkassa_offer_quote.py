@@ -64,12 +64,12 @@ class SberkassaOfferQuoteTests(unittest.TestCase):
         self.assertEqual(quote.rate, Decimal("25"))
         self.assertEqual(quote.matching_offer_count, 20)
 
-    def test_fewer_than_twenty_matching_offers_blocks_quote(self):
+    def test_fewer_than_twenty_matching_offers_average_all_available(self):
         rows = [offer("25", NOW.isoformat()) for _ in range(19)]
         quote = build_erub_rub_offer_quote({"offers": rows}, now=NOW)
-        self.assertFalse(quote.available)
-        self.assertIsNone(quote.rate)
-        self.assertEqual(quote.reason, "fewer_than_20_matching_offers")
+        self.assertTrue(quote.available)
+        self.assertEqual(quote.rate, Decimal("25"))
+        self.assertEqual(quote.selected_offer_count, 19)
 
     def test_invalid_back_rate_in_first_twenty_blocks_quote(self):
         rows = [offer("25", NOW.isoformat()) for _ in range(20)]

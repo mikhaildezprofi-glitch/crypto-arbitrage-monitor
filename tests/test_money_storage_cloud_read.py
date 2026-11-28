@@ -60,6 +60,7 @@ class MoneyStorageOfferFreshnessTests(unittest.TestCase):
                     return datetime.now(timezone.utc).timestamp() * 1000
                 if "__moneyStorageOffersCapture" in script:
                     return {
+                        "method": "GET",
                         "status": 200,
                         "finalUrl": "https://storage.money/public_deals/fetch?offset=0&limit=20&from=ECR&to=USDT",
                         "contentType": "application/json",
@@ -107,6 +108,7 @@ class MoneyStorageOfferFreshnessTests(unittest.TestCase):
                 if "__moneyStorageOffersCaptures" in script:
                     self.selection_script = script
                     return {
+                        "method": "GET",
                         "status": 200,
                         "finalUrl": "https://storage.money/public_deals/fetch?offset=0&limit=20&from=USDT&to=ECR",
                         "contentType": "application/json",
@@ -119,7 +121,7 @@ class MoneyStorageOfferFreshnessTests(unittest.TestCase):
             fetch_from_authenticated_page(page)
         self.assertIn('q.get("from") === "ECR"', page.selection_script)
         self.assertIn('q.get("to") === "USDT"', page.selection_script)
-        self.assertIn('captures.find(item => item && (approved(item.finalUrl) || approved(item.requestUrl)))', page.selection_script)
+        self.assertIn('captures.find(item => item && !item.blockedNonGet', page.selection_script)
 
     def test_newest_offer_within_15_minutes_confirms_freshness(self):
         offers = (

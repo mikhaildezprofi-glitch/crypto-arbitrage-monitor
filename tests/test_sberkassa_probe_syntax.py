@@ -54,6 +54,7 @@ class SberkassaProbeSyntaxTests(unittest.TestCase):
         self.assertIn('query.get("to", [""])[0] != "RUB"', source)
         self.assertIn('request_method != "GET"', source)
         self.assertIn('blocked_reason = "non_get_method"', source)
+        self.assertIn("if request.get(\"method\") is None", (project_root / "scripts" / "money_storage_cloud_read.py").read_text(encoding="utf-8"))
         self.assertIn("SBERKASSA_SCOPE_BLOCKED", source)
         self.assertNotIn("is_exchange", source)
         self.assertNotIn("exchange_rub_usdt", source)

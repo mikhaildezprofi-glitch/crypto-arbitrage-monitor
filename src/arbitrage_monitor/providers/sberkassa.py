@@ -169,12 +169,6 @@ def build_erub_rub_offer_quote(
     selected = matching[:MAX_OFFERS]
     if not selected:
         return SberkassaOfferQuote(None, False, freshest, 0, 0, "no_matching_erub_rub_offers")
-    if len(selected) < MAX_OFFERS:
-        return SberkassaOfferQuote(
-            None, freshest is not None, freshest, len(matching), len(selected),
-            "fewer_than_20_matching_offers",
-        )
-
     rates = [_parse_rate(row.get("back_rate")) for row in selected]
     if any(rate is None for rate in rates):
         return SberkassaOfferQuote(None, freshest is not None, freshest, len(matching), len(selected), "invalid_back_rate_in_first_20")
