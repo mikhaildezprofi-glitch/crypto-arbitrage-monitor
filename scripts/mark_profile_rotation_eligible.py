@@ -73,8 +73,7 @@ def main() -> int:
     if not eligible:
         print(f"PROFILE_ROTATION_ELIGIBLE=NO reason={reason}", flush=True)
         return 1
-    Path(args.marker).write_text(
-        "money_storage\\nsberkassa_deals\\nsberkassa_exchange\\n",
+    Path(args.marker).write_text("profile_rotation_eligible",
         encoding="utf-8",
     )
     print("PROFILE_ROTATION_ELIGIBLE=YES", flush=True)
