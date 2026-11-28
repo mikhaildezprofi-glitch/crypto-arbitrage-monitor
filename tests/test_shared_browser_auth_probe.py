@@ -61,6 +61,14 @@ class SharedBrowserAuthProbeTests(unittest.TestCase):
         state = self.state(challenge=True, moneyCurrencyFormReady=True)
         self.assertEqual(classify(("storage.money", "/deals"), state), "CHALLENGE_PENDING")
 
+    def test_homepage_after_eid_is_recognized_as_redirect_needing_navigation(self):
+        state = self.state(url="https://storage.money/")
+        self.assertEqual(classify(("storage.money", "/deals"), state), "POST_AUTH_REDIRECT_HOME")
+
+    def test_sberkassa_homepage_after_eid_is_recognized(self):
+        state = self.state(url="https://sberkassa.site/", bodyLength=160)
+        self.assertEqual(classify(("sberkassa.site", "/exchange"), state), "POST_AUTH_REDIRECT_HOME")
+
     def test_eid_redirect_is_reported_as_handoff(self):
         state = self.state(url="https://e-id.cards/identity/check")
         self.assertEqual(classify(("storage.money", "/deals"), state), "EID_HANDOFF_IN_PROGRESS")
