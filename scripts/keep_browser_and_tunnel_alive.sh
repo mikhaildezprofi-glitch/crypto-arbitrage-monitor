@@ -534,7 +534,7 @@ for i in $(seq 1 900); do
       AUTH_STATUS="$(cat /tmp/shared-browser-auth-status 2>/dev/null || echo WAITING_FOR_AUTH)"
       if [ "$AUTH_STATUS" = "ALL_THREE_TABS_AUTHENTICATED" ] && [ "${AUTH_COLLECTIONS_STARTED:-0}" != "1" ]; then
         cat /tmp/shared-browser-auth.log
-        EXPECTED_MARKERS="$(printf '%s\\n' money_storage sberkassa_deals sberkassa_exchange)"
+        EXPECTED_MARKERS="$(printf '%s\n' money_storage sberkassa_deals sberkassa_exchange)"
         ACTUAL_MARKERS="$(LC_ALL=C sort -u session-authenticated.txt)"
         if [ "$ACTUAL_MARKERS" != "$EXPECTED_MARKERS" ]; then
           echo "AUTH_COLLECTION_START_BLOCKED: authenticated tab marker set is incomplete"
