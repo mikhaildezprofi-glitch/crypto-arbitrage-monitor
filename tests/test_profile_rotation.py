@@ -6,7 +6,7 @@ from scripts.mark_profile_rotation_eligible import validate_profile_eligibility
 
 
 def valid_auth_marker():
-    return "money_storage\\nsberkassa_deals\\nsberkassa_exchange\\n"
+    return chr(10).join(("money_storage", "sberkassa_deals", "sberkassa_exchange", ""))
 
 
 def valid_cookie_report():
@@ -30,7 +30,7 @@ class ProfileRotationEligibilityTests(unittest.TestCase):
         )
 
     def test_missing_tab_authentication_blocks_rotation(self):
-        marker = "money_storage\\nsberkassa_deals\\n"
+        marker = chr(10).join(("money_storage", "sberkassa_deals", ""))
         eligible, reason = validate_profile_eligibility(marker, valid_cookie_report())
         self.assertFalse(eligible)
         self.assertEqual(reason, "THREE_TAB_AUTHENTICATION_NOT_CONFIRMED")
