@@ -332,6 +332,57 @@ def deals_form_diagnostics(cdp: CDP) -> dict:
     return result
 
 
+def select_approved_currency_pair(cdp: CDP) -> dict:
+    """Set Money Storage's native Tom Select filters to raw ECR -> USDT."""
+    result = cdp.evaluate(
+        """(() => {
+          const findSelect = name => {
+            const matches = Array.from(document.querySelectorAll("select"))
+              .filter(el => el.name === name || el.id === name);
+            return matches.length === 1 ? matches[0] : null;
+          };
+          const from = findSelect("select_from");
+          const to = findSelect("select_to");
+          if (!from || !to) return { ok: false, reason: "currency_select_not_unique" };
+          const fromControl = from.tomselect;
+          const toControl = to.tomselect;
+          if (!fromControl || !toControl
+              || typeof fromControl.setValue !== "function"
+              || typeof toControl.setValue !== "function") {
+            return { ok: false, reason: "tom_select_instance_missing" };
+          }
+          const hasOption = (control, value) =>
+            control.options && Object.prototype.hasOwnProperty.call(control.options, value);
+          if (!hasOption(fromControl, "ECR") || !hasOption(toControl, "USDT")) {
+            return { ok: false, reason: "required_currency_option_missing" };
+          }
+          window.__moneyStorageOffersCaptures = [];
+          fromControl.setValue("ECR", true);
+          toControl.setValue("USDT");
+          const selectedFrom = String(from.value || "").toUpperCase();
+          const selectedTo = String(to.value || "").toUpperCase();
+          const controlFrom = String(fromControl.getValue() || "").toUpperCase();
+          const controlTo = String(toControl.getValue() || "").toUpperCase();
+          const ok = selectedFrom === "ECR" && selectedTo === "USDT"
+            && controlFrom === "ECR" && controlTo === "USDT";
+          return {
+            ok, selectedFrom, selectedTo, controlFrom, controlTo,
+            reason: ok ? "selected" : "selection_verification_failed"
+          };
+        })()"""
+    )
+    if not isinstance(result, dict) or not result.get("ok"):
+        reason = result.get("reason", "unknown") if isinstance(result, dict) else "no_result"
+        raise RuntimeError("Money Storage currency selection failed closed: " + str(reason))
+    print(
+        "MONEY_STORAGE_CURRENCY_PAIR_SELECTED from=%s to=%s"
+        % (result.get("selectedFrom"), result.get("selectedTo")),
+        flush=True,
+    )
+    return result
+
+
+
 def click_official_eid_action(cdp: CDP) -> dict:
     """Open only a visible Money Storage link that explicitly targets e-id.cards."""
     result = cdp.evaluate(
@@ -760,6 +811,7 @@ def main() -> int:
 
             if storage_page == "deals":
                 try:
+                    select_approved_currency_pair(cdp)
                     snapshot = None
                     for attempt in range(1, 4):
                         try:
