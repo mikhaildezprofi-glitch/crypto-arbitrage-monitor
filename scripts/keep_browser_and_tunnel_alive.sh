@@ -358,7 +358,7 @@ elif [ "$TARGET" = "browser_tabs_only" ]; then
   echo "BROWSER_TABS_ONLY=YES; quote collectors are disabled"
   BRIDGE_PID=""
 elif [ "$TARGET" = "auth_only" ]; then
-  echo "THREE_TAB_AUTH_ONLY=YES; quote collectors are disabled"
+  echo "THREE_TAB_AUTH_THEN_COLLECT=YES"
   SHARED_AUTH_STATUS_FILE=/tmp/shared-browser-auth-status \
     python3 scripts/shared_browser_auth_probe.py >/tmp/shared-browser-auth.log 2>&1 &
   BRIDGE_PID=$!
@@ -385,7 +385,7 @@ TUNNEL_PID=""
 cleanup_all() {
   # Stop Chromium first and wait for it to flush profile databases
   # before the following workflow step encrypts the profile.
-  if [ "$TARGET" = "all" ]; then
+  if [ "$TARGET" = "all" ] || { [ "$TARGET" = "auth_only" ] && [ "${AUTH_COLLECTIONS_STARTED:-0}" = "1" ]; }; then
     kill -TERM "${MONEY_PID:-}" "${SBERKASSA_SELL_PID:-}" "${SBERKASSA_EXCHANGE_PID:-}" 2>/dev/null || true
     wait "${MONEY_PID:-}" 2>/dev/null || true
     wait "${SBERKASSA_SELL_PID:-}" 2>/dev/null || true
@@ -532,15 +532,50 @@ for i in $(seq 1 900); do
   elif [ "$TARGET" = "browser_tabs_only" ] || [ "$TARGET" = "auth_only" ]; then
     if [ "$TARGET" = "auth_only" ]; then
       AUTH_STATUS="$(cat /tmp/shared-browser-auth-status 2>/dev/null || echo WAITING_FOR_AUTH)"
-      if [ "$AUTH_STATUS" = "ALL_THREE_TABS_AUTHENTICATED" ]; then
+      if [ "$AUTH_STATUS" = "ALL_THREE_TABS_AUTHENTICATED" ] && [ "${AUTH_COLLECTIONS_STARTED:-0}" != "1" ]; then
         cat /tmp/shared-browser-auth.log
-        exit 0
+        EXPECTED_MARKERS="$(printf '%s\\n' money_storage sberkassa_deals sberkassa_exchange)"
+        ACTUAL_MARKERS="$(LC_ALL=C sort -u session-authenticated.txt)"
+        if [ "$ACTUAL_MARKERS" != "$EXPECTED_MARKERS" ]; then
+          echo "AUTH_COLLECTION_START_BLOCKED: authenticated tab marker set is incomplete"
+          exit 1
+        fi
+        cp session-authenticated.txt shared-session-authenticated-tabs.txt
+        echo "SHARED_AUTH_MARKERS_PRESERVED=YES"
+        echo "AUTH_COLLECTIONS_STARTING_IN_EXISTING_TABS=YES"
+        MONEY_STORAGE_STATUS_FILE=/tmp/money-storage-status \
+          python3 scripts/money_storage_chromium_bridge.py >/tmp/money-storage-browser.log 2>&1 &
+        MONEY_PID=$!
+        SBERKASSA_STATUS_FILE=/tmp/sberkassa-sell-status \
+          python3 scripts/sberkassa_chromium_probe.py >/tmp/sberkassa-sell-browser.log 2>&1 &
+        SBERKASSA_SELL_PID=$!
+        SBERKASSA_EXCHANGE_STATUS_FILE=/tmp/sberkassa-exchange-status \
+          python3 scripts/sberkassa_exchange_chromium_probe.py >/tmp/sberkassa-exchange-browser.log 2>&1 &
+        SBERKASSA_EXCHANGE_PID=$!
+        AUTH_COLLECTIONS_STARTED=1
+        echo "AUTH_COLLECTIONS_STARTED=3"
       fi
       if [ "$AUTH_STATUS" = "AUTH_TIMEOUT" ]; then
         cat /tmp/shared-browser-auth.log
         exit 1
       fi
-      if ! kill -0 "$BRIDGE_PID" 2>/dev/null; then
+      if [ "${AUTH_COLLECTIONS_STARTED:-0}" = "1" ]; then
+        MS_STATUS="$(cat /tmp/money-storage-status 2>/dev/null || echo WAITING)"
+        SS_STATUS="$(cat /tmp/sberkassa-sell-status 2>/dev/null || echo WAITING)"
+        SX_STATUS="$(cat /tmp/sberkassa-exchange-status 2>/dev/null || echo WAITING)"
+        echo "AUTH_THEN_COLLECTION_STATUS money_storage=$MS_STATUS sberkassa_deals=$SS_STATUS sberkassa_exchange=$SX_STATUS"
+        if [ "$MS_STATUS" = "OFFERS_READ_OK" ] && [ "$SS_STATUS" = "SBERKASSA_CAPTURE_COMPLETE" ] && [ "$SX_STATUS" = "SBERKASSA_EXCHANGE_INSPECTION_COMPLETE" ]; then
+          echo "AUTH_THEN_COLLECTION_COMPLETE=YES"
+          grep -hE '^(OFFERS_READ_OK|SBERKASSA_CAPTURE_|SBERKASSA_EXCHANGE_INSPECTION_COMPLETE=|SBERKASSA_EXCHANGE_DISPLAYED_RATE=|SBERKASSA_SESSION=|SBERKASSA_SESSION_AUTHENTICATED=)' /tmp/money-storage-browser.log /tmp/sberkassa-sell-browser.log /tmp/sberkassa-exchange-browser.log | tail -n 160 || true
+          exit 0
+        fi
+        case "$MS_STATUS" in OFFERS_READ_FAILED|AUTH_REQUIRED|AUTH_TIMEOUT) echo "MONEY_STORAGE_TAB_FAILED=$MS_STATUS"; cat /tmp/money-storage-browser.log; exit 1;; esac
+        case "$SS_STATUS" in SBERKASSA_CAPTURE_FAILED|SBERKASSA_CAPTURE_TIMEOUT|AUTH_TIMEOUT) echo "SBERKASSA_DEALS_TAB_FAILED=$SS_STATUS"; cat /tmp/sberkassa-sell-browser.log; exit 1;; esac
+        case "$SX_STATUS" in SBERKASSA_EXCHANGE_AUTH_TIMEOUT|SBERKASSA_EXCHANGE_SESSION_EXPIRED|SBERKASSA_EXCHANGE_SELECTION_TIMEOUT) echo "SBERKASSA_EXCHANGE_TAB_FAILED=$SX_STATUS"; cat /tmp/sberkassa-exchange-browser.log; exit 1;; esac
+        if ! kill -0 "$MONEY_PID" 2>/dev/null && [ "$MS_STATUS" != "OFFERS_READ_OK" ]; then cat /tmp/money-storage-browser.log; exit 1; fi
+        if ! kill -0 "$SBERKASSA_SELL_PID" 2>/dev/null && [ "$SS_STATUS" != "SBERKASSA_CAPTURE_COMPLETE" ]; then cat /tmp/sberkassa-sell-browser.log; exit 1; fi
+        if ! kill -0 "$SBERKASSA_EXCHANGE_PID" 2>/dev/null && [ "$SX_STATUS" != "SBERKASSA_EXCHANGE_INSPECTION_COMPLETE" ]; then cat /tmp/sberkassa-exchange-browser.log; exit 1; fi
+      elif ! kill -0 "$BRIDGE_PID" 2>/dev/null; then
         echo "SHARED_AUTH_PROBE_EXITED"
         cat /tmp/shared-browser-auth.log || true
         exit 1
