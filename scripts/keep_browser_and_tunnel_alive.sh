@@ -304,43 +304,53 @@ fi
 echo "STANDALONE_CHROMIUM_HEALTHCHECK=OK"
 
 if [ "$TARGET" = "all" ] || [ "$TARGET" = "browser_tabs_only" ] || [ "$TARGET" = "auth_only" ]; then
+  # Explicit CDP target creation avoids Chromium restoring old homepage tabs
+  # instead of honoring all command-line startup URLs.
   python3 - <<'PY'
 import json, time, urllib.request
-from urllib.parse import urlparse
-expected = {
-    ("storage.money", "/deals"),
-    ("sberkassa.site", "/deals"),
-    ("sberkassa.site", "/exchange"),
-}
-deadline = time.monotonic() + 30
-while time.monotonic() < deadline:
+from urllib.parse import quote, urlparse
+base = "http://127.0.0.1:9222"
+urls = [
+    "https://storage.money/deals#tab-3",
+    "https://sberkassa.site/deals#tab-3",
+    "https://sberkassa.site/exchange",
+]
+expected = {(urlparse(u).hostname, urlparse(u).path.rstrip("/") or "/", urlparse(u).fragment) for u in urls}
+def pages():
+    with urllib.request.urlopen(base + "/json/list", timeout=5) as r:
+        return [x for x in json.load(r) if x.get("type") == "page" and x.get("id")]
+# Discard tabs restored from the previous session, then create the exact three.
+for page in pages():
     try:
-        with urllib.request.urlopen("http://127.0.0.1:9222/json/list", timeout=3) as response:
-            targets = json.load(response)
-        found = {}
-        for item in targets:
-            if item.get("type") != "page" or not item.get("id") or not item.get("webSocketDebuggerUrl"):
-                continue
-            parsed = urlparse(item.get("url", ""))
-            key = (parsed.hostname, parsed.path.rstrip("/") or "/")
-            if key in expected:
-                found[key] = item
-        ids = [found[key]["id"] for key in expected if key in found]
-        if set(found) == expected and len(ids) == 3 and len(set(ids)) == 3:
-            print("SHARED_CHROMIUM_THREE_TARGET_TABS=VERIFIED")
-            for host, path in sorted(expected):
-                item = found[(host, path)]
-                print(f"SHARED_CHROMIUM_TAB={host}{path} TARGET_ID={item['id']} TITLE={item.get('title', '')[:100]}")
-            print("SHARED_CHROMIUM_DISTINCT_TARGET_IDS=3")
-            break
+        urllib.request.urlopen(base + "/json/close/" + quote(page["id"], safe=""), timeout=3).read()
     except Exception:
         pass
+for url in urls:
+    req = urllib.request.Request(base + "/json/new?" + quote(url, safe=":/#?=&"), method="PUT")
+    with urllib.request.urlopen(req, timeout=8) as r:
+        json.load(r)
+deadline = time.monotonic() + 45
+while time.monotonic() < deadline:
+    found = {}
+    for page in pages():
+        p = urlparse(page.get("url", ""))
+        key = (p.hostname, p.path.rstrip("/") or "/", p.fragment)
+        if key in expected:
+            found[key] = page
+    if set(found) == expected and len({found[k]["id"] for k in expected}) == 3:
+        print("SHARED_CHROMIUM_THREE_TARGET_TABS=VERIFIED")
+        for host, path, fragment in sorted(expected):
+            page = found[(host, path, fragment)]
+            print(f"SHARED_CHROMIUM_TAB={host}{path}#{fragment} TARGET_ID={page['id']} TITLE={page.get('title', '')[:100]}")
+        print("SHARED_CHROMIUM_DISTINCT_TARGET_IDS=3")
+        print("SHARED_CHROMIUM_STALE_TABS=CLOSED")
+        break
     time.sleep(1)
 else:
-    raise SystemExit("SHARED_CHROMIUM_THREE_DISTINCT_TARGET_TABS_NOT_FOUND")
+    actual = [(urlparse(x.get("url", "")).hostname, urlparse(x.get("url", "")).path, urlparse(x.get("url", "")).fragment) for x in pages()]
+    raise SystemExit("SHARED_CHROMIUM_EXPECTED_URLS_NOT_REACHED actual=" + repr(actual))
 PY
 fi
-
 # All three collectors attach to separate tabs in this one Chromium process.
 if [ "$TARGET" = "all" ]; then
   MONEY_STORAGE_STATUS_FILE=/tmp/money-storage-status \
