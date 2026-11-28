@@ -113,7 +113,7 @@ class SberkassaExchangeProbeTests(unittest.TestCase):
         self.assertNotIn("fetch(", source)
         self.assertNotIn("XMLHttpRequest", source)
 
-    def test_manual_scheduled_and_push_runs_use_shared_browser_tabs(self):
+    def test_manual_only_runs_use_shared_browser_tabs(self):
         root = Path(__file__).resolve().parents[1]
         caller = (root / ".github" / "workflows" / "sberkassa-exchange-inspection.yml").read_text(encoding="utf-8")
         shared = (root / "scripts" / "keep_browser_and_tunnel_alive.sh").read_text(encoding="utf-8")
@@ -129,10 +129,10 @@ class SberkassaExchangeProbeTests(unittest.TestCase):
         self.assertIn("SHARED_AUTH_DIAGNOSTICS_UPDATE:", shared)
         self.assertIn("tail -n 8 /tmp/shared-browser-auth.log", shared)
         self.assertIn("- all", caller)
-        self.assertIn("github.event_name == 'workflow_dispatch' && inputs.target", caller)
-        self.assertIn("github.event_name == 'schedule' && 'all'", caller)
-        self.assertIn("github.event_name == 'push' && 'browser_tabs_only'", caller)
-        self.assertIn("cron: '*/15 * * * *'", caller)
+        self.assertIn("workflow_dispatch:", caller)
+        self.assertIn("target: ${{ inputs.target || 'sberkassa_exchange' }}", caller)
+        self.assertNotIn("schedule:", caller)
+        self.assertNotIn("push:", caller)
         self.assertIn("browser_tabs_only", caller)
         self.assertIn('TARGET" = "browser_tabs_only"', shared)
         self.assertIn("BROWSER_TABS_ONLY_READY=YES", shared)
