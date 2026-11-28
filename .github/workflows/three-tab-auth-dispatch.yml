@@ -4,12 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: "Refresh/check the shared session, then collect all three read-only quotes in the same browser session"
+        description: "Refresh/check the shared session, or collect one read-only Money Storage quote using the Tom Select fix"
         required: true
         type: choice
         default: auth_only
         options:
           - auth_only
+          - money_storage_single
 
 permissions:
   contents: read
@@ -18,7 +19,7 @@ jobs:
   collect-three-sources:
     uses: mikhaildezprofi-glitch/crypto-arbitrage-monitor/.github/workflows/browserless-eid-handoff-stable.yml@feat/three-tab-auth-only-20261128
     with:
-      target: auth_only
-      source_ref: feat/three-tab-auth-only-20261128
+      target: ${{ inputs.target }}
+      source_ref: ${{ inputs.target == 'money_storage_single' && 'feat/money-storage-tom-select-auto-pair-20261128' || 'feat/three-tab-auth-only-20261128' }}
       inspect_currency_form: false
     secrets: inherit
