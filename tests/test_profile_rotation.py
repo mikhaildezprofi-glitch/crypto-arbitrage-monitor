@@ -5,6 +5,17 @@ import unittest
 from scripts.mark_profile_rotation_eligible import EXPECTED, validate_report
 
 
+def valid_cookie_report():
+    return {
+        "all_pages_have_session_alive": True,
+        "pages": {
+            "money_storage": {"target_found": True, "session_alive_present": True},
+            "sberkassa_deals": {"target_found": True, "session_alive_present": True},
+            "sberkassa_exchange": {"target_found": True, "session_alive_present": True},
+        },
+    }
+
+
 def valid_report():
     return {
         "overall_status": "ALL_THREE_COLLECTORS_SUCCESS",
@@ -36,14 +47,22 @@ def valid_report():
 
 class ProfileRotationEligibilityTests(unittest.TestCase):
     def test_all_three_validated_sources_are_eligible(self):
-        eligible, reason = validate_report(valid_report())
+        eligible, reason = validate_report(valid_report(), valid_cookie_report())
         self.assertTrue(eligible)
         self.assertEqual(reason, "ALL_THREE_SOURCES_VALIDATED")
+
+
+    def test_missing_session_alive_cookie_blocks_rotation(self):
+        cookies = valid_cookie_report()
+        cookies["pages"]["sberkassa_exchange"]["session_alive_present"] = False
+        eligible, reason = validate_report(valid_report(), cookies)
+        self.assertFalse(eligible)
+        self.assertEqual(reason, "SESSION_ALIVE_COOKIE_CHECK_FAILED")
 
     def test_partial_run_is_not_eligible(self):
         report = valid_report()
         report["overall_status"] = "PARTIAL_OR_FAILED"
-        eligible, reason = validate_report(report)
+        eligible, reason = validate_report(report, valid_cookie_report())
         self.assertFalse(eligible)
         self.assertEqual(reason, "OVERALL_STATUS_NOT_SUCCESS")
 
