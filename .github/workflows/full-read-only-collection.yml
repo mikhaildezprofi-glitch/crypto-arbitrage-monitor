@@ -1,6 +1,8 @@
 name: Full read-only five-source collection (one shared Chromium, three tabs)
 
 on:
+  schedule:
+    - cron: "0 4-21 * * *"
   workflow_dispatch:
     inputs:
       target:
@@ -22,7 +24,7 @@ permissions:
 
 concurrency:
   group: full-read-only-collection-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   shared-authenticated-browser:
