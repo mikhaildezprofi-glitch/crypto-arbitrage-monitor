@@ -49,6 +49,7 @@ class ThreeTabDiagnosticsTests(unittest.TestCase):
         self.assertIn("REFERENCE_PROFILE_REQUIRED=YES", reusable)
         self.assertIn("inputs.target != 'all' && hashFiles('session-authenticated.txt')", reusable)
         self.assertIn("profile-save-eligible.txt", reusable)
+        self.assertIn("if: always() && steps.encrypt-profile.outcome == 'success'", reusable)
         self.assertIn("Mark all-mode profile eligible for rotation", reusable)
         self.assertIn("Check session_alive cookies in the closed Chromium profile", reusable)
         self.assertIn("--cookie-report session-alive-cookie-check.json", reusable)
