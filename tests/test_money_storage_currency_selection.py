@@ -15,7 +15,8 @@ class MoneyStorageCurrencySelectionTests(unittest.TestCase):
         self.assertIn("from.tomselect", source)
         self.assertIn("to.tomselect", source)
         self.assertIn('fromControl.setValue("ECR", true)', source)
-        self.assertIn('toControl.setValue("USDT")', source)
+        self.assertIn('toControl.setValue("USDT", true)', source)
+        self.assertIn('from.dispatchEvent(new Event("change", { bubbles: true }))', source)
         self.assertIn('selectedFrom === "ECR" && selectedTo === "USDT"', source)
         self.assertIn('controlFrom === "ECR" && controlTo === "USDT"', source)
 
