@@ -207,7 +207,7 @@ def main() -> int:
             else:
                 states = {}
                 details = {}
-                for key, name in EXPECTED.items():
+                for key, (name, target_url) in EXPECTED.items():
                     item = by_id.get(bound_ids[key])
                     if not item:
                         states[name] = "TAB_TARGET_MISSING"
@@ -216,7 +216,6 @@ def main() -> int:
                         state = evaluate(item["webSocketDebuggerUrl"])
                         state_class = classify(key, state)
                         if state_class == "POST_AUTH_REDIRECT_HOME" and key not in redirected_tabs:
-                            target_url = EXPECTED[key][1]
                             navigate_to_expected(item["webSocketDebuggerUrl"], target_url)
                             redirected_tabs.add(key)
                             print(f"SHARED_AUTH_POST_EID_NAVIGATION tab={name} result=STARTED target={key[0]}{key[1]}", flush=True)
