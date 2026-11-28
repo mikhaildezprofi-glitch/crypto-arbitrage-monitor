@@ -173,6 +173,7 @@ jobs:
             exit 1
           fi
           # Flush completed browser writes before producing the immutable snapshot.
+          echo "CHROMIUM_AUTH_PROFILE_SAVE=STARTED"
           sync
           tar -czf "$PROFILE_ARCHIVE" -C "$PROFILE_DIR" .
           tar -tzf "$PROFILE_ARCHIVE" > "${RUNNER_TEMP}/chromium-profile-file-list.txt"
