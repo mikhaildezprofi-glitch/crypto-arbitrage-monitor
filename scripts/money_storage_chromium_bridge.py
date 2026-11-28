@@ -358,7 +358,9 @@ def select_approved_currency_pair(cdp: CDP) -> dict:
           }
           window.__moneyStorageOffersCaptures = [];
           fromControl.setValue("ECR", true);
-          toControl.setValue("USDT");
+          toControl.setValue("USDT", true);
+          // Emit one native change only after both filters have their final values.
+          from.dispatchEvent(new Event("change", { bubbles: true }));
           const selectedFrom = String(from.value || "").toUpperCase();
           const selectedTo = String(to.value || "").toUpperCase();
           const controlFrom = String(fromControl.getValue() || "").toUpperCase();
