@@ -51,7 +51,6 @@ class ProfileRotationEligibilityTests(unittest.TestCase):
         self.assertTrue(eligible)
         self.assertEqual(reason, "ALL_THREE_SOURCES_VALIDATED")
 
-
     def test_missing_session_alive_cookie_blocks_rotation(self):
         cookies = valid_cookie_report()
         cookies["pages"]["sberkassa_exchange"]["session_alive_present"] = False
@@ -69,28 +68,28 @@ class ProfileRotationEligibilityTests(unittest.TestCase):
     def test_missing_source_artifact_is_not_eligible(self):
         report = valid_report()
         report["sources"]["sberkassa_deals"]["artifact_status"] = "ARTIFACT_MISSING"
-        eligible, reason = validate_report(report)
+        eligible, reason = validate_report(report, valid_cookie_report())
         self.assertFalse(eligible)
         self.assertEqual(reason, "SBERKASSA_DEALS_ARTIFACT_MISSING")
 
     def test_stale_money_storage_quote_is_not_eligible(self):
         report = valid_report()
         report["sources"]["money_storage"]["quote"]["freshness_confirmed"] = False
-        eligible, reason = validate_report(report)
+        eligible, reason = validate_report(report, valid_cookie_report())
         self.assertFalse(eligible)
         self.assertEqual(reason, "MONEY_STORAGE_QUOTE_NOT_VALIDATED")
 
     def test_unvalidated_sberkassa_deals_quote_is_not_eligible(self):
         report = valid_report()
         report["sources"]["sberkassa_deals"]["quote"]["fresh"] = False
-        eligible, reason = validate_report(report)
+        eligible, reason = validate_report(report, valid_cookie_report())
         self.assertFalse(eligible)
         self.assertEqual(reason, "SBERKASSA_DEALS_QUOTE_NOT_VALIDATED")
 
     def test_wrong_exchange_pair_is_not_eligible(self):
         report = valid_report()
         report["sources"]["sberkassa_exchange"]["quote"]["selected_pair"]["to"] = "EUR"
-        eligible, reason = validate_report(report)
+        eligible, reason = validate_report(report, valid_cookie_report())
         self.assertFalse(eligible)
         self.assertEqual(reason, "SBERKASSA_EXCHANGE_PAIR_NOT_VALIDATED")
 
