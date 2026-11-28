@@ -107,7 +107,7 @@ PYTHONPATH=src python -m unittest discover -s tests -v
 
 ## Current integration caveats (2026-11-28)
 
-- The browser workflow currently opens three protected tabs. BlackBit and Winance are fetched through their public HTTPS GET APIs. This is more lightweight than five browser tabs but differs from the original five-tab requirement; resolve this explicitly before merging PR #34.
+- **Approved browser architecture:** one shared Chromium process and one encrypted profile with exactly three protected tabs: Money Storage, Sberkassa Deals, and Sberkassa Exchange. BlackBit and Winance are fetched separately through their public HTTPS GET APIs and do not use Chromium tabs. This three-tab design is the accepted project architecture.
 - The integrated collection workflow is manual-only. It requires the authenticated encrypted Chromium profile and current-run snapshots from all three protected browser sources. A complete end-to-end live run has not yet been performed after the new read-only guards.
 - Money Storage and Sberkassa quote requests are GET-only. Non-GET requests are blocked and not replayed. If the provider's current UI requires POST for its quote feed, the collector will fail closed.
 - The route result is normalized to 1 USDT and labelled pre-fee. It is not based on a user-selected starting capital and is not net profit.

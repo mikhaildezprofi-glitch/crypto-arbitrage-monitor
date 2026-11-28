@@ -25,10 +25,10 @@ This file consolidates the agreed project rules and the verified implementation 
 - The authenticated-profile save gate no longer incorrectly depends on a quote-collection marker. It saves only after the shared authentication probe confirms all three protected tabs.
 - Runtime Python dependency is `websocket-client`, declared in `pyproject.toml` and verified by CI. Playwright is used only to download the Chromium binary in the browser workflow; the browser session is driven through CDP.
 - All remaining scripts have identified callers in workflows or imports. The obsolete standalone Winance-only polling module was removed because the five-source collector and external scheduler supersede it. The inactive `WINANCE_POLL_SECONDS` setting and stale `.env.example` entries (including the old 1000 USDT capital default and unused direct Money Storage endpoint settings) were removed. Money Storage's 900-second constant is now named for freshness, not polling.
-- Current browser workflow has three protected tabs: Money Storage, Sberkassa Deals, and Sberkassa Exchange. BlackBit and Winance use direct public HTTPS GET adapters, not browser tabs. This differs from the original five-tab design and must be explicitly accepted or changed before merge.
+- **Approved browser architecture:** one shared Chromium process and one encrypted profile with exactly three protected tabs: Money Storage, Sberkassa Deals, and Sberkassa Exchange. BlackBit and Winance are collected separately through public HTTPS GET APIs, not browser tabs. This three-tab architecture is the accepted project requirement.
 - CI passed on the immediately preceding code revision: 158 unit tests, project/dependency installation, WebSocket client verification, runner clock check, shell syntax validation, and actionlint workflow validation (run `46173423234`). No end-to-end live five-source collection has yet passed.
 - No Oracle VM deployment, recurring schedule, notification channel, or production collection has been enabled. The agreed schedule remains hourly 09:00-02:00 Asia/Astana, disabled until live acceptance and free-runtime measurement.
-- PR #34 remains open. Do not merge until live source behavior, the three-tab/five-tab architecture decision, and end-to-end route reporting are accepted.
+- PR #34 remains open. The three-tab Chromium architecture is accepted. Do not merge until live source behavior and end-to-end five-source route reporting are validated.
 
 ## Historical notes (superseded; retained for traceability)
 
