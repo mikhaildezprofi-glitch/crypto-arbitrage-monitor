@@ -57,7 +57,11 @@ STATE_EXPRESSION = """(() => {
   const from = document.querySelector('#select_from');
   const to = document.querySelector('#select_to');
   const moneyCurrencyFormReady = !!(visible(from) && visible(to) && from.tomselect && to.tomselect);
-  const sberkassaContentMarker = /предложен|обмен|курс|\busdt\b|\berub\b|\brub\b|рубл/.test(body);
+  const sberkassaDealsMarker = /курс\s*:/i.test(body) && /\berub\b/i.test(body) && (/\brub\b/i.test(body) || /рубл/i.test(body));
+  const exchangeFrom = document.querySelector('#currency_fromSelectBoxIt');
+  const exchangeTo = document.querySelector('#currency_toSelectBoxIt');
+  const exchangeRate = document.querySelector('#current_rate');
+  const sberkassaExchangeFormReady = visible(exchangeFrom) && visible(exchangeTo) && visible(exchangeRate);
   const challenge = /cf-turnstile|verify you are human|checking your browser|проверка браузера|доступ запрещ/.test(body);
   return {
     url: location.href,
@@ -69,7 +73,8 @@ STATE_EXPRESSION = """(() => {
     visibleLoginFormCount: loginForms.length,
     hasLogoutControl,
     moneyCurrencyFormReady,
-    sberkassaContentMarker,
+    sberkassaDealsMarker,
+    sberkassaExchangeFormReady,
     challenge,
     ready: document.readyState
   };
@@ -155,7 +160,10 @@ def classify(key: tuple[str, str], state: dict) -> str:
     elif key[0] == "sberkassa.site":
         if (
             state.get("bodyLength", 0) >= 40
-            and state.get("sberkassaContentMarker")
+            and (
+                state.get("sberkassaDealsMarker") if key[1] == "/deals"
+                else state.get("sberkassaExchangeFormReady")
+            )
             and not state.get("explicitAuthFailure")
             and state.get("visibleLoginFormCount", 0) == 0
         ):
@@ -176,7 +184,8 @@ def diagnostic(key: tuple[str, str], state: dict) -> str:
         f"password_fields={state.get('visiblePasswordFieldCount', 0)} "
         f"login_forms={state.get('visibleLoginFormCount', 0)} "
         f"money_form={int(bool(state.get('moneyCurrencyFormReady')))} "
-        f"sberkassa_marker={int(bool(state.get('sberkassaContentMarker')))} "
+        f"sberkassa_deals_marker={int(bool(state.get('sberkassaDealsMarker')))} "
+        f"sberkassa_exchange_form={int(bool(state.get('sberkassaExchangeFormReady')))} "
         f"explicit_auth_failure={int(bool(state.get('explicitAuthFailure')))}"
     )
 
