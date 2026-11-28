@@ -45,7 +45,11 @@ class ThreeTabDiagnosticsTests(unittest.TestCase):
         self.assertIn('os.environ.get("SBERKASSA_NONINTERACTIVE") == "1"', (root / "scripts" / "sberkassa_chromium_probe.py").read_text(encoding="utf-8"))
         self.assertNotIn('case "$SS_STATUS" in SBERKASSA_CAPTURE_FAILED|SBERKASSA_CAPTURE_TIMEOUT|AUTH_REQUIRED|AUTH_TIMEOUT) echo "SBERKASSA_SELL_TAB_FAILED=', browser)
         self.assertIn("REFERENCE_PROFILE_REQUIRED=YES", reusable)
-        self.assertIn("inputs.target != 'all'", reusable)
+        self.assertNotIn("inputs.target != 'all'", reusable)
+        self.assertIn("Mark all-mode profile eligible for rotation", reusable)
+        self.assertIn("actions/cache/restore@v4", reusable)
+        self.assertIn("inputs.target == 'all' || inputs.profile_cache_key == ''", reusable)
+        self.assertIn("actions/cache/save@v4", reusable)
 
     def test_one_failed_tab_does_not_stop_other_collectors(self):
         root = Path(__file__).resolve().parents[1]
