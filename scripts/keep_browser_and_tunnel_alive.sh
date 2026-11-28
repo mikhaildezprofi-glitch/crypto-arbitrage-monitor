@@ -267,7 +267,9 @@ if [ "$TARGET" = "all" ] || [ "$TARGET" = "browser_tabs_only" ] || [ "$TARGET" =
     echo "CHROMIUM_SESSION_RESTORE=FIRST_RUN_OPEN_THREE_TABS"
   fi
 fi
-DISPLAY=:99 "$CHROMIUM_BIN" \
+# Start Chromium in a dedicated process group so all renderer/GPU children
+# can be terminated together before the profile is archived.
+setsid env DISPLAY=:99 "$CHROMIUM_BIN" \
   --no-sandbox \
   --disable-dev-shm-usage \
   --no-first-run \
@@ -405,23 +407,29 @@ cleanup_all() {
     fi
   fi
 
-  # Give Chromium time to close SQLite/WAL databases and write Session_* / Tabs_*.
-  kill -TERM "$BROWSER_PID" 2>/dev/null || true
+  # Chromium is multi-process. Stop its dedicated process group, not just
+  # the browser leader, or renderer/GPU children can retain the profile lock.
+  kill -TERM -- "-$BROWSER_PID" 2>/dev/null || true
   for attempt in $(seq 1 30); do
-    if ! kill -0 "$BROWSER_PID" 2>/dev/null; then break; fi
+    if ! kill -0 -- "-$BROWSER_PID" 2>/dev/null; then break; fi
     sleep 1
   done
-  if kill -0 "$BROWSER_PID" 2>/dev/null; then
+  if kill -0 -- "-$BROWSER_PID" 2>/dev/null; then
     echo "CHROMIUM_GRACEFUL_SHUTDOWN_TIMEOUT=YES"
-    kill -KILL "$BROWSER_PID" 2>/dev/null || true
+    kill -KILL -- "-$BROWSER_PID" 2>/dev/null || true
     shutdown_failed=1
   fi
   wait "$BROWSER_PID" 2>/dev/null || true
+  for attempt in $(seq 1 10); do
+    if ! pgrep -af '[c]hrome.*--user-data-dir=/tmp/eid-chromium-profile' >/dev/null; then break; fi
+    sleep 1
+  done
   if pgrep -af '[c]hrome.*--user-data-dir=/tmp/eid-chromium-profile' >/dev/null; then
     echo "CHROMIUM_PROFILE_PROCESS_REMAINS=YES"
+    pgrep -af '[c]hrome.*--user-data-dir=/tmp/eid-chromium-profile' || true
     shutdown_failed=1
   else
-    printf '%s\n' "CHROMIUM_CLOSED_AND_PROFILE_FLUSHED" > chromium-profile-shutdown.txt
+    printf '%s\\n' "CHROMIUM_CLOSED_AND_PROFILE_FLUSHED" > chromium-profile-shutdown.txt
     sync
     echo "CHROMIUM_PROFILE_SHUTDOWN_VERIFIED=YES"
   fi
