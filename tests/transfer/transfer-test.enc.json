@@ -1,6 +1,0 @@
-{
-  "algorithm": "AES-256-GCM",
-  "nonce": "VVyBAXfDqIJx34R1",
-  "aad": "Y3J5cHRvLWFyYml0cmFnZS1tb25pdG9yLXRyYW5zZmVyLXRlc3QtdjE=",
-  "ciphertext": "Fe8k1p+db8Sdm1ZeXp7409gNPIgW3zUhsSCyey+61i2xfUSwPJJQYaGqNqHYx7pDYdBP9II+XMuY/Uv9jcFzhf+uCyynA/lk8FnOsRYiObmoQEk55Ub+bQ/8"
-}
