@@ -11,6 +11,9 @@ class MoneyStorageBridgeFallbackTests(unittest.TestCase):
         ast.parse(source, filename=str(bridge))
 
         self.assertIn('cdp.command("Network.enable")', source)
+        self.assertIn('requestMethod !== "GET"', source)
+        self.assertIn("blockedNonGet", source)
+        self.assertIn("__moneyStorageRequestMethod", source)
         self.assertIn('cdp.command("Page.reload", {"ignoreCache": True})', source)
         self.assertIn("self.storage_document_status", source)
         self.assertIn("self.storage_document_path", source)

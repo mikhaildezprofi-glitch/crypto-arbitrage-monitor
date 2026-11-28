@@ -438,18 +438,28 @@ def main() -> int:
                       };
                       const originalFetch = window.fetch;
                       window.fetch = function(...args) {
+                        let rawUrl = "";
+                        let url;
+                        let requestMethod = "GET";
+                        try {
+                          rawUrl = args[0] instanceof Request ? args[0].url : String(args[0]);
+                          requestMethod = String((args[1] && args[1].method)
+                            || (args[0] instanceof Request ? args[0].method : "GET")).toUpperCase();
+                          url = new URL(rawUrl, location.href);
+                        } catch (_) {}
+                        const expected = !!url && url.origin === "https://storage.money"
+                          && url.pathname === "/public_deals/fetch";
+                        if (expected && requestMethod !== "GET") {
+                          rememberCapture({blockedNonGet: true, method: requestMethod, requestUrl: url.href});
+                          return Promise.reject(new TypeError("Non-GET Money Storage quote request blocked by read-only policy"));
+                        }
                         return originalFetch.apply(this, args).then(response => {
                           try {
-                            const rawUrl = args[0] instanceof Request ? args[0].url : String(args[0]);
-                            const url = new URL(rawUrl, location.href);
-                            // Capture the provider endpoint response first, then let the Python
-                            // reader validate the exact query string and HTTP status.
-                            const expected = url.origin === "https://storage.money"
-                              && url.pathname === "/public_deals/fetch";
                             if (expected) {
                               response.clone().text().then(text => {
                                 if (text.length <= 1000000) {
                                   rememberCapture({
+                                    method: requestMethod,
                                     status: response.status,
                                     requestUrl: url.href,
                                     finalUrl: response.url,
@@ -457,7 +467,7 @@ def main() -> int:
                                     text
                                   });
                                 } else {
-                                  rememberCapture({ tooLarge: true, requestUrl: url.href, finalUrl: response.url });
+                                  rememberCapture({tooLarge: true, method: requestMethod, requestUrl: url.href, finalUrl: response.url});
                                 }
                               }).catch(() => {});
                             }
@@ -470,10 +480,22 @@ def main() -> int:
                       const xhrOpen = XMLHttpRequest.prototype.open;
                       const xhrSend = XMLHttpRequest.prototype.send;
                       XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+                        this.__moneyStorageRequestMethod = String(method || "GET").toUpperCase();
                         this.__moneyStorageRequestUrl = new URL(String(url), location.href).href;
                         return xhrOpen.call(this, method, url, ...rest);
                       };
                       XMLHttpRequest.prototype.send = function(...args) {
+                        try {
+                          const url = new URL(this.__moneyStorageRequestUrl || "", location.href);
+                          const expected = url.origin === "https://storage.money"
+                            && url.pathname === "/public_deals/fetch";
+                          if (expected && this.__moneyStorageRequestMethod !== "GET") {
+                            rememberCapture({blockedNonGet: true, method: this.__moneyStorageRequestMethod || "UNKNOWN", requestUrl: url.href});
+                            throw new TypeError("Non-GET Money Storage quote request blocked by read-only policy");
+                          }
+                        } catch (error) {
+                          if (error instanceof TypeError && /Non-GET Money Storage quote request blocked/.test(error.message)) throw error;
+                        }
                         this.addEventListener("load", function() {
                           try {
                             const url = new URL(this.responseURL || this.__moneyStorageRequestUrl, location.href);
@@ -498,6 +520,7 @@ def main() -> int:
                               return;
                             }
                             rememberCapture({
+                              method: this.__moneyStorageRequestMethod || "GET",
                               status: this.status,
                               requestUrl: this.__moneyStorageRequestUrl,
                               finalUrl: this.responseURL || this.__moneyStorageRequestUrl,

@@ -52,6 +52,8 @@ class SberkassaProbeSyntaxTests(unittest.TestCase):
         self.assertIn('"Fetch.failRequest"', source)
         self.assertIn('query.get("from", [""])[0] != "ERUB"', source)
         self.assertIn('query.get("to", [""])[0] != "RUB"', source)
+        self.assertIn('request_method != "GET"', source)
+        self.assertIn('blocked_reason = "non_get_method"', source)
         self.assertIn("SBERKASSA_SCOPE_BLOCKED", source)
         self.assertNotIn("is_exchange", source)
         self.assertNotIn("exchange_rub_usdt", source)

@@ -73,6 +73,24 @@ class MoneyStorageOfferFreshnessTests(unittest.TestCase):
         self.assertEqual(snapshot["rate"], "0.25")
         self.assertTrue(snapshot["freshness_confirmed"])
 
+    def test_reader_rejects_and_reports_non_get_quote_request(self):
+        class NonGetCapturePage:
+            url = "https://storage.money/deals#tab-3"
+
+            def evaluate(self, script, argument=None):
+                if script.strip() == "() => Date.now()":
+                    return datetime.now(timezone.utc).timestamp() * 1000
+                if "__moneyStorageOffersCaptures" in script:
+                    return {
+                        "blockedNonGet": True,
+                        "method": "POST",
+                        "requestUrl": "https://storage.money/public_deals/fetch?offset=0&limit=20&from=ECR&to=USDT",
+                    }
+                raise AssertionError("Unexpected browser evaluation.")
+
+        with self.assertRaisesRegex(RuntimeError, "non-GET method POST; blocked by read-only policy"):
+            fetch_from_authenticated_page(NonGetCapturePage())
+
     def test_reader_rejects_captured_response_with_wrong_offer_query(self):
         now = datetime.now(timezone.utc)
         payload = {

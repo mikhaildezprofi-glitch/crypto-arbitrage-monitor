@@ -220,7 +220,11 @@ def fetch_from_authenticated_page(page) -> dict[str, Any]:
           const deadline = Date.now() + 15000;
           while (Date.now() < deadline) {
             const captures = window.__moneyStorageOffersCaptures || [];
-            const captured = captures.find(item => item && (approved(item.finalUrl) || approved(item.requestUrl)));
+            const blocked = captures.find(item => item && item.blockedNonGet
+              && (approved(item.finalUrl) || approved(item.requestUrl)));
+            if (blocked) return blocked;
+            const captured = captures.find(item => item && !item.blockedNonGet
+              && (approved(item.finalUrl) || approved(item.requestUrl)));
             if (captured) return captured;
             await new Promise(resolve => setTimeout(resolve, 100));
           }
@@ -244,6 +248,11 @@ def fetch_from_authenticated_page(page) -> dict[str, Any]:
         }""",
         None,
     )
+    if result.get("blockedNonGet"):
+        method = str(result.get("method", "UNKNOWN")).upper()
+        raise RuntimeError(
+            f"Money Storage quote endpoint attempted non-GET method {method}; blocked by read-only policy."
+        )
     if result.get("notCaptured"):
         observed = result.get("observed", [])
         safe_summary = "; ".join(

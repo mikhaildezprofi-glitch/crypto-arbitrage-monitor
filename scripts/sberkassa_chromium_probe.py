@@ -201,8 +201,11 @@ class CDP:
             parsed = urlparse(request.get("url", ""))
             query = parse_qs(parsed.query, keep_blank_values=True)
             blocked_reason = None
+            request_method = str(request.get("method", "GET")).upper()
             if parsed.hostname == "sberkassa.site":
-                if parsed.path.rstrip("/") == "/exchange":
+                if request_method != "GET":
+                    blocked_reason = "non_get_method"
+                elif parsed.path.rstrip("/") == "/exchange":
                     blocked_reason = "exchange_page_out_of_scope"
                 elif parsed.path == "/public_deals/fetch" and (
                     query.get("from", [""])[0] != "ERUB"
