@@ -135,7 +135,7 @@ jobs:
         id: encrypt-profile
         # Only auth_only can promote a profile, and only after the shared probe
         # has positively authenticated all three protected tabs.
-        if: always() && inputs.target == 'auth_only' && hashFiles('shared-session-authenticated-tabs.txt') != ''
+        if: always() && inputs.target == 'auth_only' && hashFiles('shared-session-authenticated-tabs.txt') != '' && hashFiles('chromium-profile-shutdown.txt') != ''
         shell: bash
         run: |
           set -euo pipefail
@@ -148,6 +148,10 @@ jobs:
           ACTUAL_MARKERS="$(LC_ALL=C sort -u shared-session-authenticated-tabs.txt)"
           if [ "$ACTUAL_MARKERS" != "$EXPECTED_MARKERS" ]; then
             echo "CHROMIUM_PROFILE_SAVE_BLOCKED: authenticated-tab marker set is incomplete or unexpected"
+            exit 1
+          fi
+          if ! grep -qx "CHROMIUM_CLOSED_AND_PROFILE_FLUSHED" chromium-profile-shutdown.txt; then
+            echo "CHROMIUM_PROFILE_SAVE_BLOCKED: clean shutdown marker missing"
             exit 1
           fi
           echo "CHROMIUM_PROFILE_SAVE_GUARD=ALL_THREE_TABS_AUTHENTICATED"
