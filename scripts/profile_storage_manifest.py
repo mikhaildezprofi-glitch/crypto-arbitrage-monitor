@@ -40,7 +40,7 @@ def build_manifest(profile_dir: Path) -> dict[str, Any]:
         raise FileNotFoundError("Chromium profile directory is missing")
     files = []
     for path in sorted(profile_dir.rglob("*")):
-        if not path.is_file():
+        if path.is_symlink() or not path.is_file():
             continue
         category = category_for(path.relative_to(profile_dir))
         if category is None:
