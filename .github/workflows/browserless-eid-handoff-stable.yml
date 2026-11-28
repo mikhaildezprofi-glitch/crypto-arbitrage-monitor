@@ -202,6 +202,7 @@ jobs:
           echo "CHROMIUM_PROFILE_CACHE=ENCRYPTED_AND_VERIFIED"
 
       - name: Save encrypted Chromium profile cache
+        id: save-profile-cache
         if: steps.encrypt-profile.outcome == 'success'
         uses: actions/cache/save@v4
         with:
@@ -209,7 +210,7 @@ jobs:
           key: ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-${{ inputs.target || 'manual' }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Run three read-only collectors after verified profile save
-        if: steps.encrypt-profile.outcome == 'success'
+        if: steps.save-profile-cache.outcome == 'success'
         shell: bash
         timeout-minutes: 25
         env:
