@@ -122,7 +122,7 @@ class MoneyStorageOfferFreshnessTests(unittest.TestCase):
         self.assertIn('q.get("from") === "ECR"', page.selection_script)
         self.assertIn('q.get("to") === "USDT"', page.selection_script)
         self.assertIn('captures.find(item => item && !item.blockedNonGet', page.selection_script)
-        self.assertIn('requestMethod !== "GET"', (Path(__file__).resolve().parents[1] / "scripts" / "money_storage_chromium_bridge.py").read_text(encoding="utf-8"))
+
 
     def test_newest_offer_within_15_minutes_confirms_freshness(self):
         offers = (

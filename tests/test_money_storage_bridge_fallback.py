@@ -14,6 +14,8 @@ class MoneyStorageBridgeFallbackTests(unittest.TestCase):
         self.assertIn('requestMethod !== "GET"', source)
         self.assertIn("blockedNonGet", source)
         self.assertIn("__moneyStorageRequestMethod", source)
+        reader = (root / "scripts" / "money_storage_cloud_read.py").read_text(encoding="utf-8")
+        self.assertIn('str(result.get("method")).upper() != "GET"', reader)
         self.assertIn('cdp.command("Page.reload", {"ignoreCache": True})', source)
         self.assertIn("self.storage_document_status", source)
         self.assertIn("self.storage_document_path", source)
