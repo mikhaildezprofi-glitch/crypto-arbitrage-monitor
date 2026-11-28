@@ -359,8 +359,14 @@ elif [ "$TARGET" = "browser_tabs_only" ]; then
   BRIDGE_PID=""
 elif [ "$TARGET" = "auth_only" ]; then
   echo "THREE_TAB_AUTH_THEN_COLLECT=YES"
-  SHARED_AUTH_STATUS_FILE=/tmp/shared-browser-auth-status \
-    python3 scripts/shared_browser_auth_probe.py >/tmp/shared-browser-auth.log 2>&1 &
+  if [ "${COLLECTION_EVENT_NAME:-}" = "schedule" ]; then
+    SHARED_AUTH_TIMEOUT_SECONDS=120 SHARED_AUTH_STATUS_FILE=/tmp/shared-browser-auth-status \
+      python3 scripts/shared_browser_auth_probe.py >/tmp/shared-browser-auth.log 2>&1 &
+    echo "SCHEDULED_SESSION_CHECK=NONINTERACTIVE_120_SECONDS"
+  else
+    SHARED_AUTH_TIMEOUT_SECONDS=1800 SHARED_AUTH_STATUS_FILE=/tmp/shared-browser-auth-status \
+      python3 scripts/shared_browser_auth_probe.py >/tmp/shared-browser-auth.log 2>&1 &
+  fi
   BRIDGE_PID=$!
 elif [ "$TARGET" = "money_storage" ] && [ "$INSPECT_CURRENCY_FORM" = "true" ]; then
   MONEY_STORAGE_FORM_INSPECTION=1 python3 "$BRIDGE_SCRIPT" >/tmp/eid-browser.log 2>&1 &
@@ -383,21 +389,49 @@ sudo install -m 0755 /tmp/cloudflared /usr/local/bin/cloudflared
 TUNNEL_PID=""
 
 cleanup_all() {
-  # Stop Chromium first and wait for it to flush profile databases
-  # before the following workflow step encrypts the profile.
+  local shutdown_failed=0
+  # Stop each collector independently and preserve its own status/log result.
   if [ "$TARGET" = "all" ] || { [ "$TARGET" = "auth_only" ] && [ "${AUTH_COLLECTIONS_STARTED:-0}" = "1" ]; }; then
-    kill -TERM "${MONEY_PID:-}" "${SBERKASSA_SELL_PID:-}" "${SBERKASSA_EXCHANGE_PID:-}" 2>/dev/null || true
-    wait "${MONEY_PID:-}" 2>/dev/null || true
-    wait "${SBERKASSA_SELL_PID:-}" 2>/dev/null || true
-    wait "${SBERKASSA_EXCHANGE_PID:-}" 2>/dev/null || true
+    for pid in "${MONEY_PID:-}" "${SBERKASSA_SELL_PID:-}" "${SBERKASSA_EXCHANGE_PID:-}"; do
+      [ -n "$pid" ] && kill -TERM "$pid" 2>/dev/null || true
+    done
+    for pid in "${MONEY_PID:-}" "${SBERKASSA_SELL_PID:-}" "${SBERKASSA_EXCHANGE_PID:-}"; do
+      [ -n "$pid" ] && wait "$pid" 2>/dev/null || true
+    done
   else
-    kill -TERM "${BRIDGE_PID:-}" 2>/dev/null || true
-    wait "${BRIDGE_PID:-}" 2>/dev/null || true
+    if [ -n "${BRIDGE_PID:-}" ]; then
+      kill -TERM "$BRIDGE_PID" 2>/dev/null || true
+      wait "$BRIDGE_PID" 2>/dev/null || true
+    fi
   fi
-  kill -TERM "$BROWSER_PID" "$TUNNEL_PID" 2>/dev/null || true
+
+  # Give Chromium time to close SQLite/WAL databases and write Session_* / Tabs_*.
+  kill -TERM "$BROWSER_PID" 2>/dev/null || true
+  for attempt in $(seq 1 30); do
+    if ! kill -0 "$BROWSER_PID" 2>/dev/null; then break; fi
+    sleep 1
+  done
+  if kill -0 "$BROWSER_PID" 2>/dev/null; then
+    echo "CHROMIUM_GRACEFUL_SHUTDOWN_TIMEOUT=YES"
+    kill -KILL "$BROWSER_PID" 2>/dev/null || true
+    shutdown_failed=1
+  fi
   wait "$BROWSER_PID" 2>/dev/null || true
-  wait "$TUNNEL_PID" 2>/dev/null || true
+  if pgrep -af '[c]hrome.*--user-data-dir=/tmp/eid-chromium-profile' >/dev/null; then
+    echo "CHROMIUM_PROFILE_PROCESS_REMAINS=YES"
+    shutdown_failed=1
+  else
+    printf '%s\n' "CHROMIUM_CLOSED_AND_PROFILE_FLUSHED" > chromium-profile-shutdown.txt
+    sync
+    echo "CHROMIUM_PROFILE_SHUTDOWN_VERIFIED=YES"
+  fi
+
+  if [ -n "${TUNNEL_PID:-}" ]; then
+    kill -TERM "$TUNNEL_PID" 2>/dev/null || true
+    wait "$TUNNEL_PID" 2>/dev/null || true
+  fi
   cleanup
+  if [ "$shutdown_failed" -ne 0 ]; then return 1; fi
 }
 trap cleanup_all EXIT
 
@@ -557,6 +591,9 @@ for i in $(seq 1 900); do
       fi
       if [ "$AUTH_STATUS" = "AUTH_TIMEOUT" ]; then
         cat /tmp/shared-browser-auth.log
+        if [ "${COLLECTION_EVENT_NAME:-}" = "schedule" ]; then
+          echo "SAVED_SESSION_INVALID_MANUAL_EID_REQUIRED=YES"
+        fi
         exit 1
       fi
       if [ "${AUTH_COLLECTIONS_STARTED:-0}" = "1" ]; then
