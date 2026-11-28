@@ -1,8 +1,8 @@
 """Authentication-only check for the three shared Chromium tabs.
 
-This probe reads only page URL/title metadata, navigation response status, and
-boolean login/challenge markers. It never reads quote values or API responses,
-never clicks, and never submits forms. CAPTCHA/E-ID/MFA remain user-operated.
+Reads only page URL/title metadata and boolean DOM authentication markers. It
+never reads quote values, API response bodies, cookies, or submits forms.
+CAPTCHA/E-ID/MFA remain user-operated.
 """
 from __future__ import annotations
 
@@ -25,30 +25,51 @@ EXPECTED = {
     ("sberkassa.site", "/exchange"): "sberkassa_exchange",
 }
 
+# A navigation timing entry is immutable for a document. Some providers finish
+# an E-ID callback inside an SPA without replacing that document. Therefore a
+# stale 401/403 must not override positive, current DOM evidence that the
+# protected application has rendered.
 STATE_EXPRESSION = """(() => {
   const body = (document.body?.innerText || '').toLowerCase();
-  const nav = performance.getEntriesByType('navigation')[0];
-  const responseStatus = nav ? (nav.responseStatus || 0) : 0;
-  const moneyAuthFailure = /session timed out|you must log in|please log in|unauthenticated/.test(body)
-    || [401, 403].includes(responseStatus);
   const visible = element => {
+    if (!element) return false;
     const style = getComputedStyle(element);
     const rect = element.getBoundingClientRect();
-    return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+    return style.visibility !== 'hidden' && style.display !== 'none'
+      && rect.width > 0 && rect.height > 0;
   };
-  const hasVisiblePasswordField = Array.from(document.querySelectorAll('input[type=password]')).some(visible);
-  const explicitSessionExpiry = /session expired|время сессии истекло|сессия истекла|unauthorized|не авторизован/.test(body);
-  const loginPrompt = /войти|авторизац|sign in|log in|login/.test(body);
-  const sberkassaLogin = explicitSessionExpiry || (loginPrompt && hasVisiblePasswordField);
-  const challenge = /captcha|cf-turnstile|verify you are human|checking your browser|проверка браузера|доступ запрещ/.test(body);
+  const nav = performance.getEntriesByType('navigation')[0];
+  const responseStatus = nav ? (nav.responseStatus || 0) : 0;
+  const passwordFields = Array.from(document.querySelectorAll('input[type=password]')).filter(visible);
+  const loginForms = passwordFields.filter(field => {
+    const form = field.closest('form');
+    if (!form || !visible(form)) return false;
+    const action = String(form.getAttribute('action') || '').toLowerCase();
+    const submit = Array.from(form.querySelectorAll('button, input[type=submit], [role=button]'))
+      .filter(visible).map(el => String(el.innerText || el.value || el.getAttribute('aria-label') || '').toLowerCase()).join(' ');
+    return /login|auth|signin|вход|авторизац/.test(action)
+      || /sign in|log in|login|войти|вход/.test(submit);
+  });
+  const explicitAuthFailure = /session timed out|session expired|you must log in|please log in|unauthenticated|время сессии истекло|сессия истекла|не авторизован/.test(body);
+  const visibleAuthControls = Array.from(document.querySelectorAll('a, button, [role=button]'))
+    .filter(visible).map(el => String(el.innerText || el.textContent || el.getAttribute('aria-label') || '').toLowerCase());
+  const hasLogoutControl = visibleAuthControls.some(text => /(^|\\b)(log out|logout|sign out)(\\b|$)|выйти/.test(text));
+  const from = document.querySelector('#select_from');
+  const to = document.querySelector('#select_to');
+  const moneyCurrencyFormReady = !!(visible(from) && visible(to) && from.tomselect && to.tomselect);
+  const sberkassaContentMarker = /предложен|обмен|курс|\\busdt\\b|\\berub\\b|\\brub\\b|рубл/.test(body);
+  const challenge = /cf-turnstile|verify you are human|checking your browser|проверка браузера|доступ запрещ/.test(body);
   return {
     url: location.href,
     titlePresent: !!(document.title || '').trim(),
     bodyLength: body.trim().length,
     responseStatus,
-    moneyAuthFailure,
-    sberkassaLogin,
-    hasVisiblePasswordField,
+    explicitAuthFailure,
+    visiblePasswordFieldCount: passwordFields.length,
+    visibleLoginFormCount: loginForms.length,
+    hasLogoutControl,
+    moneyCurrencyFormReady,
+    sberkassaContentMarker,
     challenge,
     ready: document.readyState
   };
@@ -77,7 +98,9 @@ def evaluate(ws_url: str) -> dict:
         while time.monotonic() < deadline:
             message = json.loads(ws.recv())
             if message.get("id") == 1:
-                return message.get("result", {}).get("result", {}).get("value", {})
+                remote = message.get("result", {}).get("result", {})
+                value = remote.get("value", {})
+                return value if isinstance(value, dict) else {}
         raise TimeoutError("CDP evaluation timed out")
     finally:
         ws.close()
@@ -95,27 +118,48 @@ def classify(key: tuple[str, str], state: dict) -> str:
         if host == key[0] and any(part in path.lower() for part in ("login", "auth", "oauth", "signin")):
             return "LOGIN_REQUIRED"
         return "AUTH_HANDOFF_IN_PROGRESS"
-    if key[0] == "storage.money" and state.get("moneyAuthFailure"):
-        return "LOGIN_REQUIRED"
-    if key[0] == "sberkassa.site" and state.get("sberkassaLogin"):
-        return "LOGIN_REQUIRED"
     if state.get("ready") != "complete" or not state.get("titlePresent") or state.get("bodyLength", 0) < 10:
         return "PAGE_LOADING"
-    # Chromium may restore a previously authenticated tab without exposing a
-    # navigation responseStatus (0). A missing timing field is not an HTTP
-    # failure. Reject explicit auth failures above and known error statuses,
-    # but accept a loaded protected route with a populated page and no login UI.
+
+    # Positive site-specific DOM evidence takes precedence over the original
+    # document's navigation status, which can remain 401/403 after an SPA E-ID
+    # callback has completed without a full document navigation.
+    if key[0] == "storage.money":
+        if state.get("moneyCurrencyFormReady") and not state.get("explicitAuthFailure") and state.get("visibleLoginFormCount", 0) == 0:
+            return "AUTHENTICATED"
+    elif key[0] == "sberkassa.site":
+        if (
+            state.get("bodyLength", 0) >= 40
+            and state.get("sberkassaContentMarker")
+            and not state.get("explicitAuthFailure")
+            and state.get("visibleLoginFormCount", 0) == 0
+        ):
+            return "AUTHENTICATED"
+
+    if state.get("explicitAuthFailure") or state.get("visibleLoginFormCount", 0) > 0:
+        return "LOGIN_REQUIRED"
     response_status = state.get("responseStatus", 0)
     if response_status not in (0, 200, 304):
         return "HTTP_STATUS_UNCONFIRMED"
-    if key in EXPECTED:
-        return "AUTHENTICATED"
     return "AUTHENTICATION_UNCONFIRMED"
+
+
+def diagnostic(key: tuple[str, str], state: dict) -> str:
+    return (
+        f"status={state.get('responseStatus', 0)} "
+        f"body_len={state.get('bodyLength', 0)} "
+        f"password_fields={state.get('visiblePasswordFieldCount', 0)} "
+        f"login_forms={state.get('visibleLoginFormCount', 0)} "
+        f"money_form={int(bool(state.get('moneyCurrencyFormReady')))} "
+        f"sberkassa_marker={int(bool(state.get('sberkassaContentMarker')))} "
+        f"explicit_auth_failure={int(bool(state.get('explicitAuthFailure')))}"
+    )
 
 
 def main() -> int:
     print("SHARED_AUTH_PROBE=STARTED", flush=True)
     print("SHARED_AUTH_SCOPE=THREE_TABS_NO_QUOTE_COLLECTION", flush=True)
+    print("SHARED_AUTH_DETECTION=SITE_DOM_MARKERS_WITH_STALE_NAV_STATUS_GUARD", flush=True)
     deadline = time.monotonic() + DEADLINE_SECONDS
     last_report = 0.0
     bound_ids: dict[tuple[str, str], str] = {}
@@ -138,6 +182,7 @@ def main() -> int:
                 states = {name: "TAB_NOT_BOUND" for name in EXPECTED.values()}
             else:
                 states = {}
+                details = {}
                 for key, name in EXPECTED.items():
                     item = by_id.get(bound_ids[key])
                     if not item:
@@ -146,17 +191,17 @@ def main() -> int:
                     try:
                         state = evaluate(item["webSocketDebuggerUrl"])
                         states[name] = classify(key, state)
-                    except Exception:
+                        details[name] = diagnostic(key, state)
+                    except Exception as exc:
                         states[name] = "CDP_CHECK_RETRY"
+                        details[name] = f"error={type(exc).__name__}"
             now = time.monotonic()
             if now - last_report >= 10:
                 print("SHARED_AUTH_TAB_STATES " + " ".join(f"{k}={v}" for k, v in states.items()), flush=True)
+                for name, detail in details.items() if len(bound_ids) == 3 else []:
+                    print(f"SHARED_AUTH_TAB_DIAGNOSTIC {name} {detail}", flush=True)
                 last_report = now
-            if (
-                states.get("money_storage") == "AUTHENTICATED"
-                and states.get("sberkassa_exchange") == "AUTHENTICATED"
-                and states.get("sberkassa_deals") == "AUTHENTICATED"
-            ):
+            if all(states.get(name) == "AUTHENTICATED" for name in EXPECTED.values()):
                 STATUS_FILE.write_text("ALL_THREE_TABS_AUTHENTICATED", encoding="utf-8")
                 Path("session-authenticated.txt").write_text(
                     "money_storage\nsberkassa_deals\nsberkassa_exchange\n", encoding="utf-8"
