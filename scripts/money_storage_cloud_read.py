@@ -253,8 +253,6 @@ def fetch_from_authenticated_page(page) -> dict[str, Any]:
         raise RuntimeError(
             f"Money Storage quote endpoint attempted non-GET method {method}; blocked by read-only policy."
         )
-    if result.get("method") is None or str(result.get("method")).upper() != "GET":
-        raise RuntimeError("Captured Money Storage quote request method is not confirmed GET.")
     if result.get("notCaptured"):
         observed = result.get("observed", [])
         safe_summary = "; ".join(
@@ -268,6 +266,8 @@ def fetch_from_authenticated_page(page) -> dict[str, Any]:
             "Money Storage page did not expose the exact approved offers request. "
             + (safe_summary[:500] if safe_summary else "No endpoint responses were captured.")
         )
+    if result.get("method") is None or str(result.get("method")).upper() != "GET":
+        raise RuntimeError("Captured Money Storage quote request method is not confirmed GET.")
     request_url = urlparse(result.get("requestUrl") or result.get("finalUrl", ""))
     request_query = parse_qs(request_url.query)
     final_url = urlparse(result.get("finalUrl") or result.get("requestUrl", ""))
