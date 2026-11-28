@@ -61,7 +61,7 @@ STATE_EXPRESSION = """(() => {
   const exchangeFrom = document.querySelector('#currency_fromSelectBoxIt');
   const exchangeTo = document.querySelector('#currency_toSelectBoxIt');
   const exchangeRate = document.querySelector('#current_rate');
-  const sberkassaExchangeFormReady = visible(exchangeFrom) && visible(exchangeTo) && visible(exchangeRate);
+  const sberkassaExchangeFormReady = visible(exchangeFrom) && visible(exchangeTo);
   const challenge = /cf-turnstile|verify you are human|checking your browser|проверка браузера|доступ запрещ/.test(body);
   return {
     url: location.href,
