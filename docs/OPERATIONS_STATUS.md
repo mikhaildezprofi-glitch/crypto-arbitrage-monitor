@@ -26,7 +26,7 @@ This file consolidates the agreed project rules and the verified implementation 
 - Runtime Python dependency is `websocket-client`, declared in `pyproject.toml` and verified by CI. Playwright is used only to download the Chromium binary in the browser workflow; the browser session is driven through CDP.
 - All remaining scripts have identified callers in workflows or imports. No further script deletion is justified by the usage audit. The inactive `WINANCE_POLL_SECONDS` setting was removed because it did not control collection cadence; the external scheduler owns cadence.
 - Current browser workflow has three protected tabs: Money Storage, Sberkassa Deals, and Sberkassa Exchange. BlackBit and Winance use direct public HTTPS GET adapters, not browser tabs. This differs from the original five-tab design and must be explicitly accepted or changed before merge.
-- Unit tests and workflow lint passed on the preceding integration revision; the current revision is being revalidated after the final cleanup. No end-to-end live five-source collection has yet passed.
+- CI passed on the current integration head: 158 unit tests, project/dependency installation, WebSocket client verification, runner clock check, shell syntax validation, and actionlint workflow validation (run `46173027457`). No end-to-end live five-source collection has yet passed.
 - No Oracle VM deployment, recurring schedule, notification channel, or production collection has been enabled. The agreed schedule remains hourly 09:00-02:00 Asia/Astana, disabled until live acceptance and free-runtime measurement.
 - PR #34 remains open. Do not merge until live source behavior, the three-tab/five-tab architecture decision, and end-to-end route reporting are accepted.
 
