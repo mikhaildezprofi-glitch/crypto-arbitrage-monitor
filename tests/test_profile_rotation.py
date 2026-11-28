@@ -54,6 +54,7 @@ class ProfileRotationEligibilityTests(unittest.TestCase):
     def test_missing_session_alive_cookie_blocks_rotation(self):
         cookies = valid_cookie_report()
         cookies["pages"]["sberkassa_exchange"]["session_alive_present"] = False
+        cookies["all_pages_have_session_alive"] = False
         eligible, reason = validate_report(valid_report(), cookies)
         self.assertFalse(eligible)
         self.assertEqual(reason, "SESSION_ALIVE_COOKIE_CHECK_FAILED")
