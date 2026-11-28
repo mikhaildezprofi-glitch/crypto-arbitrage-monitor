@@ -109,7 +109,7 @@ def main() -> int:
     if args.command == "create":
         output = Path(args.output)
         output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(json.dumps(actual, sort_keys=True, indent=2) + "\\n", encoding="utf-8")
+        output.write_text(json.dumps(actual, sort_keys=True, indent=2) + chr(10), encoding="utf-8")
         print(
             "PROFILE_STORAGE_MANIFEST_CREATED files=%d categories=%s"
             % (actual["file_count"], json.dumps(actual["category_file_counts"], sort_keys=True)),
@@ -121,7 +121,7 @@ def main() -> int:
     report = compare_manifests(expected, actual)
     report_path = Path(args.report)
     report_path.parent.mkdir(parents=True, exist_ok=True)
-    report_path.write_text(json.dumps(report, sort_keys=True, indent=2) + "\\n", encoding="utf-8")
+    report_path.write_text(json.dumps(report, sort_keys=True, indent=2) + chr(10), encoding="utf-8")
     print(
         "PROFILE_STORAGE_RESTORE_CHECK=%s expected=%d actual=%d missing=%d added=%d changed=%d"
         % (
