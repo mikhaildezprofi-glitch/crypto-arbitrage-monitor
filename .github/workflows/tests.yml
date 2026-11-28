@@ -3,7 +3,7 @@ name: tests
 on:
   workflow_dispatch:
   push:
-    branches: [main, feat/money-storage-eid-cloudflare-state-machine-20261122, feat/integrated-arbitrage-automation-20261123, feat/three-tab-auth-only-20261128]
+    branches: [main, work/sberkassa-chromium-integration-20261128]
   pull_request:
 
 jobs:

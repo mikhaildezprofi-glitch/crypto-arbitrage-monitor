@@ -1,8 +1,19 @@
 # Crypto Arbitrage Monitor: operations status
 
-Snapshot date: 2026-11-25
+Snapshot date: 2026-11-28
 
-This file consolidates the agreed project rules and the verified implementation state. It is not a claim that unattended production polling is live.
+This file consolidates the agreed project rules and the verified implementation state. It is not a claim that unattended production polling is live. Historical dated notes below may describe earlier decisions; the current decisions immediately below take precedence.
+
+
+## Current decisions (2026-11-28; supersede earlier notes)
+
+- The only development branch is `work/sberkassa-chromium-integration-20261128`; `main` is updated only through a reviewed, passing pull request. No additional branches are to be created.
+- All five route-fee defaults are temporarily `0%` during collector development. This is a placeholder, not a claim about actual provider fees. Ignore provider-displayed commissions. After all collectors work, configure manual fees in the calculator. Until then, report route results as pre-fee estimates, not net profit.
+- Starting capital is not fixed at 1000 USDT; it must remain configurable and no default amount is assumed.
+- Intended cadence remains hourly from 09:00 through 02:00 Asia/Astana (`0 4-21 * * *` UTC), but recurring workflows remain disabled until all five live sources are validated and free-runner cost is measured. Collection workflows are manual-only during development.
+- Live checks previously completed: Money Storage authenticated USDT -> ECR, BlackBit ECR -> USDT (indicative), Winance USDT -> ERUB, and Sberkassa ERUB -> RUB. Sberkassa RUB -> USDT still requires confirmation of the actual displayed rate and independent successful-refresh freshness signal.
+- Keep the four-source workflow only as an explicitly manual diagnostic that ends at RUB; it must not be presented as a complete arbitrage route.
+- The fixed-cache profile export workflow tied to an old branch/run was removed. The current shared-browser workflow owns profile persistence.
 
 ## Operating rules
 

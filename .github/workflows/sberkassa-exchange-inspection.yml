@@ -1,27 +1,6 @@
 name: Sberkassa RUB to USDT read-only inspection
 
 on:
-  push:
-    branches:
-      - feat/integrated-arbitrage-automation-20261123
-      - fix/sberkassa-selectboxit-pointer-20261127
-    paths:
-      - .github/workflows/sberkassa-exchange-inspection.yml
-      - .github/workflows/browserless-eid-handoff-stable.yml
-      - scripts/sberkassa_exchange_chromium_probe.py
-      - tests/test_sberkassa_exchange_probe.py
-  pull_request:
-    branches:
-      - feat/integrated-arbitrage-automation-20261123
-    paths:
-      - .github/workflows/sberkassa-exchange-inspection.yml
-      - .github/workflows/browserless-eid-handoff-stable.yml
-      - scripts/sberkassa_exchange_chromium_probe.py
-      - tests/test_sberkassa_exchange_probe.py
-  # Run the complete three-source collection every 15 minutes.
-  # GitHub activates scheduled workflows only from the repository default branch.
-  schedule:
-    - cron: '*/15 * * * *'
   workflow_dispatch:
     inputs:
       target:
@@ -43,8 +22,7 @@ jobs:
   inspect-exchange-page:
     uses: ./.github/workflows/browserless-eid-handoff-stable.yml
     with:
-      # Pushes run a tabs-only smoke test; scheduled runs collect all sources.
-      # Pull-request validation remains exchange-only; manual dispatch uses its selected target.
-      target: ${{ github.event_name == 'workflow_dispatch' && inputs.target || (github.event_name == 'schedule' && 'all' || (github.event_name == 'push' && 'browser_tabs_only' || 'sberkassa_exchange')) }}
+      # Manual-only diagnostic; no timer or automatic browser run.
+      target: ${{ inputs.target || 'sberkassa_exchange' }}
       inspect_currency_form: false
     secrets: inherit
