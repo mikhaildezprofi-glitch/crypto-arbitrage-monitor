@@ -208,6 +208,24 @@ jobs:
           path: ${{ runner.temp }}/chromium-profile-money_storage.gpg
           key: ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-${{ inputs.target || 'manual' }}-${{ github.run_id }}-${{ github.run_attempt }}
 
+      - name: Run three read-only collectors after verified profile save
+        if: steps.encrypt-profile.outcome == 'success'
+        shell: bash
+        timeout-minutes: 25
+        env:
+          TARGET: all
+          INSPECT_CURRENCY_FORM: "false"
+          COLLECTION_EVENT_NAME: post_auth_profile_save
+          CHROMIUM_PROFILE_PASSPHRASE: ${{ secrets.CHROMIUM_PROFILE_PASSPHRASE }}
+          CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
+          CLOUDFLARE_TUNNEL_HOSTNAME: ${{ vars.CLOUDFLARE_TUNNEL_HOSTNAME }}
+        run: |
+          set -euo pipefail
+          test -s "${RUNNER_TEMP}/chromium-profile-money_storage.gpg"
+          test -s /tmp/eid-chromium-profile/Local\ State
+          echo "COLLECTION_START_GUARD=ENCRYPTED_PROFILE_CACHE_SAVED"
+          bash scripts/keep_browser_and_tunnel_alive.sh
+
       - name: Publish normalized current offers
         if: always() && hashFiles('money-storage-current-offers.json') != ''
         uses: actions/upload-artifact@v5
