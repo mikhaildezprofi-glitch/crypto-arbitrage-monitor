@@ -359,8 +359,14 @@ elif [ "$TARGET" = "browser_tabs_only" ]; then
   BRIDGE_PID=""
 elif [ "$TARGET" = "auth_only" ]; then
   echo "THREE_TAB_AUTH_THEN_COLLECT=YES"
-  SHARED_AUTH_STATUS_FILE=/tmp/shared-browser-auth-status \
-    python3 scripts/shared_browser_auth_probe.py >/tmp/shared-browser-auth.log 2>&1 &
+  if [ "${COLLECTION_EVENT_NAME:-}" = "schedule" ]; then
+    SHARED_AUTH_TIMEOUT_SECONDS=120 SHARED_AUTH_STATUS_FILE=/tmp/shared-browser-auth-status \
+      python3 scripts/shared_browser_auth_probe.py >/tmp/shared-browser-auth.log 2>&1 &
+    echo "SCHEDULED_SESSION_CHECK=NONINTERACTIVE_120_SECONDS"
+  else
+    SHARED_AUTH_TIMEOUT_SECONDS=1800 SHARED_AUTH_STATUS_FILE=/tmp/shared-browser-auth-status \
+      python3 scripts/shared_browser_auth_probe.py >/tmp/shared-browser-auth.log 2>&1 &
+  fi
   BRIDGE_PID=$!
 elif [ "$TARGET" = "money_storage" ] && [ "$INSPECT_CURRENCY_FORM" = "true" ]; then
   MONEY_STORAGE_FORM_INSPECTION=1 python3 "$BRIDGE_SCRIPT" >/tmp/eid-browser.log 2>&1 &
@@ -585,6 +591,9 @@ for i in $(seq 1 900); do
       fi
       if [ "$AUTH_STATUS" = "AUTH_TIMEOUT" ]; then
         cat /tmp/shared-browser-auth.log
+        if [ "${COLLECTION_EVENT_NAME:-}" = "schedule" ]; then
+          echo "SAVED_SESSION_INVALID_MANUAL_EID_REQUIRED=YES"
+        fi
         exit 1
       fi
       if [ "${AUTH_COLLECTIONS_STARTED:-0}" = "1" ]; then
