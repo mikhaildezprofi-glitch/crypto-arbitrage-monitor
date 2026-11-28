@@ -536,6 +536,18 @@ for i in $(seq 1 900); do
       echo "ALL_THREE_SHARED_BROWSER_TABS_TERMINAL=YES"
       echo "FINAL_TAB_STATUS money_storage=$MS_STATUS sberkassa_deals=$SS_STATUS sberkassa_exchange=$SX_STATUS"
       grep -hE '^(MONEY_STORAGE_PAIR_SELECTION=|OFFERS_READ_|SBERKASSA_CAPTURE_|SBERKASSA_ERUB_RUB_VALIDATED|SBERKASSA_EXCHANGE_INSPECTION_COMPLETE=|SBERKASSA_EXCHANGE_DISPLAYED_RATE=|SBERKASSA_SESSION=|SBERKASSA_SESSION_AUTHENTICATED=)' /tmp/money-storage-browser.log /tmp/sberkassa-sell-browser.log /tmp/sberkassa-exchange-browser.log | tail -n 180 || true
+      # Discard per-collector markers. Only the shared three-tab auth probe
+      # may authorize profile rotation, independently of quote-read success.
+      rm -f session-authenticated.txt
+      if SHARED_AUTH_TIMEOUT_SECONDS=60 SHARED_AUTH_STATUS_FILE=/tmp/shared-browser-auth-after-collectors-status \
+        python3 scripts/shared_browser_auth_probe.py >/tmp/shared-browser-auth-after-collectors.log 2>&1; then
+        cat /tmp/shared-browser-auth-after-collectors.log
+        echo "ALL_THREE_TABS_AUTHENTICATION_CHECK=PASS"
+      else
+        AUTH_CHECK_RESULT=$?
+        cat /tmp/shared-browser-auth-after-collectors.log || true
+        echo "ALL_THREE_TABS_AUTHENTICATION_CHECK=FAIL exit=$AUTH_CHECK_RESULT"
+      fi
       if [ "$MS_STATUS" = "OFFERS_READ_OK" ] && [ "$SS_STATUS" = "SBERKASSA_CAPTURE_COMPLETE" ] && [ "$SX_STATUS" = "SBERKASSA_EXCHANGE_INSPECTION_COMPLETE" ]; then
         echo "ALL_THREE_SHARED_BROWSER_TABS_COMPLETE=YES"
         exit 0
