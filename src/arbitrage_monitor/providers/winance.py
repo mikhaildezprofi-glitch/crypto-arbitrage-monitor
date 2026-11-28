@@ -16,22 +16,6 @@ API_URL = os.getenv(
     "https://winance.exchange/site/currency_pairs",
 )
 PAIR_ID = "18"
-def parse_poll_seconds(raw_value: str | None) -> int | None:
-    """Return an explicitly selected 15–60 minute cadence, or None if undecided."""
-    if raw_value is None or not raw_value.strip():
-        return None
-    try:
-        seconds = int(raw_value)
-    except ValueError as exc:
-        raise ValueError("WINANCE_POLL_SECONDS must be an integer from 900 to 3600.") from exc
-    if not 900 <= seconds <= 3600:
-        raise ValueError("WINANCE_POLL_SECONDS must be between 900 and 3600 seconds.")
-    return seconds
-
-
-POLL_SECONDS = parse_poll_seconds(os.getenv("WINANCE_POLL_SECONDS"))
-
-
 class WinanceQuoteError(RuntimeError):
     """Raised when the Winance response cannot provide the required pair."""
 
@@ -154,7 +138,6 @@ if __name__ == "__main__":
                 "pair_id": quote.source_pair_id,
                 "rate": str(quote.rate),
                 "observed_at": quote.observed_at.isoformat(),
-                "poll_seconds": POLL_SECONDS,
             },
             ensure_ascii=False,
         )

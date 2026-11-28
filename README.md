@@ -33,7 +33,7 @@ Starting capital is a runtime setting and has not been fixed at 1000 USDT. All f
 
 - Use ERUB/USDT pair ID `18` only.
 - Reject conflicting pair identity, missing, non-finite, zero, or negative rates.
-- The provider supports explicit polling intervals from 900 to 3600 seconds. The intended hourly collection interval is 3600 seconds, but no recurring workflow is currently enabled.
+- Winance is fetched once per collection cycle. The external scheduler controls cadence; the intended interval is hourly, but no recurring workflow is currently enabled.
 
 ### Sberkassa: ERUB -> RUB
 
@@ -97,7 +97,6 @@ PYTHONPATH=src python -m unittest discover -s tests -v
 
 - `BLACKBIT_API_BASE_URL` (default: `https://blackbit.exchange/site`)
 - `WINANCE_API_URL` (default: `https://winance.exchange/site/currency_pairs`)
-- `WINANCE_POLL_SECONDS` (must be explicitly selected between 900 and 3600 before polling)
 - `QUOTE_MAX_AGE_SECONDS` (must be explicitly selected after the polling cadence is chosen)
 - `CHROMIUM_PROFILE_PASSPHRASE` (GitHub Actions secret; never place its value in source control or logs)
 - `CLOUDFLARE_TUNNEL_TOKEN` (optional GitHub Actions secret for a stable named Cloudflare Tunnel; recommended after Quick Tunnel HTTP 429 errors)

@@ -63,7 +63,7 @@ All arithmetic is denominated in USDT. Do not label USDT as exact USD without a 
 
 - Use ERUB/USDT pair ID `18` only.
 - Reject conflicting pair identifiers and invalid/non-positive rates.
-- The adapter permits an explicit polling interval from 900 to 3600 seconds. The overall hourly schedule is agreed; production workflow must set the intended cadence explicitly to 3600 seconds.
+- Winance is fetched once per collection cycle; cadence belongs to the external scheduler. The agreed target is hourly (3600 seconds), but recurring execution remains disabled until live integration acceptance.
 
 ### Sberkassa: ERUB -> RUB
 

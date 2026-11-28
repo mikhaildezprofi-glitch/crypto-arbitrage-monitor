@@ -3,9 +3,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from arbitrage_monitor.providers.winance import (
-    POLL_SECONDS,
     WinanceQuoteError,
-    parse_poll_seconds,
     parse_winance_response,
     fetch_quote,
 )
@@ -97,19 +95,6 @@ class WinanceProviderTests(unittest.TestCase):
         self.assertEqual(request.get_header("Pragma"), "no-cache")
         self.assertEqual(quote.source_pair_id, "18")
         self.assertEqual(quote.pair, "ERUB/USDT")
-
-    def test_poll_interval_is_not_selected_by_default(self):
-        self.assertIsNone(POLL_SECONDS)
-        self.assertIsNone(parse_poll_seconds(None))
-        self.assertIsNone(parse_poll_seconds(""))
-
-    def test_poll_interval_accepts_only_900_to_3600_seconds(self):
-        self.assertEqual(parse_poll_seconds("900"), 900)
-        self.assertEqual(parse_poll_seconds("3600"), 3600)
-        for value in ("899", "3601", "not-a-number"):
-            with self.subTest(value=value):
-                with self.assertRaises(ValueError):
-                    parse_poll_seconds(value)
 
     def test_rejects_wrong_symbol_even_when_id_matches(self):
         payload = {
