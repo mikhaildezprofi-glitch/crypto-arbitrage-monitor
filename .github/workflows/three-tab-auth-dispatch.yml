@@ -4,7 +4,7 @@ on:
   # Keep the saved shared browser session warm and refresh quotes automatically.
   # If a provider invalidates its session, the run fails closed and manual E-ID is needed again.
   schedule:
-    - cron: '23 * * * *'
+    - cron: '0 4-21 * * *'
   workflow_dispatch:
     inputs:
       target:
