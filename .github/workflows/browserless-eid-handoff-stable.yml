@@ -163,6 +163,15 @@ jobs:
           set -euo pipefail
           python3 scripts/build_three_tab_diagnostics.py --output-dir three-tab-collector-diagnostics
 
+      - name: Check session_alive cookies in the closed Chromium profile
+        if: always() && inputs.target == 'all' && hashFiles('three-tab-collector-diagnostics/three-tab-collector-report.json') != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/check_session_alive_cookies.py \
+            --profile-dir /tmp/eid-chromium-profile \
+            --report session-alive-cookie-check.json
+
       - name: Mark all-mode profile eligible for rotation
         if: always() && inputs.target == 'all' && hashFiles('three-tab-collector-diagnostics/three-tab-collector-report.json') != ''
         shell: bash
@@ -170,6 +179,7 @@ jobs:
           set -euo pipefail
           python3 scripts/mark_profile_rotation_eligible.py \
             --report three-tab-collector-diagnostics/three-tab-collector-report.json \
+            --cookie-report session-alive-cookie-check.json \
             --marker session-authenticated.txt
 
       - name: Publish per-tab collector diagnostics
@@ -225,7 +235,9 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: profile-storage-restore-check
-          path: profile-storage-restore-check.json
+          path: |
+            profile-storage-restore-check.json
+            session-alive-cookie-check.json
           if-no-files-found: error
           retention-days: 3
 
