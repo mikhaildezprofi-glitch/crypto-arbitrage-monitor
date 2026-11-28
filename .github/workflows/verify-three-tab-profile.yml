@@ -1,0 +1,122 @@
+name: Verify restored three-tab Chromium profile
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-restored-three-tab-profile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      CHROMIUM_PROFILE_PASSPHRASE: ${{ secrets.CHROMIUM_PROFILE_PASSPHRASE }}
+      SHARED_AUTH_TIMEOUT_SECONDS: "120"
+      SHARED_AUTH_STATUS_FILE: /tmp/shared-browser-auth-status
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: feat/money-storage-tom-select-auto-pair-20261128
+
+      - name: Restore the last confirmed encrypted profile from the main-branch cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/chromium-profile-money_storage.gpg
+          key: ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-verify_profile-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-auth_only-
+
+      - name: Decrypt and validate the saved profile without modifying the cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARCHIVE="${RUNNER_TEMP}/chromium-profile-money_storage.gpg"
+          test -s "$ARCHIVE"
+          test -n "$CHROMIUM_PROFILE_PASSPHRASE"
+          mkdir -p /tmp/eid-chromium-profile
+          exec 3<<<"$CHROMIUM_PROFILE_PASSPHRASE"
+          gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 --output "${RUNNER_TEMP}/profile.tar.gz" --decrypt "$ARCHIVE"
+          exec 3<&-
+          tar -tzf "${RUNNER_TEMP}/profile.tar.gz" > "${RUNNER_TEMP}/profile-files.txt"
+          if grep -Eq '(^/|(^|/)\.\.(/|$))' "${RUNNER_TEMP}/profile-files.txt"; then
+            echo "VERIFY_PROFILE_UNSAFE_ARCHIVE"
+            exit 1
+          fi
+          grep -q '^./Local State$' "${RUNNER_TEMP}/profile-files.txt"
+          grep -q '^./Default/Sessions/Session_' "${RUNNER_TEMP}/profile-files.txt"
+          grep -q '^./Default/Sessions/Tabs_' "${RUNNER_TEMP}/profile-files.txt"
+          tar -xzf "${RUNNER_TEMP}/profile.tar.gz" -C /tmp/eid-chromium-profile
+          rm -f "${RUNNER_TEMP}/profile.tar.gz" "${RUNNER_TEMP}/profile-files.txt"
+          echo "VERIFY_PROFILE_ARCHIVE=VALID"
+
+      - name: Install Chromium and virtual display on this fresh runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get -o Acquire::Retries=5 -o Acquire::https::Timeout=45 update
+          sudo apt-get -y --no-install-recommends install xvfb x11-utils
+          python3 -m pip install --break-system-packages playwright websocket-client
+          python3 -m playwright install chromium
+          Xvfb :99 -screen 0 1440x900x24 -ac +extension RANDR >/tmp/verify-xvfb.log 2>&1 &
+          echo $! > /tmp/verify-xvfb.pid
+          for i in $(seq 1 30); do
+            if xdpyinfo -display :99 >/dev/null 2>&1; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/verify-xvfb.log
+          exit 1
+
+      - name: Restore all three tabs and verify each authenticated page
+        shell: bash
+        timeout-minutes: 4
+        run: |
+          set -euo pipefail
+          CHROMIUM_BIN="$(find "$HOME/.cache/ms-playwright" -type f -name chrome -perm -111 | head -n 1)"
+          test -n "$CHROMIUM_BIN"
+          rm -f /tmp/eid-chromium-profile/SingletonLock /tmp/eid-chromium-profile/SingletonCookie /tmp/eid-chromium-profile/SingletonSocket
+          DISPLAY=:99 "$CHROMIUM_BIN" \
+            --no-sandbox --disable-dev-shm-usage --no-first-run --no-default-browser-check \
+            --password-store=basic --restore-last-session \
+            --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 \
+            --remote-allow-origins=* --user-data-dir=/tmp/eid-chromium-profile \
+            --window-size=1440,900 >/tmp/verify-chromium.log 2>&1 &
+          BROWSER_PID=$!
+          cleanup_verify() {
+            kill -TERM "$BROWSER_PID" 2>/dev/null || true
+            for i in $(seq 1 20); do
+              kill -0 "$BROWSER_PID" 2>/dev/null || break
+              sleep 1
+            done
+            if kill -0 "$BROWSER_PID" 2>/dev/null; then kill -KILL "$BROWSER_PID" 2>/dev/null || true; fi
+            wait "$BROWSER_PID" 2>/dev/null || true
+            sync
+          }
+          trap cleanup_verify EXIT
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:9222/json/version >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          SHARED_AUTH_TIMEOUT_SECONDS=120 SHARED_AUTH_STATUS_FILE=/tmp/shared-browser-auth-status \
+            python3 scripts/shared_browser_auth_probe.py | tee /tmp/verify-auth.log
+          grep -qx "ALL_THREE_TABS_AUTHENTICATED" /tmp/shared-browser-auth-status
+          grep -qx "money_storage" <(grep '^money_storage$' session-authenticated.txt)
+          grep -qx "sberkassa_deals" <(grep '^sberkassa_deals$' session-authenticated.txt)
+          grep -qx "sberkassa_exchange" <(grep '^sberkassa_exchange$' session-authenticated.txt)
+          echo "VERIFY_PROFILE_THREE_TABS=SUCCESS"
+          {
+            echo "## Three-tab profile restore test"
+            echo "- Restored the encrypted profile on a new GitHub-hosted runner."
+            echo "- Chromium restored the saved tabs without opening new protected URLs."
+            echo "- Each of the three protected pages independently passed its site-specific authentication check."
+            echo "- This workflow is manual-only and does not write a new profile cache."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload sanitized restore diagnostics
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: three-tab-profile-restore-diagnostics
+          path: /tmp/verify-auth.log
+          if-no-files-found: ignore
+          retention-days: 3
