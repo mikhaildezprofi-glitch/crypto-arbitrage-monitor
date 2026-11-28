@@ -123,7 +123,7 @@ jobs:
                 --report profile-storage-restore-check.json
             else
               echo "PROFILE_STORAGE_RESTORE_CHECK=LEGACY_CACHE_WITHOUT_BASELINE"
-              printf '{"status":"LEGACY_CACHE_WITHOUT_BASELINE"}\\n' > profile-storage-restore-check.json
+              printf '%s\n' '{"status":"LEGACY_CACHE_WITHOUT_BASELINE"}' > profile-storage-restore-check.json
             fi
             echo "CHROMIUM_PROFILE_CACHE=RESTORED_AND_DECRYPTED"
             echo "CHROMIUM_PROFILE_RESTORED=1" >> "$GITHUB_ENV"
