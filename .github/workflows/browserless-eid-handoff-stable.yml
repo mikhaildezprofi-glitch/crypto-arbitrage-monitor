@@ -77,7 +77,9 @@ jobs:
         id: restore-profile
         uses: actions/cache/restore@v4
         with:
-          path: ${{ runner.temp }}/chromium-profile-money_storage.gpg
+          path: |
+            ${{ runner.temp }}/chromium-profile-money_storage.gpg
+            ${{ runner.temp }}/chromium-profile-storage-manifest.json
           # Every all-mode run gets a unique write key. Restore falls back to
           # the newest profile in the same branch namespace, enabling rotation.
           # A caller-supplied exact key remains available for non-all diagnostics.
@@ -114,6 +116,15 @@ jobs:
             fi
             tar -xzf "${RUNNER_TEMP}/chromium-profile-money_storage.tar.gz" -C /tmp/eid-chromium-profile
             rm -f "${RUNNER_TEMP}/chromium-profile-money_storage.tar.gz"
+            if [ -s "${RUNNER_TEMP}/chromium-profile-storage-manifest.json" ]; then
+              python3 scripts/profile_storage_manifest.py compare \
+                --profile-dir /tmp/eid-chromium-profile \
+                --expected "${RUNNER_TEMP}/chromium-profile-storage-manifest.json" \
+                --report profile-storage-restore-check.json
+            else
+              echo "PROFILE_STORAGE_RESTORE_CHECK=LEGACY_CACHE_WITHOUT_BASELINE"
+              printf '{"status":"LEGACY_CACHE_WITHOUT_BASELINE"}\\n' > profile-storage-restore-check.json
+            fi
             echo "CHROMIUM_PROFILE_CACHE=RESTORED_AND_DECRYPTED"
             echo "CHROMIUM_PROFILE_RESTORED=1" >> "$GITHUB_ENV"
           else
@@ -183,6 +194,9 @@ jobs:
           # Chromium session-restore files are optional and are not required
           # to preserve authenticated website sessions across runners.
           echo "CHROMIUM_AUTH_PROFILE_SAVE=STARTED"
+          python3 scripts/profile_storage_manifest.py create \
+            --profile-dir /tmp/eid-chromium-profile \
+            --output "${RUNNER_TEMP}/chromium-profile-storage-manifest.json"
           # Do not carry machine-specific Chromium singleton locks into the
           # next runner's encrypted profile cache.
           rm -f -- /tmp/eid-chromium-profile/SingletonLock \
@@ -201,8 +215,19 @@ jobs:
         if: steps.encrypt-profile.outcome == 'success'
         uses: actions/cache/save@v4
         with:
-          path: ${{ runner.temp }}/chromium-profile-money_storage.gpg
+          path: |
+            ${{ runner.temp }}/chromium-profile-money_storage.gpg
+            ${{ runner.temp }}/chromium-profile-storage-manifest.json
           key: ${{ runner.os }}-chromium-profile-money_storage-${{ github.ref_name }}-${{ inputs.target || 'manual' }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Publish profile storage restore diagnostics
+        if: always() && hashFiles('profile-storage-restore-check.json') != ''
+        uses: actions/upload-artifact@v5
+        with:
+          name: profile-storage-restore-check
+          path: profile-storage-restore-check.json
+          if-no-files-found: error
+          retention-days: 3
 
       - name: Publish normalized current offers
         if: always() && hashFiles('money-storage-current-offers.json') != ''
