@@ -13,7 +13,6 @@ import urllib.request
 from pathlib import Path
 from urllib.parse import urlparse
 
-import websocket
 
 DEBUG_ENDPOINT = "http://127.0.0.1:9222/json/list"
 STATUS_FILE = Path(os.environ.get("SHARED_AUTH_STATUS_FILE", "/tmp/shared-browser-auth-status"))
@@ -88,6 +87,8 @@ def page_targets() -> list[dict]:
 
 
 def evaluate(ws_url: str) -> dict:
+    import websocket
+
     ws = websocket.create_connection(ws_url, timeout=5, suppress_origin=True)
     try:
         ws.send(json.dumps({
@@ -109,6 +110,8 @@ def evaluate(ws_url: str) -> dict:
 
 def navigate_to_expected(ws_url: str, target_url: str) -> None:
     """Navigate the same authenticated tab back to its protected route."""
+    import websocket
+
     ws = websocket.create_connection(ws_url, timeout=5, suppress_origin=True)
     try:
         ws.send(json.dumps({
