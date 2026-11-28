@@ -59,7 +59,9 @@ class FourStepRunnerSyntaxTests(unittest.TestCase):
         attempt_key = "${{ github.run_id }}-${{ github.run_attempt }}"
         self.assertEqual(workflow.count(attempt_key), 3)
         self.assertIn("hashFiles('shared-session-authenticated-tabs.txt') != ''", workflow)
-        self.assertIn("hashFiles('auth-collection-complete.txt') != ''", workflow)
+        self.assertNotIn("hashFiles('auth-collection-complete.txt') != ''", workflow)
+        self.assertIn("CHROMIUM_PROFILE_ARCHIVE_VALIDATED=YES", workflow)
+        self.assertIn("CHROMIUM_SESSION_RESTORE_DATA_MISSING", workflow)
         self.assertIn("ALL_THREE_TABS_AUTHENTICATED", workflow)
         self.assertNotIn("hashFiles('money-storage-profile-ready.txt')", workflow)
         self.assertIn("for attempt in 1; do", workflow)
