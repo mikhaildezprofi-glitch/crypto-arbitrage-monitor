@@ -94,7 +94,7 @@ class SberkassaProbeSyntaxTests(unittest.TestCase):
         workflow += "\n" + (project_root / "scripts" / "keep_browser_and_tunnel_alive.sh").read_text(encoding="utf-8")
         self.assertIn('CHROMIUM_START_URL="about:blank"', workflow)
         self.assertIn("hashFiles('shared-session-authenticated-tabs.txt')", workflow)
-        self.assertNotIn("hashFiles('auth-collection-complete.txt')", workflow)
+        self.assertIn("hashFiles('auth-collection-complete.txt')", workflow)
         self.assertIn("steps.encrypt-profile.outcome == 'success'", workflow)
         self.assertIn('BRIDGE_SCRIPT="scripts/sberkassa_chromium_probe.py"', workflow)
         self.assertIn('CHROMIUM_START_URL="https://storage.money/deals#tab-3"', workflow)
