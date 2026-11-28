@@ -23,6 +23,6 @@ jobs:
     uses: mikhaildezprofi-glitch/crypto-arbitrage-monitor/.github/workflows/browserless-eid-handoff-stable.yml@feat/three-tab-auth-only-20261128
     with:
       target: ${{ inputs.target || 'auth_only' }}
-      source_ref: feat/money-storage-tom-select-auto-pair-20261128
+      source_ref: fix/auth-save-before-collectors-20261128
       inspect_currency_form: false
     secrets: inherit
