@@ -222,7 +222,7 @@ jobs:
           echo "CHROMIUM_PROFILE_CACHE=ENCRYPTED"
 
       - name: Save encrypted Chromium profile cache
-        if: steps.encrypt-profile.outcome == 'success'
+        if: always() && steps.encrypt-profile.outcome == 'success'
         uses: actions/cache/save@v4
         with:
           path: |
