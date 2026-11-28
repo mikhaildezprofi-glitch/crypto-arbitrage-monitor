@@ -566,6 +566,7 @@ for i in $(seq 1 900); do
         echo "AUTH_THEN_COLLECTION_STATUS money_storage=$MS_STATUS sberkassa_deals=$SS_STATUS sberkassa_exchange=$SX_STATUS"
         if [ "$MS_STATUS" = "OFFERS_READ_OK" ] && [ "$SS_STATUS" = "SBERKASSA_CAPTURE_COMPLETE" ] && [ "$SX_STATUS" = "SBERKASSA_EXCHANGE_INSPECTION_COMPLETE" ]; then
           echo "AUTH_THEN_COLLECTION_COMPLETE=YES"
+          printf '%s\\n' "ALL_THREE_QUOTE_COLLECTORS_SUCCEEDED" > auth-collection-complete.txt
           grep -hE '^(OFFERS_READ_OK|SBERKASSA_CAPTURE_|SBERKASSA_EXCHANGE_INSPECTION_COMPLETE=|SBERKASSA_EXCHANGE_DISPLAYED_RATE=|SBERKASSA_SESSION=|SBERKASSA_SESSION_AUTHENTICATED=)' /tmp/money-storage-browser.log /tmp/sberkassa-sell-browser.log /tmp/sberkassa-exchange-browser.log | tail -n 160 || true
           exit 0
         fi
