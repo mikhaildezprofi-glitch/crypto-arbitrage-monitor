@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: feat/money-storage-tom-select-auto-pair-20261128
+          ref: fix/auth-save-before-collectors-20261128
 
       - name: Restore the last confirmed encrypted profile from the main-branch cache
         uses: actions/cache/restore@v4
