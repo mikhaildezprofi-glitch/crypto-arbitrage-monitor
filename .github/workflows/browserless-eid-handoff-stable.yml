@@ -164,7 +164,7 @@ jobs:
           python3 scripts/build_three_tab_diagnostics.py --output-dir three-tab-collector-diagnostics
 
       - name: Check session_alive cookies in the closed Chromium profile
-        if: always() && inputs.target == 'all' && hashFiles('three-tab-collector-diagnostics/three-tab-collector-report.json') != ''
+        if: always() && inputs.target == 'all'
         shell: bash
         run: |
           set -euo pipefail
@@ -173,14 +173,14 @@ jobs:
             --report session-alive-cookie-check.json
 
       - name: Mark all-mode profile eligible for rotation
-        if: always() && inputs.target == 'all' && hashFiles('three-tab-collector-diagnostics/three-tab-collector-report.json') != ''
+        if: always() && inputs.target == 'all'
         shell: bash
         run: |
           set -euo pipefail
           python3 scripts/mark_profile_rotation_eligible.py \
-            --report three-tab-collector-diagnostics/three-tab-collector-report.json \
+            --auth-marker session-authenticated.txt \
             --cookie-report session-alive-cookie-check.json \
-            --marker session-authenticated.txt
+            --marker profile-save-eligible.txt
 
       - name: Publish per-tab collector diagnostics
         if: always() && inputs.target == 'all' && hashFiles('three-tab-collector-diagnostics/three-tab-collector-report.json') != ''
@@ -193,14 +193,14 @@ jobs:
 
       - name: Encrypt Chromium profile for private cache
         id: encrypt-profile
-        if: always() && hashFiles('session-authenticated.txt') != ''
+        if: always() && (hashFiles('profile-save-eligible.txt') != '' || (inputs.target != 'all' && hashFiles('session-authenticated.txt') != ''))
         shell: bash
         run: |
           set -euo pipefail
           PROFILE_ARCHIVE="${RUNNER_TEMP}/chromium-profile-money_storage.tar.gz"
           ENCRYPTED_PROFILE="${RUNNER_TEMP}/chromium-profile-money_storage.gpg"
           # The complete encrypted profile carries cookies and site storage.
-          # The marker is created only after all required authentication checks pass.
+          # All-mode marker requires three authenticated tabs and stored session_alive cookies.
           # Chromium session-restore files are optional and are not required
           # to preserve authenticated website sessions across runners.
           echo "CHROMIUM_AUTH_PROFILE_SAVE=STARTED"
